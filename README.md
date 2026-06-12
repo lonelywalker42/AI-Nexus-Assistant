@@ -5,6 +5,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Tauri 2](https://img.shields.io/badge/Tauri_2-Rust-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## 项目简介
@@ -13,10 +14,10 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 
 ### 双前端架构
 
-| 版本 | 技术栈 | 状态 |
-|------|--------|------|
-| **PySide6 版** | Python + PySide6 + SQLAlchemy | ✅ 功能完整 |
-| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS | 🚧 开发中 |
+| 版本 | 技术栈 | 包体积 | 状态 |
+|------|--------|--------|------|
+| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS + FastAPI | **11MB** | ✅ 可用 |
+| **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ### 整合的源项目
 
@@ -42,31 +43,47 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 - **桌面时钟** — 辉光管/机械表/番茄钟三模式 + 浮动窗口
 - **玻璃质感UI** — 清新蓝绿配色 + 高圆角 + Open Sans字体
 
-## 技术栈
+## 技术架构
 
-### PySide6 版（当前）
-
-| 层级 | 技术 |
-|------|------|
-| GUI | PySide6 (Qt 6) |
-| 数据库 | SQLAlchemy 2.0 + SQLite (WAL模式) |
-| AI | OpenAI / Anthropic 兼容 API |
-| 搜索 | requests + scholarly + arxiv |
-| 文件处理 | PyMuPDF + openpyxl + matplotlib + scipy |
-| 打包 | PyInstaller |
-
-### Tauri 2 版（开发中）
-
-| 层级 | 技术 |
-|------|------|
-| 桌面壳 | Tauri 2 (Rust) |
-| 前端 | React 19 + TypeScript |
-| 样式 | Tailwind CSS v4 + Open Sans |
-| 图标 | Lucide Icons |
-| Markdown | react-markdown |
-| 后端 | Python FastAPI (复用现有服务) |
+```
+┌─────────────────────────────────────────────┐
+│          Tauri 2 桌面应用 (11MB)             │
+│  ┌───────────────────────────────────────┐  │
+│  │  React 19 + TypeScript + Tailwind     │  │
+│  │  Open Sans + 玻璃质感 UI              │  │
+│  └──────────────┬────────────────────────┘  │
+│                 │ HTTP REST API              │
+│  ┌──────────────▼────────────────────────┐  │
+│  │  Python FastAPI 后端 (server.py)       │  │
+│  │  31 个 REST 路由                       │  │
+│  └──────────────┬────────────────────────┘  │
+│                 │                            │
+│  ┌──────────────▼────────────────────────┐  │
+│  │  服务层 (复用现有 Python 代码)          │  │
+│  │  搜索引擎(8源) | AI服务 | 数据库       │  │
+│  └───────────────────────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
 
 ## 快速开始
+
+### Tauri 2 版（推荐）
+
+```bash
+# 前置条件: Rust + Node.js + VS Build Tools (C++)
+git clone https://github.com/lonelywalker42/AI-Nexus-Assistant.git
+cd AI-Nexus-Assistant
+
+# 启动 Python 后端
+pip install -e .
+pip install fastapi uvicorn
+python server.py &
+
+# 启动 Tauri 前端
+cd nexus-ui
+npm install
+npm run tauri dev
+```
 
 ### PySide6 版
 
@@ -77,15 +94,6 @@ pip install -e .
 python main.py
 ```
 
-### Tauri 2 版
-
-```bash
-# 前置条件: Rust + Node.js + VS Build Tools (C++)
-cd nexus-ui
-npm install
-npm run tauri dev
-```
-
 详细说明见 [usage.md](usage.md)
 
 ## 项目结构
@@ -93,25 +101,29 @@ npm run tauri dev
 ```
 AI-Nexus-Assistant/
 ├── main.py                     # PySide6 入口
+├── server.py                   # FastAPI 后端 API (31 路由)
 ├── pyproject.toml              # Python 项目配置
-├── app/                        # Python 后端
-│   ├── db.py                   # 数据库层
-│   ├── models/                 # 数据模型
-│   ├── services/               # 业务逻辑
-│   ├── ai/                     # AI服务层
-│   ├── search/                 # 搜索引擎（8源）
+│
+├── app/                        # Python 核心层
+│   ├── db.py                   # 数据库 (SQLAlchemy + SQLite)
+│   ├── models/                 # 数据模型 (7个)
+│   ├── services/               # 业务逻辑 (7个)
+│   ├── ai/                     # AI服务 (OpenAI + Anthropic)
+│   ├── search/                 # 搜索引擎 (8源)
 │   └── ui/                     # PySide6 前端
 │
-├── nexus-ui/                   # Tauri 2 前端（开发中）
-│   ├── src/                    # React + TypeScript
+├── nexus-ui/                   # Tauri 2 前端
+│   ├── src/
+│   │   ├── api/client.ts       # API 客户端 (连接 FastAPI)
 │   │   ├── App.tsx             # 主应用
 │   │   ├── components/         # 组件
-│   │   └── pages/              # 页面
-│   └── src-tauri/              # Rust 后端
+│   │   └── pages/              # 7 个页面
+│   └── src-tauri/              # Rust 壳
 │       ├── Cargo.toml
-│       └── tauri.conf.json
+│       ├── tauri.conf.json
+│       └── target/release/nexus-ui.exe (11MB)
 │
-└── data/                       # 运行时数据（gitignore）
+└── data/                       # 运行时数据 (gitignore)
 ```
 
 ## 开发进度
@@ -121,10 +133,34 @@ AI-Nexus-Assistant/
 | Phase 1 | 项目骨架 + 任务 + 文献 + 设置 | ✅ 完成 |
 | Phase 2 | 试验管理 + 知识库 + AI对话 | ✅ 完成 |
 | Phase 3 | 仪表盘 + 时钟 + 命令面板 + 打包备份 | ✅ 完成 |
-| Phase 4 | 文献渲染修复 + UI优化 + 无边框窗口 | ✅ 完成 |
-| Phase 5 | Tauri 2 前端重构 | 🚧 进行中 |
+| Phase 4 | Bug修复 + UI优化 + 无边框窗口 | ✅ 完成 |
+| Phase 5 | Tauri 2 前端 + FastAPI 后端 | ✅ 完成 |
 
 详细进展见 [development.md](development.md)
+
+## API 接口
+
+FastAPI 后端提供 31 个 REST 路由：
+
+| 模块 | 路由 | 方法 |
+|------|------|------|
+| 仪表盘 | `/api/dashboard` | GET |
+| 任务 | `/api/tasks` | GET/POST |
+| 任务 | `/api/tasks/{id}` | PATCH/DELETE |
+| 任务 | `/api/tasks/{id}/toggle` | POST |
+| 搜索 | `/api/search` | POST |
+| 试验 | `/api/experiments` | GET/POST |
+| 试验 | `/api/experiments/{id}/results` | POST |
+| 知识库 | `/api/knowledge/cards` | GET/POST |
+| 知识库 | `/api/knowledge/cards/{id}` | PATCH/DELETE |
+| 知识库 | `/api/knowledge/tags` | GET |
+| 对话 | `/api/chat/sessions` | GET/POST |
+| 对话 | `/api/chat/sessions/{id}/messages` | GET/POST |
+| 对话 | `/api/chat/stream` | POST (SSE) |
+| 模型 | `/api/models` | GET/POST/DELETE |
+| 历史 | `/api/history` | GET |
+
+API 文档：启动后端后访问 `http://127.0.0.1:8765/docs`
 
 ## 相关文档
 
