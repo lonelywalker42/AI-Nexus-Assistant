@@ -1,4 +1,19 @@
+import { useEffect, useState } from "react";
+import { modelsApi, type ModelConfig } from "../api/client";
+
 export default function SettingsPage() {
+  const [models, setModels] = useState<ModelConfig[]>([]);
+
+  useEffect(() => {
+    modelsApi.list().then(setModels).catch(console.error);
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("确定删除此模型？")) return;
+    await modelsApi.delete(id);
+    setModels(prev => prev.filter(m => m.id !== id));
+  };
+
   return (
     <div className="max-w-3xl space-y-6">
       <h2 className="text-2xl font-bold text-slate-800">设置</h2>
@@ -13,13 +28,17 @@ export default function SettingsPage() {
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-slate-100">
-              <td className="py-3 text-slate-700">DeepSeek-R1</td>
-              <td className="text-slate-500">deepseek-reasoner</td>
-              <td><span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs">openai</span></td>
-              <td className="text-slate-500">all</td>
-              <td><button className="text-xs text-primary-500 hover:underline">编辑</button></td>
-            </tr>
+            {models.map(m => (
+              <tr key={m.id} className="border-b border-slate-100">
+                <td className="py-3 text-slate-700">{m.name}</td>
+                <td className="text-slate-500">{m.model_name}</td>
+                <td><span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs">{m.protocol}</span></td>
+                <td className="text-slate-500">{m.purpose}</td>
+                <td>
+                  <button onClick={() => handleDelete(m.id)} className="text-xs text-red-400 hover:text-red-600">删除</button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
         <button className="btn-gradient btn-click">添加模型</button>
@@ -38,10 +57,11 @@ export default function SettingsPage() {
       <div className="glass-card p-6 space-y-4">
         <h3 className="text-lg font-semibold text-slate-700">数据管理</h3>
         <div className="flex gap-3 flex-wrap">
-          <button className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">导入 ai-literature JSON</button>
-          <button className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">导入 DeepSeek 对话</button>
-          <button className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">导入 PDF</button>
-          <button className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">手动备份</button>
+          {["导入 ai-literature JSON", "导入 DeepSeek 对话", "导入 PDF", "手动备份"].map(label => (
+            <button key={label} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+              {label}
+            </button>
+          ))}
         </div>
       </div>
     </div>

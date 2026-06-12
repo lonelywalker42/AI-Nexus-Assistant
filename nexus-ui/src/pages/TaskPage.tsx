@@ -1,64 +1,158 @@
+import { useEffect, useState } from "react";
+import { tasksApi, type Task } from "../api/client";
+
+const PRIORITY_COLORS: Record<string, string> = {
+  low: "border-slate-300", normal: "border-primary-400",
+  high: "border-amber-400", urgent: "border-red-400",
+};
+
 export default function TaskPage() {
+  const today = new Date().toISOString().split("T")[0];
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [newTask, setNewTask] = useState("");
+  const [priority, setPriority] = useState("normal");
+  const [marks, setMarks] = useState<Record<string, string>>({});
+
+  const loadTasks = () => tasksApi.list(selectedDate).then(setTasks).catch(console.error);
+  const loadMarks = () => {
+    const d = new Date(selectedDate);
+    tasksApi.dates(d.getFullYear(), d.getMonth() + 1).then(setMarks).catch(console.error);
+  };
+
+  useEffect(() => { loadTasks(); }, [selectedDate]);
+  useEffect(() => { loadMarks(); }, [selectedDate]);
+
+  const handleAdd = async () => {
+    if (!newTask.trim()) return;
+    await tasksApi.create({ date: selectedDate, content: newTask.trim(), priority });
+    setNewTask("");
+    loadTasks();
+    loadMarks();
+  };
+
+  const handleToggle = async (id: string) => {
+    await tasksApi.toggle(id);
+    loadTasks();
+    loadMarks();
+  };
+
+  const handleDelete = async (id: string) => {
+    await tasksApi.delete(id);
+    loadTasks();
+    loadMarks();
+  };
+
+  // 生成日历
+  const d = new Date(selectedDate);
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay();
+  const monthName = `${year}年${month + 1}月`;
+
+  const done = tasks.filter(t => t.completed).length;
+
   return (
     <div className="flex gap-6 h-full">
       {/* 左侧日历 */}
       <div className="w-80 flex-shrink-0 space-y-4">
         <div className="glass-card p-5">
-          <h3 className="text-lg font-semibold text-slate-700 mb-3">2026年6月</h3>
+          <h3 className="text-lg font-semibold text-slate-700 mb-3">{monthName}</h3>
           <div className="grid grid-cols-7 gap-1 text-center text-xs">
             {["日","一","二","三","四","五","六"].map(d => (
               <div key={d} className="py-1 text-slate-400 font-medium">{d}</div>
             ))}
-            {Array.from({length: 30}, (_, i) => (
-              <button key={i} className={`py-2 rounded-lg hover:bg-primary-50 transition-colors ${i === 11 ? 'bg-primary-500 text-white' : 'text-slate-600'}`}>
-                {i + 1}
-              </button>
-            ))}
+            {Array.from({ length: firstDay }, (_, i) => <div key={`e${i}`} />)}
+            {Array.from({ length: daysInMonth }, (_, i) => {
+              const day = i + 1;
+              const ds = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+              const mark = marks[ds];
+              return (
+                <button
+                  key={day}
+                  onClick={() => setSelectedDate(ds)}
+                  className={`py-2 rounded-lg transition-colors relative ${
+                    ds === selectedDate ? "bg-primary-500 text-white" : "text-slate-600 hover:bg-primary-50"
+                  }`}
+                >
+                  {day}
+                  {mark && (
+                    <span className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full ${
+                      mark === "pending" ? "bg-amber-400" : "bg-emerald-400"
+                    }`} />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* 统计 */}
         <div className="grid grid-cols-2 gap-3">
           <div className="glass-card p-4 text-center">
-            <p className="text-2xl font-bold text-amber-500">12</p>
+            <p className="text-2xl font-bold text-amber-500">{tasks.length}</p>
             <p className="text-xs text-slate-400">总待办</p>
           </div>
           <div className="glass-card p-4 text-center">
-            <p className="text-2xl font-bold text-emerald-500">8</p>
+            <p className="text-2xl font-bold text-emerald-500">{done}</p>
             <p className="text-xs text-slate-400">已完成</p>
           </div>
         </div>
+
+        <button
+          onClick={() => setSelectedDate(today)}
+          className="w-full py-2 rounded-xl border border-primary-400 text-primary-600 text-sm font-medium hover:bg-primary-50 transition-colors"
+        >
+          跳转今日
+        </button>
       </div>
 
       {/* 右侧任务列表 */}
       <div className="flex-1 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-slate-800">2026-06-12</h2>
-          <button className="btn-gradient btn-click">添加任务</button>
+        <h2 className="text-xl font-bold text-slate-800">{selectedDate}</h2>
+
+        <div className="flex gap-3">
+          <input
+            className="input-glass flex-1"
+            placeholder="添加新的待办事项..."
+            value={newTask}
+            onChange={e => setNewTask(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleAdd()}
+          />
+          <select className="input-glass w-24" value={priority} onChange={e => setPriority(e.target.value)}>
+            <option value="normal">普通</option>
+            <option value="low">低</option>
+            <option value="high">高</option>
+            <option value="urgent">紧急</option>
+          </select>
+          <button className="btn-gradient btn-click" onClick={handleAdd}>添加</button>
         </div>
 
         <div className="space-y-3">
-          <TaskCard content="完成文献综述初稿" priority="high" done={false} time="创建于 09:00" />
-          <TaskCard content="阅读 PINN 论文" priority="normal" done={false} time="创建于 10:00" />
-          <TaskCard content="整理试验数据" priority="normal" done={true} time="完成于 14:30" />
-          <TaskCard content="准备组会 PPT" priority="urgent" done={false} time="创建于 08:00" />
+          {tasks.length === 0 ? (
+            <p className="text-center text-slate-400 py-8">暂无待办事项</p>
+          ) : tasks.map(task => (
+            <div key={task.id} className={`glass-card p-4 flex items-center gap-4 border-l-4 ${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal}`}>
+              <button
+                onClick={() => handleToggle(task.id)}
+                className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${
+                  task.completed ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300 hover:border-emerald-400"
+                }`}
+              >
+                {task.completed && <span className="text-xs">✓</span>}
+              </button>
+              <span className={`flex-1 text-sm ${task.completed ? "text-slate-400 line-through" : "text-slate-700"}`}>
+                {task.content}
+              </span>
+              <span className="text-xs text-slate-400">
+                {task.completed_at ? `完成于 ${new Date(task.completed_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}` :
+                 task.created_at ? `创建于 ${new Date(task.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}` : ""}
+              </span>
+              <button onClick={() => handleDelete(task.id)} className="text-slate-400 hover:text-red-500 text-xs">✕</button>
+            </div>
+          ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function TaskCard({ content, priority, done, time }: { content: string; priority: string; done: boolean; time: string }) {
-  const colors: Record<string, string> = {
-    low: "border-slate-300", normal: "border-primary-400", high: "border-amber-400", urgent: "border-red-400"
-  };
-  return (
-    <div className={`glass-card p-4 flex items-center gap-4 border-l-4 ${colors[priority] || colors.normal}`}>
-      <button className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 hover:border-emerald-400'}`}>
-        {done && <span className="text-xs">✓</span>}
-      </button>
-      <span className={`flex-1 text-sm ${done ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{content}</span>
-      <span className="text-xs text-slate-400">{time}</span>
     </div>
   );
 }
