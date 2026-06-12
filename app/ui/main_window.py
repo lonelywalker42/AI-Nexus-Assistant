@@ -105,23 +105,46 @@ class MainWindow(QMainWindow):
             }}
         """)
 
+        # 导航项（index 与 _pages 一一对应，不含分隔符）
         nav_items = [
             ("◆  仪表盘", True),
             ("◇  任务与日程", True),
-            ("", False),  # 分隔符
             ("◈  文献管理", True),
             ("◉  试验管理", True),
             ("◎  知识库", True),
-            ("", False),  # 分隔符
             ("◊  AI 对话", True),
             ("○  设置", True),
         ]
-        for text, enabled in nav_items:
+
+        # 添加分组标签 + 导航项
+        group_labels = {
+            0: "总览",
+            2: "研究",
+            5: "系统",
+        }
+        for i, (text, enabled) in enumerate(nav_items):
+            # 在指定位置插入分组标签
+            if i in group_labels:
+                label_item = QListWidgetItem(f"  {group_labels[i]}")
+                label_item.setFlags(Qt.ItemFlag.NoItemFlags)  # 不可选中
+                label_item.setForeground(QColor(self._theme.get('text_d')))
+                label_item.setFont(QFont("Inter", 9))
+                self._nav_list.addItem(label_item)
+
             item = QListWidgetItem(text)
             if not enabled:
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
                 item.setForeground(QColor(self._theme.get('text_d')))
             self._nav_list.addItem(item)
+
+        # 建立行号 → 页面索引的映射（跳过分组标签行）
+        self._nav_row_to_page: dict[int, int] = {}
+        page_idx = 0
+        for row in range(self._nav_list.count()):
+            item = self._nav_list.item(row)
+            if item.flags() & Qt.ItemFlag.ItemIsSelectable:
+                self._nav_row_to_page[row] = page_idx
+                page_idx += 1
 
         self._nav_list.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self._nav_list, 1)
@@ -169,11 +192,12 @@ class MainWindow(QMainWindow):
         for page in self._pages:
             self._stack.addWidget(page)
 
-    def _switch_page(self, index: int):
-        """切换页面"""
-        if 0 <= index < len(self._pages):
-            self._stack.setCurrentIndex(index)
-            page = self._pages[index]
+    def _switch_page(self, row: int):
+        """切换页面 — 通过行号映射到页面索引"""
+        page_idx = self._nav_row_to_page.get(row, -1)
+        if 0 <= page_idx < len(self._pages):
+            self._stack.setCurrentIndex(page_idx)
+            page = self._pages[page_idx]
             if hasattr(page, "refresh"):
                 page.refresh()
 
@@ -328,9 +352,12 @@ class MainWindow(QMainWindow):
 
     def _navigate_to(self, page_index: int, item_id: str):
         """从命令面板导航到指定页面"""
-        if 0 <= page_index < len(self._pages):
-            self._nav_list.setCurrentRow(page_index)
-            self._switch_page(page_index)
+        # 找到页面索引对应的行号
+        for row, idx in self._nav_row_to_page.items():
+            if idx == page_index:
+                self._nav_list.setCurrentRow(row)
+                self._switch_page(row)
+                return
 
     def _auto_backup(self):
         """启动时自动备份"""

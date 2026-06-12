@@ -3,14 +3,14 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QSplitter, QListWidget, QListWidgetItem, QFrame,
-    QComboBox, QScrollArea, QDialog, QFormLayout, QDialogButtonBox,
-    QLineEdit, QMessageBox, QSizePolicy,
+    QComboBox, QScrollArea, QMessageBox, QSizePolicy,
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 
 from app.ui.theme import (
-    get_theme, BTN_PRIMARY_QSS, BTN_SECONDARY_QSS, BTN_DANGER_QSS, INPUT_QSS, COMBO_QSS,
+    get_theme, BTN_PRIMARY_QSS, BTN_SECONDARY_QSS, BTN_DANGER_QSS,
+    BTN_GHOST_QSS, INPUT_QSS, COMBO_QSS, RADIUS,
 )
 from app.db import get_session
 from app.services import chat_service
@@ -21,7 +21,7 @@ class _StreamWorker(QThread):
     """AI 流式对话工作线程"""
     thinking_chunk = Signal(str)
     content_chunk = Signal(str)
-    finished = Signal(str, str)  # (full_thinking, full_content)
+    finished = Signal(str, str)
     error = Signal(str)
 
     def __init__(self, ai_router: AIRouter, messages: list[dict],
@@ -69,23 +69,60 @@ class ChatPage(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # ── 左侧：会话列表 ──────────────────────────────────
+        # ── 左侧：会话管理面板 ─────────────────────────────
         left = QWidget()
-        left.setFixedWidth(240)
-        left.setStyleSheet(f"background-color: {t.get('sidebar')};")
+        left.setFixedWidth(260)
+        left.setStyleSheet(f"""
+            background-color: {t.get('sidebar')};
+            border-right: 1px solid {t.get('border')};
+        """)
         left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(12, 12, 12, 12)
-        left_layout.setSpacing(8)
+        left_layout.setContentsMargins(16, 16, 16, 16)
+        left_layout.setSpacing(12)
+
+        # 标题
+        header = QLabel("AI 对话")
+        header.setFont(QFont("Inter", 16, QFont.Weight.Bold))
+        header.setStyleSheet(f"color: {t.get('text_b')};")
+        left_layout.addWidget(header)
 
         # 模型选择
-        model_label = QLabel("AI 模型:")
+        model_frame = QFrame()
+        model_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {t.get('card')};
+                border: 1px solid {t.get('border')};
+                border-radius: {RADIUS['md']};
+                padding: 4px;
+            }}
+        """)
+        model_layout = QVBoxLayout(model_frame)
+        model_layout.setContentsMargins(8, 8, 8, 8)
+        model_layout.setSpacing(4)
+
+        model_label = QLabel("模型")
+        model_label.setFont(QFont("Inter", 9))
         model_label.setStyleSheet(f"color: {t.get('text_d')};")
-        left_layout.addWidget(model_label)
+        model_layout.addWidget(model_label)
 
         self._model_combo = QComboBox()
         self._model_combo.setStyleSheet(COMBO_QSS())
         self._refresh_models()
-        left_layout.addWidget(self._model_combo)
+        model_layout.addWidget(self._model_combo)
+        left_layout.addWidget(model_frame)
+
+        # 新建对话按钮
+        new_btn = QPushButton("新建对话")
+        new_btn.setStyleSheet(BTN_PRIMARY_QSS())
+        new_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        new_btn.clicked.connect(self._new_session)
+        left_layout.addWidget(new_btn)
+
+        # 会话列表标签
+        sessions_label = QLabel("历史对话")
+        sessions_label.setFont(QFont("Inter", 10, QFont.Weight.Bold))
+        sessions_label.setStyleSheet(f"color: {t.get('text')};")
+        left_layout.addWidget(sessions_label)
 
         # 会话列表
         self._session_list = QListWidget()
@@ -93,107 +130,158 @@ class ChatPage(QWidget):
             QListWidget {{
                 background-color: transparent;
                 border: none;
+                outline: none;
             }}
             QListWidget::item {{
-                padding: 8px 12px;
-                border-radius: 6px;
+                padding: 10px 12px;
+                border-radius: {RADIUS['md']};
                 color: {t.get('text')};
                 margin: 2px 0;
+                font-size: 13px;
             }}
             QListWidget::item:hover {{
-                background-color: {t.get('sidebar_h')};
+                background-color: {t.get('row_h')};
             }}
             QListWidget::item:selected {{
-                background-color: {t.get('sidebar_s')};
+                background-color: {t.get('accent_bg')};
                 color: {t.get('accent')};
+                font-weight: 600;
             }}
         """)
         self._session_list.currentRowChanged.connect(self._on_session_selected)
         left_layout.addWidget(self._session_list, 1)
 
-        # 按钮行
-        btn_row = QHBoxLayout()
-        new_btn = QPushButton("新对话")
-        new_btn.setStyleSheet(BTN_PRIMARY_QSS())
-        new_btn.clicked.connect(self._new_session)
-        btn_row.addWidget(new_btn)
-
-        del_btn = QPushButton("删除")
+        # 删除按钮
+        del_btn = QPushButton("删除选中对话")
         del_btn.setStyleSheet(BTN_DANGER_QSS())
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         del_btn.clicked.connect(self._delete_session)
-        btn_row.addWidget(del_btn)
-        left_layout.addLayout(btn_row)
+        left_layout.addWidget(del_btn)
 
         splitter.addWidget(left)
 
         # ── 右侧：对话区域 ──────────────────────────────────
         right = QWidget()
+        right.setStyleSheet(f"background-color: {t.get('bg')};")
         right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(16, 12, 16, 12)
-        right_layout.setSpacing(8)
+        right_layout.setContentsMargins(24, 16, 24, 16)
+        right_layout.setSpacing(12)
+
+        # 对话标题
+        self._chat_title = QLabel("选择或新建一个对话")
+        self._chat_title.setFont(QFont("Inter", 14, QFont.Weight.Bold))
+        self._chat_title.setStyleSheet(f"color: {t.get('text_b')};")
+        right_layout.addWidget(self._chat_title)
 
         # 消息显示区域
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("background-color: transparent; border: none;")
+        scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: transparent;
+                border: none;
+            }}
+        """)
         self._messages_container = QWidget()
         self._messages_layout = QVBoxLayout(self._messages_container)
         self._messages_layout.setContentsMargins(0, 0, 0, 0)
-        self._messages_layout.setSpacing(12)
+        self._messages_layout.setSpacing(16)
         self._messages_layout.addStretch()
         scroll.setWidget(self._messages_container)
         right_layout.addWidget(scroll, 1)
 
-        # 快捷操作栏
-        actions_row = QHBoxLayout()
-        for text, callback in [
-            ("📝 润色", lambda: self._writing_assist("polish")),
-            ("🌐 翻译", lambda: self._writing_assist("translate")),
-            ("📐 LaTeX", lambda: self._writing_assist("latex")),
-            ("📋 摘要", lambda: self._writing_assist("abstract")),
-        ]:
+        # ── 底部输入区域 ─────────────────────────────────────
+        # 写作辅助快捷按钮
+        assist_row = QHBoxLayout()
+        assist_row.setSpacing(8)
+        assist_label = QLabel("写作辅助:")
+        assist_label.setStyleSheet(f"color: {t.get('text_d')}; font-size: 11px;")
+        assist_row.addWidget(assist_label)
+
+        for text, mode in [("润色", "polish"), ("翻译", "translate"),
+                           ("LaTeX", "latex"), ("摘要", "abstract")]:
             btn = QPushButton(text)
-            btn.setStyleSheet(BTN_SECONDARY_QSS())
-            btn.setFixedHeight(28)
-            btn.clicked.connect(callback)
-            actions_row.addWidget(btn)
-        actions_row.addStretch()
+            btn.setStyleSheet(BTN_GHOST_QSS())
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, m=mode: self._writing_assist(m))
+            assist_row.addWidget(btn)
+
+        assist_row.addStretch()
 
         # 跨模块按钮
-        for text, callback in [
-            ("📚 引用文献", self._cite_paper),
-            ("🧪 引用试验", self._cite_experiment),
-            ("💾 存为卡片", self._save_as_card),
-        ]:
+        for text, callback in [("引用文献", self._cite_paper),
+                                ("引用试验", self._cite_experiment),
+                                ("存为卡片", self._save_as_card)]:
             btn = QPushButton(text)
-            btn.setStyleSheet(BTN_SECONDARY_QSS())
-            btn.setFixedHeight(28)
+            btn.setStyleSheet(BTN_GHOST_QSS())
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(callback)
-            actions_row.addWidget(btn)
-        right_layout.addLayout(actions_row)
+            assist_row.addWidget(btn)
 
-        # 输入区域
-        input_row = QHBoxLayout()
+        right_layout.addLayout(assist_row)
+
+        # 输入框 + 发送按钮
+        input_frame = QFrame()
+        input_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {t.get('card')};
+                border: 1px solid {t.get('border')};
+                border-radius: {RADIUS['xl']};
+            }}
+            QFrame:focus-within {{
+                border-color: {t.get('accent')};
+            }}
+        """)
+        input_layout = QHBoxLayout(input_frame)
+        input_layout.setContentsMargins(8, 8, 8, 8)
+        input_layout.setSpacing(8)
+
         self._input = QTextEdit()
-        self._input.setStyleSheet(INPUT_QSS())
-        self._input.setPlaceholderText("输入消息... (Shift+Enter 换行，Enter 发送)")
-        self._input.setMaximumHeight(100)
+        self._input.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: transparent;
+                color: {t.get('text')};
+                border: none;
+                padding: 8px;
+                font-size: 13px;
+            }}
+        """)
+        self._input.setPlaceholderText("输入消息... (Enter 发送，Shift+Enter 换行)")
+        self._input.setMaximumHeight(80)
         self._input.installEventFilter(self)
-        input_row.addWidget(self._input, 1)
+        input_layout.addWidget(self._input, 1)
 
         send_btn = QPushButton("发送")
-        send_btn.setStyleSheet(BTN_PRIMARY_QSS())
-        send_btn.setFixedSize(60, 60)
+        send_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {t.get('accent')}, stop:1 {t.get('cyan')});
+                color: white;
+                border: none;
+                border-radius: {RADIUS['lg']};
+                padding: 10px 20px;
+                font-weight: 600;
+                font-size: 13px;
+                min-width: 60px;
+            }}
+            QPushButton:hover {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {t.get('accent_l')}, stop:1 {t.get('cyan')});
+            }}
+        """)
+        send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         send_btn.clicked.connect(self._send_message)
-        input_row.addWidget(send_btn)
-        right_layout.addLayout(input_row)
+        input_layout.addWidget(send_btn)
+
+        right_layout.addWidget(input_frame)
 
         splitter.addWidget(right)
-        splitter.setSizes([240, 760])
+        splitter.setSizes([260, 740])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
         layout.addWidget(splitter)
 
     def eventFilter(self, obj, event):
-        """Enter 发送，Shift+Enter 换行"""
         if obj == self._input and event.type() == event.Type.KeyPress:
             if event.key() == Qt.Key.Key_Return and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                 self._send_message()
@@ -205,8 +293,7 @@ class ChatPage(QWidget):
         self._refresh_models()
 
     def _refresh_models(self):
-        """从数据库重新加载模型列表"""
-        self._ai_router.reload()  # 重新加载模型配置
+        self._ai_router.reload()
         self._model_combo.clear()
         models = self._ai_router.get_all_models()
         for m in models:
@@ -220,8 +307,9 @@ class ChatPage(QWidget):
         try:
             sessions = chat_service.get_sessions(db)
             for s in sessions:
-                item = QListWidgetItem(s.title)
+                item = QListWidgetItem(s.title[:30])
                 item.setData(Qt.ItemDataRole.UserRole, s.id)
+                item.setToolTip(s.title)
                 self._session_list.addItem(item)
         finally:
             db.close()
@@ -229,7 +317,6 @@ class ChatPage(QWidget):
     def _new_session(self):
         db = get_session()
         try:
-            model_id = self._model_combo.currentData()
             model_name = self._model_combo.currentText()
             session = chat_service.create_session(db, title="新对话", model_name=model_name)
             self._current_session_id = session.id
@@ -238,11 +325,11 @@ class ChatPage(QWidget):
         self._refresh_sessions()
         self._session_list.setCurrentRow(0)
         self._clear_messages()
+        self._chat_title.setText("新对话")
 
     def _delete_session(self):
         if not self._current_session_id:
             return
-        from PySide6.QtWidgets import QMessageBox
         reply = QMessageBox.question(self, "确认删除", "确定要删除这个对话吗？",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply != QMessageBox.StandardButton.Yes:
@@ -255,6 +342,7 @@ class ChatPage(QWidget):
         self._current_session_id = None
         self._refresh_sessions()
         self._clear_messages()
+        self._chat_title.setText("选择或新建一个对话")
 
     def _on_session_selected(self, row: int):
         item = self._session_list.item(row)
@@ -262,6 +350,7 @@ class ChatPage(QWidget):
             return
         session_id = item.data(Qt.ItemDataRole.UserRole)
         self._current_session_id = session_id
+        self._chat_title.setText(item.text())
         self._load_messages(session_id)
 
     def _load_messages(self, session_id: str):
@@ -288,21 +377,19 @@ class ChatPage(QWidget):
         if not self._current_session_id:
             self._new_session()
 
-        # Save user message
         db = get_session()
         try:
             chat_service.add_message(db, self._current_session_id, "user", content)
-            # Auto-title: use first message as title
             msg_count = chat_service.get_message_count(db, self._current_session_id)
             if msg_count == 1:
                 chat_service.update_session_title(db, self._current_session_id, content[:30])
+                self._chat_title.setText(content[:30])
         finally:
             db.close()
 
         self._append_message_widget("user", content)
         self._input.clear()
 
-        # Build messages for AI
         db = get_session()
         try:
             messages = chat_service.build_messages_for_ai(db, self._current_session_id)
@@ -313,8 +400,11 @@ class ChatPage(QWidget):
         self._start_streaming(messages, model_id)
 
     def _start_streaming(self, messages: list[dict], model_id: str | None):
-        # Create placeholder for AI response
         self._current_ai_widget = self._append_message_widget("assistant", "", "")
+
+        if self._worker and self._worker.isRunning():
+            self._worker.terminate()
+            self._worker.wait(1000)
 
         self._worker = _StreamWorker(self._ai_router, messages, model_id=model_id)
         self._worker.thinking_chunk.connect(self._on_thinking_chunk)
@@ -335,7 +425,6 @@ class ChatPage(QWidget):
             content_label.setText(content_label.text() + text)
 
     def _on_stream_finished(self, thinking: str, content: str):
-        # Save to database
         if self._current_session_id:
             db = get_session()
             try:
@@ -346,51 +435,77 @@ class ChatPage(QWidget):
 
     def _on_stream_error(self, error: str):
         if hasattr(self, '_current_ai_widget'):
-            self._current_ai_widget._content_label.setText(f"❌ 错误: {error}")
+            self._current_ai_widget._content_label.setText(f"错误: {error}")
+            self._current_ai_widget._content_label.setStyleSheet(
+                f"color: {self._theme.get('red')}; font-size: 13px;")
 
     def _append_message_widget(self, role: str, content: str, thinking: str = "") -> QFrame:
         t = self._theme
-        frame = QFrame()
         is_user = role == "user"
-        frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {t.get('accent') if is_user else t.get('card')};
-                border-radius: 10px;
-                padding: 4px;
-            }}
-        """)
+
+        frame = QFrame()
+        if is_user:
+            frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {t.get('accent')};
+                    border-radius: 16px;
+                    padding: 4px;
+                }}
+            """)
+        else:
+            frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {t.get('card')};
+                    border: 1px solid {t.get('border')};
+                    border-radius: 16px;
+                    padding: 4px;
+                }}
+            """)
 
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(6)
 
         # 角色标签
-        role_label = QLabel("👤 你" if is_user else "🤖 AI")
-        role_label.setStyleSheet(f"color: {'white' if is_user else t.get('accent')}; font-weight: bold; font-size: 11px;")
+        role_label = QLabel("You" if is_user else "AI")
+        role_label.setFont(QFont("Inter", 10, QFont.Weight.Bold))
+        role_label.setStyleSheet(f"""
+            color: {'rgba(255,255,255,0.8)' if is_user else t.get('accent')};
+        """)
         layout.addWidget(role_label)
 
         # Thinking 内容（默认折叠）
         thinking_label = QLabel(thinking)
         thinking_label.setWordWrap(True)
+        thinking_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        thinking_label.setFont(QFont("Inter", 10))
         thinking_label.setStyleSheet(f"""
             color: {t.get('text_d')};
             font-style: italic;
-            font-size: 10px;
-            padding: 4px;
-            background-color: {t.get('border')};
-            border-radius: 4px;
+            padding: 8px;
+            background-color: {t.get('bg_secondary')};
+            border-radius: {RADIUS['md']};
         """)
         thinking_label.setVisible(bool(thinking))
         thinking_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        thinking_label.mousePressEvent = lambda _: thinking_label.setVisible(not thinking_label.isVisible())
+        # 点击切换显示/隐藏
+        original_thinking = thinking
+        thinking_label.mousePressEvent = lambda _: (
+            thinking_label.setVisible(False) if thinking_label.text() == original_thinking else None
+        )
         layout.addWidget(thinking_label)
         frame._thinking_label = thinking_label
 
         # 主内容
         content_label = QLabel(content)
         content_label.setWordWrap(True)
-        content_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
-        content_label.setStyleSheet(f"color: {'white' if is_user else t.get('text')}; font-size: 12px;")
+        content_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        content_label.setFont(QFont("Inter", 13))
+        content_label.setStyleSheet(f"""
+            color: {'white' if is_user else t.get('text')};
+            line-height: 1.5;
+        """)
         layout.addWidget(content_label)
         frame._content_label = content_label
 
@@ -399,7 +514,6 @@ class ChatPage(QWidget):
         return frame
 
     def _writing_assist(self, mode: str):
-        """写作辅助"""
         selected = self._input.textCursor().selectedText()
         if not selected:
             selected = self._input.toPlainText().strip()
@@ -416,15 +530,12 @@ class ChatPage(QWidget):
         self._send_message()
 
     def _cite_paper(self):
-        """引用文献"""
-        QMessageBox.information(self, "引用文献", "请在文献管理页面选择文献后发送到对话。\n此功能将在后续版本完善。")
+        QMessageBox.information(self, "引用文献", "请在文献管理页面选择文献后发送到对话。")
 
     def _cite_experiment(self):
-        """引用试验"""
-        QMessageBox.information(self, "引用试验", "请在试验管理页面选择试验后发送到对话。\n此功能将在后续版本完善。")
+        QMessageBox.information(self, "引用试验", "请在试验管理页面选择试验后发送到对话。")
 
     def _save_as_card(self):
-        """保存最后一条AI回复为知识卡片"""
         if not self._current_session_id:
             return
         db = get_session()
@@ -437,10 +548,7 @@ class ChatPage(QWidget):
             last = ai_messages[-1]
             from app.services import knowledge_service
             knowledge_service.create_card(
-                db,
-                title=last.content[:60],
-                summary=last.content[:500],
-                source_type="deepseek",
+                db, title=last.content[:60], summary=last.content[:500], source_type="deepseek",
             )
             QMessageBox.information(self, "成功", "已保存为知识卡片。")
         finally:
