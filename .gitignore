@@ -41,3 +41,14 @@ Thumbs.db
 
 # PyInstaller
 *.spec
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Tauri / Rust
+nexus-ui/src-tauri/target/
+*.pdb
+
+# VS Build Tools
+vs_BuildTools.exe

@@ -6,157 +6,169 @@
 Phase 1: 基础框架 + 任务 + 文献 + 设置     [████████████████████] 100%  ✅ 完成
 Phase 2: 试验管理 + 知识库 + AI对话         [████████████████████] 100%  ✅ 完成
 Phase 3: 仪表盘 + 时钟 + 命令面板 + 打包    [████████████████████] 100%  ✅ 完成
+Phase 4: Bug修复 + UI优化 + 无边框窗口      [████████████████████] 100%  ✅ 完成
+Phase 5: Tauri 2 前端重构                   [████░░░░░░░░░░░░░░░░]  20%  🚧 进行中
 ```
 
 ---
 
-## Phase 1: 已完成（2026-06-11）
+## Phase 1: 基础框架 ✅ (2026-06-11)
 
 ### 1. 项目骨架 ✅
-
-| 文件 | 说明 |
-|------|------|
-| `pyproject.toml` | 项目配置，依赖声明，可选 `[full]` extras |
-| `main.py` | 应用入口，QApplication + Fusion + 字体 + init_db |
-| `app/db.py` | SQLAlchemy engine + SessionLocal + Base + WAL模式 |
-| `app/utils/paths.py` | PyInstaller 兼容的路径工具 |
+- `pyproject.toml` — 项目配置 + 依赖声明
+- `main.py` — QApplication + Fusion + init_db
+- `app/db.py` — SQLAlchemy engine + WAL模式
+- `app/utils/paths.py` — PyInstaller兼容路径
 
 ### 2. 数据模型 ✅
-
-| 模型 | 表名 | 字段数 | 说明 |
-|------|------|--------|------|
-| `Task` | tasks | 11 | 待办事项，关联周计划/文献/试验 |
-| `WeeklyPlan` | weekly_plans | 5 | 周计划，级联删除任务 |
-| `Paper` | papers | 16 | 学术文献，含引用/评分/笔记/AI摘要 |
-| `ModelConfig` | model_configs | 9 | AI模型配置，OpenAI/Anthropic协议 |
-| `SearchHistory` | search_history | 7 | 搜索/综述/选题历史 |
+- `Task` + `WeeklyPlan` — 任务与周计划
+- `Paper` — 学术文献
+- `ModelConfig` — AI模型配置
+- `SearchHistory` — 搜索历史
 
 ### 3. 统一主题系统 ✅
-
-- 暗色主题（Catppuccin Mocha）+ 亮色主题
-- `ThemeManager` 单例，`theme_changed` 信号
-- 7 个 QSS 模板常量：BTN_PRIMARY / BTN_SECONDARY / BTN_DANGER / INPUT / COMBO / TABLE / TAB / SCROLLBAR
+- 暗色/亮色双主题 (Catppuccin)
+- ThemeManager + theme_changed信号
+- 10+ QSS模板常量
 
 ### 4. 主窗口框架 ✅
-
-- 侧边栏 200px + QStackedWidget
-- 6 项导航（Phase 1 激活 3 项：任务/文献/设置）
-- QSystemTrayIcon 系统托盘（关闭最小化，右键菜单）
-- 主题切换自动更新样式
+- 侧边栏260px + QStackedWidget
+- 7项导航 + 分组标签
+- QSystemTrayIcon系统托盘
 
 ### 5. 任务与日程模块 ✅
-
-| 组件 | 说明 |
-|------|------|
-| `task_service.py` | CRUD + 周计划 + 月度统计 + 日期标记 |
-| `task_page.py` | 左侧日历+统计，右侧待办列表+过滤器 |
-| `calendar_widget.py` | 自定义 QCalendarWidget，paintCell 绘制圆点标记 |
-| `stat_card.py` | 统计数字卡片，hover 高亮 |
+- 日历视图 + 待办CRUD + 周计划
+- 优先级四级 + 分类标签
+- 统计面板 + 月度完成率
 
 ### 6. 文献搜索引擎层 ✅
+- 8个数据源适配器
+- 统一引擎 + 并行搜索
+- 相似度评分 + GB/T 7714引用
 
-| 模块 | 说明 |
-|------|------|
-| `engine.py` | `UnifiedSearchEngine` — 8源并行 + 去重 + 摘要补全 + 评分 + 引用 |
-| `sources/openalex.py` | OpenAlex API，倒排索引摘要重建 |
-| `sources/crossref.py` | CrossRef REST API |
-| `sources/semantic_scholar.py` | Semantic Scholar Graph API |
-| `sources/arxiv.py` | arXiv Python 包 |
-| `sources/pubmed.py` | PubMed E-utilities (esearch + efetch XML) |
-| `sources/google_scholar.py` | scholarly 库 |
-| `sources/scopus.py` | Elsevier Scopus API |
-| `enricher.py` | OpenAlex 摘要补全 + 速率限制 |
-| `scorer.py` | Levenshtein + 中文二元分词 + 停用词 + 相似度评分 |
-| `citation.py` | GB/T 7714-2015 引用格式化（中英文分别处理） |
-
-### 7. AI 服务层 ✅
-
-- `AIRouter` 类：OpenAI + Anthropic 双协议
-- 同步 `chat()` + 流式 `stream_chat()`
-- DeepSeek `reasoning_content` 处理 → thinking 折叠
-- Anthropic `thinking` block 处理
-- 模型选择：purpose 匹配 → 活跃状态 → fallback
+### 7. AI服务层 ✅
+- OpenAI + Anthropic双协议
+- 流式输出 + thinking折叠
+- 多模型路由
 
 ### 8. 文献管理页面 ✅
-
-- 5 Tab 结构：关键词检索 / 标题检索 / AI综述 / 选题讨论 / 历史记录
-- 关键词组构建器（AND/OR 组，动态添加/删除）
-- 数据源复选框 + 最大结果数
-- QThread 后台搜索 + 进度条
-- `PaperCard` 组件（标题/作者/摘要/来源/操作按钮）
-- 搜索历史持久化
+- 5 Tab结构
+- 关键词组构建器
+- PaperCard组件
 
 ### 9. 设置页面 ✅
-
-- AI 模型配置：表格展示 + 添加/删除对话框
-- 主题切换：暗色/亮色 QComboBox
-- 搜索设置：数据源复选框 + 最大结果数
-- 数据管理：导入按钮（占位）
+- AI模型配置 + 主题切换
+- 搜索设置 + 数据导入
 
 ---
 
-## Phase 2: 已完成（2026-06-12）
+## Phase 2: 核心功能 ✅ (2026-06-12)
 
 ### 试验管理模块 ✅
-
-- [x] `app/models/experiment.py` — Experiment + ExperimentResult（版本化结果 + 代码片段存档）
-- [x] `app/services/experiment_service.py` — CRUD + 版本管理 + Markdown 导出
-- [x] `app/ui/pages/experiment_page.py` — 分栏布局 + 3 Tab（信息/结果/关联）+ 参数对比
+- Experiment + ExperimentResult模型（版本化+代码片段）
+- CRUD + 版本管理 + Markdown导出
+- 分栏布局 + 3 Tab（信息/结果/关联）
 
 ### 知识库模块 ✅
+- KnowledgeCard + Tag + CardTag关联表
+- 卡片CRUD + 标签管理 + 从文献生成卡片
+- 卡片网格 + 搜索 + 分类/标签过滤 + 星级评分
 
-- [x] `app/models/knowledge.py` — KnowledgeCard + Tag + CardTag 关联表
-- [x] `app/services/knowledge_service.py` — 卡片 CRUD + 标签管理 + 从文献生成卡片
-- [x] `app/ui/pages/knowledge_page.py` — 卡片网格 + 搜索 + 分类/标签过滤 + 星级评分
-
-### AI 对话模块 ✅
-
-- [x] `app/models/chat.py` — ChatSession + ChatMessage（含 thinking_content）
-- [x] `app/services/chat_service.py` — 会话管理 + 消息持久化 + 消息构建
-- [x] `app/ui/pages/chat_page.py` — 对话界面 + QThread 流式输出 + thinking 折叠
-- [x] 写作辅助 prompt（润色/翻译/LaTeX/摘要）
-- [x] 跨模块联动（保存为知识卡片）
+### AI对话模块 ✅
+- ChatSession + ChatMessage（含thinking_content）
+- 会话管理 + 消息持久化
+- 对话界面 + QThread流式输出 + thinking折叠
+- 写作辅助（润色/翻译/LaTeX/摘要）
+- 跨模块联动（保存为知识卡片）
 
 ### 主窗口更新 ✅
-
-- 侧边栏 6 项导航全部激活
-- 版本号更新为 v0.2.0
+- 侧边栏7项导航全部激活
+- 版本号v0.2.0
 
 ---
 
-## Phase 3: 已完成（2026-06-12）
+## Phase 3: 完善 ✅ (2026-06-12)
 
 ### 仪表盘 ✅
-
-- [x] 统计聚合（任务/文献/试验/知识卡片）— 6 个 StatCard 网格
-- [x] 近期活动流 — 最近完成的任务 + 搜索历史 + 试验更新
-- [x] 进度可视化 — 月度完成率
+- 6个统计卡片 + 近期活动流
+- 月度完成率 + 任务/文献/试验/知识卡片统计
 
 ### 时钟组件 ✅
-
-- [x] `app/ui/widgets/clock_widget.py` — QPainter 辉光管/机械表双模式
-- [x] 嵌入状态栏（紧凑模式 HH:MM:SS）
-- [x] 浮动窗口（完整辉光管效果 + 双击切换机械表）
+- QPainter辉光管/机械表双模式
+- 紧凑模式嵌入状态栏
+- 浮动窗口（完整效果+双击切换）
 
 ### 命令面板 ✅
-
-- [x] `app/ui/dialogs/command_palette.py` — Ctrl+K 唤出
-- [x] 全局搜索（任务/文献/试验/知识卡片）
-- [x] 跨模块结果分组
-- [x] 页面快速跳转
+- Ctrl+K全局搜索
+- 跨模块结果分组
+- 页面快速跳转
 
 ### 打包与备份 ✅
+- PyInstaller构建脚本
+- 自动备份（1月+1周+6日）
+- 启动时自动备份 + 过期清理
 
-- [x] `build.py` — PyInstaller 构建脚本
-- [x] `app/services/backup_service.py` — 自动备份（1月 + 1周 + 6日）
-- [x] 启动时自动备份 + 备份清理
+---
 
-### 主窗口更新 ✅
+## Phase 4: Bug修复 + UI优化 ✅ (2026-06-12)
 
-- 侧边栏 7 项导航（新增仪表盘）
-- 状态栏集成时钟组件
-- Ctrl+K 命令面板快捷键
-- 版本号更新为 v0.3.0
+### 文献搜索关键修复 ✅
+- 数据源名称映射（UI显示名→引擎内部key）
+- 查询格式修正（空格连接而非AND/OR）
+- 引擎选择支持大小写不敏感匹配
+- 根本原因: "OpenAlex" != "openalex" 导致搜索永远返回0
+
+### 主题切换修复 ✅
+- 侧边栏/导航列表/状态栏样式随主题更新
+- 所有页面添加reapply_theme方法
+- 切换主题后自动刷新当前页面
+
+### 全页面UI优化 ✅
+- 统一RADIUS常量（16-24px大圆角）
+- 使用共享QSS模板
+- 修复硬编码颜色
+- 滚动条统一细圆风格
+
+### AI对话Markdown渲染 ✅
+- AI回复使用QTextBrowser支持Markdown
+- 流式输出累积后setMarkdown渲染
+
+### 文献管理渲染修复 ✅
+- AI综述: QTextBrowser + 流式Markdown渲染
+- 选题讨论: JSON解析美化为Markdown格式
+- 历史记录: 双击详情 + 重载按钮 + 底部预览区
+
+### 无边框窗口 + 浮动时钟 ✅
+- 主窗口FramelessWindowHint无边框
+- 自定义标题栏（拖拽+最小化/最大化/关闭）
+- 托盘菜单"显示浮动时钟"
+- clock-1999辉光管/机械表/番茄钟完整可用
+
+---
+
+## Phase 5: Tauri 2 前端重构 🚧 (2026-06-12)
+
+### 已完成
+- [x] Rust安装 (1.96.0)
+- [x] Tauri 2项目创建 (`nexus-ui/`)
+- [x] React + TypeScript + Tailwind CSS配置
+- [x] Open Sans字体集成
+- [x] 玻璃质感CSS样式系统
+- [x] 7个页面组件（Dashboard/Task/Literature/Experiment/Knowledge/Chat/Settings）
+- [x] Sidebar组件（分组导航）
+- [x] Tauri配置（无边框窗口）
+
+### 进行中
+- [ ] VS Build Tools C++工作负载安装
+- [ ] Tauri Rust编译
+- [ ] Python FastAPI后端API包装
+- [ ] 前后端HTTP通信
+
+### 待完成
+- [ ] 所有页面功能完善
+- [ ] 流式AI对话
+- [ ] Markdown渲染
+- [ ] 打包发布
 
 ---
 
@@ -165,14 +177,29 @@ Phase 3: 仪表盘 + 时钟 + 命令面板 + 打包    [████████
 | 测试项 | 状态 |
 |--------|------|
 | 模块导入 | ✅ 通过 |
-| 主窗口启动（7页面+状态栏+时钟） | ✅ 通过 |
-| 试验 CRUD + 版本管理 | ✅ 通过 |
-| 知识卡片 + 标签管理 | ✅ 通过 |
-| 对话会话 + 消息持久化 | ✅ 通过 |
-| 仪表盘统计聚合 | ✅ 通过 |
-| 自动备份 | ✅ 通过 |
-| 命令面板搜索 | ✅ 通过 |
-| 相似度评分算法 | ✅ 通过 |
-| GB/T 7714 引用格式化 | ✅ 通过 |
-| 数据库建表 + CRUD | ✅ 通过 |
+| 数据库CRUD | ✅ 通过 |
 | 主窗口启动 | ✅ 通过 |
+| 文献搜索（名称映射修复后） | ✅ 通过 |
+| 主题切换 | ✅ 通过 |
+| AI对话Markdown渲染 | ✅ 通过 |
+| 历史记录重载 | ✅ 通过 |
+| 无边框窗口+拖拽 | ✅ 通过 |
+| 浮动时钟 | ✅ 通过 |
+| 自动备份 | ✅ 通过 |
+
+---
+
+## Git历史
+
+```
+e7b25b4 fix: 文献管理渲染修复 - Markdown/JSON/历史重载
+2c30c74 fix: 5项重大修复 - 搜索/主题/UI/Markdown/无边框
+2ab9795 fix: 侧边栏导航修复 + AI对话页面UI优化
+741bae5 feat: 5项修复 + 玻璃质感UI重构
+4ddfd26 fix: 5项修复 - UI配色/任务跳转/文献搜索/托盘图标/时钟番茄钟
+1cfadf8 style: UI美化 - 精致主题系统 + 组件样式优化
+0021d53 feat: Phase 2 - 试验管理 + 知识库 + AI对话
+225101a fix: pyproject.toml build-backend and package discovery
+96f5eff fix: QSizePolicy import and task_service query
+fef9c46 feat: Phase 1 - 项目骨架 + 任务 + 文献 + 搜索引擎 + AI服务 + 设置
+```
