@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction, QKeySequence, QShortcut
 
-from app.ui.theme import get_theme, SCROLLBAR_QSS
+from app.ui.theme import get_theme, SCROLLBAR_QSS, LIST_WIDGET_QSS
 
 
 class MainWindow(QMainWindow):
@@ -44,7 +44,13 @@ class MainWindow(QMainWindow):
 
         # ── 侧边栏 ────────────────────────────────────────
         self._sidebar = QWidget()
-        self._sidebar.setFixedWidth(200)
+        self._sidebar.setFixedWidth(220)
+        self._sidebar.setStyleSheet(f"""
+            QWidget {{
+                background-color: {self._theme.get('sidebar')};
+                border-right: 1px solid {self._theme.get('border')};
+            }}
+        """)
         sidebar_layout = QVBoxLayout(self._sidebar)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
@@ -52,12 +58,20 @@ class MainWindow(QMainWindow):
         # Logo 区域
         logo_frame = QWidget()
         logo_frame.setFixedHeight(72)
+        logo_frame.setStyleSheet(f"""
+            QWidget {{
+                background-color: transparent;
+                border-bottom: 1px solid {self._theme.get('border')};
+            }}
+        """)
         logo_layout = QVBoxLayout(logo_frame)
-        logo_layout.setContentsMargins(16, 12, 16, 8)
-        title = QLabel("🧠 AI Nexus")
-        title.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
+        logo_layout.setContentsMargins(20, 16, 20, 12)
+        title = QLabel("NEXUS")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {self._theme.get('accent_l')}; letter-spacing: 2px;")
         subtitle = QLabel("个人科研助手")
-        subtitle.setFont(QFont("Microsoft YaHei", 8))
+        subtitle.setFont(QFont("Microsoft YaHei", 9))
+        subtitle.setStyleSheet(f"color: {self._theme.get('text_d')};")
         logo_layout.addWidget(title)
         logo_layout.addWidget(subtitle)
         sidebar_layout.addWidget(logo_frame)
@@ -69,33 +83,37 @@ class MainWindow(QMainWindow):
                 background-color: transparent;
                 border: none;
                 outline: none;
+                padding: 8px 6px;
             }}
             QListWidget::item {{
-                padding: 12px 16px;
+                padding: 11px 16px;
                 color: {self._theme.get('text_d')};
                 border-left: 3px solid transparent;
+                border-radius: 0 6px 6px 0;
                 font-size: 13px;
+                margin: 1px 0;
             }}
             QListWidget::item:hover {{
                 background-color: {self._theme.get('sidebar_h')};
                 color: {self._theme.get('text')};
+                border-left-color: {self._theme.get('border_l')};
             }}
             QListWidget::item:selected {{
                 background-color: {self._theme.get('sidebar_s')};
-                color: {self._theme.get('accent')};
+                color: {self._theme.get('accent_l')};
                 border-left: 3px solid {self._theme.get('accent')};
                 font-weight: bold;
             }}
         """)
 
         nav_items = [
-            ("📊  仪表盘", True),
-            ("📋  任务与日程", True),
-            ("📚  文献管理", True),
-            ("🧪  试验管理", True),
-            ("🧠  知识库", True),
-            ("💬  AI 对话", True),
-            ("⚙️  设置", True),
+            ("◆  仪表盘", True),
+            ("◇  任务与日程", True),
+            ("◈  文献管理", True),
+            ("◉  试验管理", True),
+            ("◎  知识库", True),
+            ("◊  AI 对话", True),
+            ("○  设置", True),
         ]
         for text, enabled in nav_items:
             item = QListWidgetItem(text)
@@ -110,8 +128,13 @@ class MainWindow(QMainWindow):
         # 底部版本标签
         version_label = QLabel("v0.3.0")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_label.setStyleSheet(f"""
+            color: {self._theme.get('text_d')};
+            font-size: 11px;
+            padding: 8px;
+            border-top: 1px solid {self._theme.get('border')};
+        """)
         sidebar_layout.addWidget(version_label)
-        sidebar_layout.addSpacing(8)
 
         layout.addWidget(self._sidebar)
 
@@ -220,17 +243,20 @@ class MainWindow(QMainWindow):
 
     def _apply_style(self):
         """应用全局样式"""
+        from app.ui.theme import TOOLTIP_QSS
         self.setStyleSheet(f"""
             QMainWindow {{
                 background-color: {self._theme.get('bg')};
             }}
             QWidget {{
                 color: {self._theme.get('text')};
+                font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
             }}
             QLabel {{
                 color: {self._theme.get('text')};
             }}
             {SCROLLBAR_QSS()}
+            {TOOLTIP_QSS()}
         """)
 
     def _on_theme_changed(self, mode: str):
@@ -246,15 +272,18 @@ class MainWindow(QMainWindow):
         status_bar = QStatusBar()
         status_bar.setStyleSheet(f"""
             QStatusBar {{
-                background-color: {self._theme.get('sidebar')};
+                background-color: {self._theme.get('statusbar')};
                 color: {self._theme.get('text_d')};
                 border-top: 1px solid {self._theme.get('border')};
-                padding: 2px 8px;
+                padding: 4px 12px;
+                font-size: 12px;
             }}
         """)
 
         # 左侧信息
-        status_bar.addWidget(QLabel("  AI Nexus Assistant"))
+        info_label = QLabel("  AI Nexus Assistant")
+        info_label.setStyleSheet(f"color: {self._theme.get('text_d')};")
+        status_bar.addWidget(info_label)
 
         # 右侧时钟
         self._clock = ClockWidget(compact=True)

@@ -1,19 +1,19 @@
-"""文献卡片组件 — 展示单篇文献信息"""
+"""文献卡片组件 — 精致设计，来源标签 + 操作按钮"""
 
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
-from app.ui.theme import get_theme, BTN_SECONDARY_QSS
+from app.ui.theme import get_theme, BTN_SECONDARY_QSS, RADIUS
 
 
 class PaperCard(QFrame):
     """文献卡片"""
 
-    detail_clicked = Signal(str)   # paper_id
-    cite_clicked = Signal(str)     # paper_id
-    summary_clicked = Signal(str)  # paper_id
+    detail_clicked = Signal(str)
+    cite_clicked = Signal(str)
+    summary_clicked = Signal(str)
 
     def __init__(self, paper_data: dict, index: int = 0, parent=None):
         super().__init__(parent)
@@ -25,25 +25,25 @@ class PaperCard(QFrame):
     def _setup_ui(self):
         t = self._theme
         self.setStyleSheet(f"""
-            PaperCard {{
+            QFrame {{
                 background-color: {t.get('card')};
                 border: 1px solid {t.get('border')};
-                border-radius: 8px;
+                border-radius: {RADIUS['lg']};
             }}
-            PaperCard:hover {{
+            QFrame:hover {{
                 border-color: {t.get('accent')};
                 background-color: {t.get('card_h')};
             }}
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(6)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
 
         # 标题行
         title_row = QHBoxLayout()
         idx_label = QLabel(f"[{self._index}]")
-        idx_label.setFont(QFont("Microsoft YaHei", 9, QFont.Weight.Bold))
+        idx_label.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
         idx_label.setStyleSheet(f"color: {t.get('accent')};")
         idx_label.setFixedWidth(30)
         title_row.addWidget(idx_label)
@@ -60,11 +60,12 @@ class PaperCard(QFrame):
         if source:
             src_label = QLabel(source)
             src_label.setStyleSheet(f"""
-                background-color: {t.get('sidebar_s')};
-                color: {t.get('text_d')};
-                border-radius: 4px;
+                background-color: {t.get('accent_bg')};
+                color: {t.get('accent_l')};
+                border-radius: {RADIUS['sm']};
                 padding: 2px 8px;
                 font-size: 10px;
+                font-weight: bold;
             """)
             title_row.addWidget(src_label)
 
@@ -96,14 +97,14 @@ class PaperCard(QFrame):
             abs_label = QLabel(preview)
             abs_label.setWordWrap(True)
             abs_label.setFont(QFont("Microsoft YaHei", 9))
-            abs_label.setStyleSheet(f"color: {t.get('text_d')};")
+            abs_label.setStyleSheet(f"color: {t.get('text_d')}; line-height: 1.4;")
             layout.addWidget(abs_label)
 
         # 操作按钮
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
 
-        for text, signal in [("📖 详情", "detail_clicked"), ("📋 引用", "cite_clicked"), ("🤖 AI总结", "summary_clicked")]:
+        for text, signal in [("详情", "detail_clicked"), ("引用", "cite_clicked"), ("AI总结", "summary_clicked")]:
             btn = QPushButton(text)
             btn.setStyleSheet(BTN_SECONDARY_QSS())
             btn.setFixedHeight(28)

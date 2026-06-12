@@ -1,9 +1,9 @@
-"""统计卡片组件 — 复用自 ai-research-manager，增强 hover 效果"""
+"""统计卡片组件 — 精致设计，hover 高亮 + 阴影层次"""
 
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QLabel, QSizePolicy
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from app.ui.theme import get_theme
+from app.ui.theme import get_theme, RADIUS
 
 
 class StatCard(QFrame):
@@ -18,8 +18,8 @@ class StatCard(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(6)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(8)
 
         # 图标 + 标题
         header = QLabel(f"{icon}  {title}" if icon else title)
@@ -29,7 +29,7 @@ class StatCard(QFrame):
 
         # 数值
         self._value_label = QLabel(value)
-        self._value_label.setFont(QFont("Microsoft YaHei", 28, QFont.Weight.Bold))
+        self._value_label.setFont(QFont("Segoe UI", 32, QFont.Weight.Bold))
         self._value_label.setStyleSheet(f"color: {self._accent};")
         layout.addWidget(self._value_label)
 
@@ -46,15 +46,17 @@ class StatCard(QFrame):
         self._value_label.setText(value)
 
     def _update_style(self):
+        t = self._theme
         self.setStyleSheet(f"""
             StatCard {{
-                background-color: {self._theme.get('card')};
-                border: 1px solid {self._theme.get('border')};
-                border-radius: 10px;
+                background-color: {t.get('card')};
+                border: 1px solid {t.get('border')};
+                border-radius: {RADIUS['lg']};
                 border-left: 3px solid {self._accent};
             }}
             StatCard:hover {{
-                background-color: {self._theme.get('card_h')};
-                border-color: {self._accent};
+                background-color: {t.get('card_h')};
+                border-color: {t.get('border_l')};
+                border-left-color: {self._accent};
             }}
         """)
