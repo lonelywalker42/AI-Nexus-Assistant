@@ -318,42 +318,61 @@ class MainWindow(QMainWindow):
         self._tray.show()
 
     def _create_tray_icon(self) -> QIcon:
-        """绘制精致托盘图标 — 蓝绿清新渐变"""
+        """绘制精致托盘图标 — 渐变蓝绿 + 阴影 + 高光"""
         pixmap = QPixmap(64, 64)
         pixmap.fill(QColor(0, 0, 0, 0))
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        from PySide6.QtGui import QRadialGradient, QLinearGradient, QBrush
+        from PySide6.QtGui import QRadialGradient, QLinearGradient, QBrush, QPen
 
-        # 外层光晕（蓝色）
-        glow = QRadialGradient(32, 32, 32)
-        glow.setColorAt(0.6, QColor(59, 130, 246, 40))
+        # 外层柔光
+        glow = QRadialGradient(32, 32, 36)
+        glow.setColorAt(0.5, QColor(59, 130, 246, 30))
         glow.setColorAt(1.0, QColor(59, 130, 246, 0))
         painter.setBrush(QBrush(glow))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(0, 0, 64, 64)
 
-        # 主体圆 — 蓝绿渐变
-        grad = QLinearGradient(10, 10, 54, 54)
-        grad.setColorAt(0.0, QColor(59, 130, 246))    # 蓝
-        grad.setColorAt(0.5, QColor(37, 99, 235))     # 深蓝
+        # 底层阴影
+        shadow = QRadialGradient(33, 34, 28)
+        shadow.setColorAt(0.7, QColor(0, 0, 0, 25))
+        shadow.setColorAt(1.0, QColor(0, 0, 0, 0))
+        painter.setBrush(QBrush(shadow))
+        painter.drawEllipse(6, 7, 52, 52)
+
+        # 主体圆 — 蓝→青 渐变
+        grad = QLinearGradient(8, 8, 56, 56)
+        grad.setColorAt(0.0, QColor(96, 165, 250))    # 亮蓝
+        grad.setColorAt(0.4, QColor(59, 130, 246))    # 蓝
         grad.setColorAt(1.0, QColor(6, 182, 212))     # 青
         painter.setBrush(QBrush(grad))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(8, 8, 48, 48)
 
-        # 内部高光
-        highlight = QRadialGradient(26, 24, 20)
-        highlight.setColorAt(0.0, QColor(255, 255, 255, 60))
+        # 内环高光（左上）
+        highlight = QRadialGradient(24, 22, 22)
+        highlight.setColorAt(0.0, QColor(255, 255, 255, 70))
+        highlight.setColorAt(0.6, QColor(255, 255, 255, 15))
         highlight.setColorAt(1.0, QColor(255, 255, 255, 0))
         painter.setBrush(QBrush(highlight))
-        painter.drawEllipse(12, 12, 40, 36)
+        painter.drawEllipse(10, 10, 44, 40)
 
-        # 文字 "N"
-        painter.setPen(QColor(255, 255, 255, 240))
-        painter.setFont(QFont("Inter", 26, QFont.Weight.Bold))
-        painter.drawText(pixmap.rect().adjusted(0, -2, 0, 0), Qt.AlignmentFlag.AlignCenter, "N")
+        # 顶部弧形高光
+        arc_highlight = QRadialGradient(32, 18, 20)
+        arc_highlight.setColorAt(0.0, QColor(255, 255, 255, 45))
+        arc_highlight.setColorAt(1.0, QColor(255, 255, 255, 0))
+        painter.setBrush(QBrush(arc_highlight))
+        painter.drawEllipse(16, 8, 32, 24)
+
+        # 文字 "N" 带阴影
+        painter.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
+        # 文字阴影
+        painter.setPen(QColor(0, 0, 0, 40))
+        painter.drawText(pixmap.rect().adjusted(1, 1, 1, 1), Qt.AlignmentFlag.AlignCenter, "N")
+        # 文字本体
+        painter.setPen(QColor(255, 255, 255, 245))
+        painter.drawText(pixmap.rect().adjusted(0, -1, 0, -1), Qt.AlignmentFlag.AlignCenter, "N")
 
         painter.end()
         return QIcon(pixmap)

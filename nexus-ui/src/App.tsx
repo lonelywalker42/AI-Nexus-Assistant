@@ -19,6 +19,33 @@ const PAGES = [
   { id: "settings", label: "设置", icon: "⚙️" },
 ];
 
+// Tauri 窗口控制
+async function windowMinimize() {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().minimize();
+  } catch {}
+}
+
+async function windowToggleMaximize() {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    if (await win.isMaximized()) {
+      await win.unmaximize();
+    } else {
+      await win.maximize();
+    }
+  } catch {}
+}
+
+async function windowClose() {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().close();
+  } catch {}
+}
+
 function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [loading, setLoading] = useState(true);
@@ -65,16 +92,27 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg-gradient)' }}>
-      {/* 标题栏 */}
-      <div className="fixed top-0 left-0 right-0 h-9 z-50 flex items-center justify-between px-4"
-           style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #e2e8f0' }}
-           data-tauri-drag-region>
-        <span className="text-xs text-slate-400 select-none">AI Nexus Assistant</span>
-        <div className="flex gap-1">
-          <button className="w-7 h-5 rounded hover:bg-slate-100 text-slate-400 text-xs">—</button>
-          <button className="w-7 h-5 rounded hover:bg-slate-100 text-slate-400 text-xs">□</button>
-          <button className="w-7 h-5 rounded hover:bg-red-500 hover:text-white text-slate-400 text-xs">×</button>
+    <div className="flex h-screen overflow-hidden select-none" style={{ background: 'var(--bg-gradient)' }}>
+      {/* 标题栏 — data-tauri-drag-region 使整个区域可拖拽 */}
+      <div
+        className="fixed top-0 left-0 right-0 h-9 z-50 flex items-center justify-between px-4"
+        style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #e2e8f0' }}
+        data-tauri-drag-region
+      >
+        <span className="text-xs text-slate-400 pointer-events-none">AI Nexus Assistant</span>
+        <div className="flex gap-0.5" style={{ pointerEvents: "auto" }}>
+          <button
+            onClick={windowMinimize}
+            className="w-9 h-7 rounded hover:bg-slate-200 text-slate-500 text-sm flex items-center justify-center"
+          >—</button>
+          <button
+            onClick={windowToggleMaximize}
+            className="w-9 h-7 rounded hover:bg-slate-200 text-slate-500 text-sm flex items-center justify-center"
+          >□</button>
+          <button
+            onClick={windowClose}
+            className="w-9 h-7 rounded hover:bg-red-500 hover:text-white text-slate-500 text-sm flex items-center justify-center"
+          >×</button>
         </div>
       </div>
 
@@ -89,6 +127,12 @@ function App() {
           {renderPage()}
         </div>
       </main>
+
+      {/* 右下角缩放提示 */}
+      <div
+        className="fixed bottom-0 right-0 w-4 h-4 pointer-events-none z-50"
+        style={{ background: 'linear-gradient(135deg, transparent 50%, #94a3b8 50%)', opacity: 0.3 }}
+      />
     </div>
   );
 }

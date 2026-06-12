@@ -610,7 +610,7 @@ def import_json(data: dict):
                 card = KnowledgeCard(
                     title=p.get("title", "")[:200],
                     summary=p.get("summary", p.get("abstract", ""))[:1000],
-                    key_points=json.dumps(p.get("key_points", []), ensure_ascii=False),
+                    key_points=json.dumps(p.get("key_points", p.get("keywords", [])), ensure_ascii=False),
                     source_type="literature",
                     star_rating=p.get("starRating", 0),
                     user_notes=p.get("userNotes", ""),
@@ -627,10 +627,10 @@ def import_json(data: dict):
                 if not messages:
                     continue
                 title = session.get("title", topic.get("title", "DeepSeek对话"))[:200]
-                summary_parts = [m.get("content", "")[:200] for m in messages if m.get("role") == "assistant"]
+                summary_parts = [m.get("content", "")[:300] for m in messages if m.get("role") == "assistant"]
                 card = KnowledgeCard(
                     title=title,
-                    summary="\n".join(summary_parts)[:1000],
+                    summary="\n\n".join(summary_parts)[:2000],
                     source_type="deepseek",
                 )
                 db.add(card)
@@ -638,6 +638,175 @@ def import_json(data: dict):
 
         db.commit()
         return {"imported": imported}
+    finally:
+        db.close()
+
+
+@app.post("/api/knowledge/import/pdf")
+async def import_pdf(file: bytes = None):
+    """导入 PDF 文件，提取文本生成知识卡片"""
+    if not file:
+        return {"error": "No file provided"}
+
+    import tempfile
+    import fitz  # PyMuPDF
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(file)
+        tmp_path = tmp.name
+
+    try:
+        doc = fitz.open(tmp_path)
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        doc.close()
+
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        title = lines[0][:200] if lines else "导入的PDF"
+
+        # 用 AI 生成摘要和关键点
+        ai = get_ai()
+        summary_result = ai.chat([
+            {"role": "system", "content": "你是一个学术文献分析助手。请从以下文本中提取：1) 简短摘要(200字以内) 2) 3-5个关键点 3) 5个标签关键词。用JSON格式返回：{\"summary\": \"...\", \"key_points\": [...], \"tags\": [...]}"},
+            {"role": "user", "content": text[:3000]}
+        ])
+        summary_content = summary_result.get("content", "")
+
+        # 尝试解析 AI 返回的 JSON
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', summary_content)
+        ai_data = {}
+        if json_match:
+            try:
+                ai_data = json.loads(json_match.group())
+            except:
+                pass
+
+        db = get_session()
+        try:
+            card = KnowledgeCard(
+                title=title,
+                summary=ai_data.get("summary", text[:500]),
+                key_points=json.dumps(ai_data.get("key_points", []), ensure_ascii=False),
+                source_type="literature",
+            )
+            db.add(card)
+
+            # 添加标签
+            tags = ai_data.get("tags", [])
+            for tag_name in tags:
+                tag = db.get(Tag, tag_name)
+                if not tag:
+                    tag = Tag(name=tag_name, status="suggested", usage_count=0)
+                    db.add(tag)
+                tag.usage_count = (tag.usage_count or 0) + 1
+                db.add(CardTag(card_id=card.id, tag_name=tag_name))
+
+            db.commit()
+            return {"imported": 1, "title": title, "tags": tags}
+        finally:
+            db.close()
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.post("/api/knowledge/import/md")
+async def import_markdown(data: dict):
+    """导入 Markdown 文件，按 ## 标题分割生成知识卡片"""
+    content = data.get("content", "")
+    filename = data.get("filename", "导入的Markdown")
+
+    if not content:
+        return {"error": "No content provided"}
+
+    # 按 ## 标题分割
+    sections = []
+    current_title = filename
+    current_content = []
+
+    for line in content.split("\n"):
+        if line.startswith("## ") or line.startswith("# "):
+            if current_content:
+                sections.append({"title": current_title, "content": "\n".join(current_content)})
+            current_title = line.lstrip("#").strip()
+            current_content = []
+        else:
+            current_content.append(line)
+
+    if current_content:
+        sections.append({"title": current_title, "content": "\n".join(current_content)})
+
+    # 为每个 section 创建知识卡片
+    db = get_session()
+    try:
+        imported = 0
+        for section in sections:
+            if len(section["content"].strip()) < 50:  # 跳过太短的段落
+                continue
+            card = KnowledgeCard(
+                title=section["title"][:200],
+                summary=section["content"][:1000],
+                source_type="manual",
+            )
+            db.add(card)
+            imported += 1
+
+        db.commit()
+        return {"imported": imported}
+    finally:
+        db.close()
+
+
+@app.post("/api/knowledge/generate")
+def generate_card_from_text(data: dict):
+    """从文本生成知识卡片（AI 处理）"""
+    text = data.get("text", "")
+    source_type = data.get("source_type", "manual")
+
+    if not text:
+        return {"error": "No text provided"}
+
+    ai = get_ai()
+    result = ai.chat([
+        {"role": "system", "content": "你是一个知识管理助手。请从以下文本中提取：1) 标题 2) 简短摘要(200字以内) 3) 3-5个关键点 4) 5个标签。用JSON格式返回：{\"title\": \"...\", \"summary\": \"...\", \"key_points\": [...], \"tags\": [...]}"},
+        {"role": "user", "content": text[:3000]}
+    ])
+
+    import re
+    json_match = re.search(r'\{[\s\S]*\}', result.get("content", ""))
+    ai_data = {}
+    if json_match:
+        try:
+            ai_data = json.loads(json_match.group())
+        except:
+            pass
+
+    if not ai_data:
+        ai_data = {"title": text[:60], "summary": text[:300], "key_points": [], "tags": []}
+
+    db = get_session()
+    try:
+        card = KnowledgeCard(
+            title=ai_data.get("title", text[:60])[:200],
+            summary=ai_data.get("summary", text[:300])[:1000],
+            key_points=json.dumps(ai_data.get("key_points", []), ensure_ascii=False),
+            source_type=source_type,
+        )
+        db.add(card)
+
+        for tag_name in ai_data.get("tags", []):
+            tag = db.get(Tag, tag_name)
+            if not tag:
+                tag = Tag(name=tag_name, status="suggested", usage_count=0)
+                db.add(tag)
+            tag.usage_count = (tag.usage_count or 0) + 1
+            db.add(CardTag(card_id=card.id, tag_name=tag_name))
+
+        db.commit()
+        return {"id": card.id, "title": card.title, "tags": ai_data.get("tags", [])}
     finally:
         db.close()
 
