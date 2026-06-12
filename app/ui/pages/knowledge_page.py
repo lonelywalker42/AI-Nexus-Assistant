@@ -12,7 +12,7 @@ from PySide6.QtGui import QFont
 
 from app.ui.theme import (
     get_theme, BTN_PRIMARY_QSS, BTN_SECONDARY_QSS, BTN_DANGER_QSS,
-    INPUT_QSS, COMBO_QSS,
+    INPUT_QSS, COMBO_QSS, LIST_WIDGET_QSS, SCROLLBAR_QSS, RADIUS,
 )
 from app.db import get_session
 from app.services import knowledge_service
@@ -69,24 +69,7 @@ class KnowledgePage(QWidget):
 
         self._tag_list = QListWidget()
         self._tag_list.setMaximumHeight(200)
-        self._tag_list.setStyleSheet(f"""
-            QListWidget {{
-                background-color: transparent;
-                border: none;
-            }}
-            QListWidget::item {{
-                padding: 4px 8px;
-                border-radius: 4px;
-                color: {t.get('text')};
-            }}
-            QListWidget::item:hover {{
-                background-color: {t.get('sidebar_h')};
-            }}
-            QListWidget::item:selected {{
-                background-color: {t.get('sidebar_s')};
-                color: {t.get('accent')};
-            }}
-        """)
+        self._tag_list.setStyleSheet(LIST_WIDGET_QSS())
         self._tag_list.currentTextChanged.connect(self._on_tag_selected)
         left_layout.addWidget(self._tag_list, 1)
 
@@ -234,7 +217,7 @@ class KnowledgePage(QWidget):
             QFrame {{
                 background-color: {t.get('card')};
                 border: 1px solid {t.get('border')};
-                border-radius: 8px;
+                border-radius: {RADIUS['xl']};
                 padding: 8px;
             }}
             QFrame:hover {{

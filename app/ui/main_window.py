@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QStackedWidget, QSystemTrayIcon,
-    QMenu, QMessageBox, QStatusBar,
+    QMenu, QMessageBox, QStatusBar, QPushButton,
 )
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction, QKeySequence, QShortcut
@@ -12,7 +12,7 @@ from app.ui.theme import get_theme, SCROLLBAR_QSS, LIST_WIDGET_QSS
 
 
 class MainWindow(QMainWindow):
-    """AI Nexus Assistant 主窗口"""
+    """AI Nexus Assistant 主窗口 — 无边框可拖拽"""
 
     def __init__(self):
         super().__init__()
@@ -20,8 +20,14 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1200, 750)
         self.resize(1360, 860)
 
+        # 无边框窗口
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+
         self._theme = get_theme()
         self._pages: list[QWidget] = []
+        self._drag_pos = None
+        self._floating_clock = None  # 浮动时钟窗口
         self._setup_ui()
         self._setup_tray()
         self._setup_status_bar()
@@ -38,7 +44,92 @@ class MainWindow(QMainWindow):
         """构建 UI"""
         central = QWidget()
         self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # ── 自定义标题栏（无边框窗口拖拽 + 控制按钮） ───────
+        title_bar = QWidget()
+        title_bar.setFixedHeight(36)
+        title_bar.setStyleSheet(f"""
+            background-color: {self._theme.get('sidebar')};
+            border-bottom: 1px solid {self._theme.get('border')};
+        """)
+        title_bar_layout = QHBoxLayout(title_bar)
+        title_bar_layout.setContentsMargins(12, 0, 12, 0)
+
+        # 标题文字
+        title_text = QLabel("AI Nexus Assistant")
+        title_text.setFont(QFont("Inter", 10))
+        title_text.setStyleSheet(f"color: {self._theme.get('text_d')};")
+        title_bar_layout.addWidget(title_text)
+        title_bar_layout.addStretch()
+
+        # 最小化按钮
+        min_btn = QPushButton("—")
+        min_btn.setFixedSize(32, 28)
+        min_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {self._theme.get('text_d')};
+                border: none;
+                border-radius: 6px;
+                font-size: 14px;
+            }}
+            QPushButton:hover {{
+                background-color: {self._theme.get('row_h')};
+            }}
+        """)
+        min_btn.clicked.connect(self.showMinimized)
+        title_bar_layout.addWidget(min_btn)
+
+        # 最大化/还原按钮
+        self._max_btn = QPushButton("□")
+        self._max_btn.setFixedSize(32, 28)
+        self._max_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {self._theme.get('text_d')};
+                border: none;
+                border-radius: 6px;
+                font-size: 14px;
+            }}
+            QPushButton:hover {{
+                background-color: {self._theme.get('row_h')};
+            }}
+        """)
+        self._max_btn.clicked.connect(self._toggle_maximize)
+        title_bar_layout.addWidget(self._max_btn)
+
+        # 关闭按钮
+        close_btn = QPushButton("×")
+        close_btn.setFixedSize(32, 28)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {self._theme.get('text_d')};
+                border: none;
+                border-radius: 6px;
+                font-size: 16px;
+            }}
+            QPushButton:hover {{
+                background-color: {self._theme.get('red')};
+                color: white;
+            }}
+        """)
+        close_btn.clicked.connect(self.close)
+        title_bar_layout.addWidget(close_btn)
+
+        # 标题栏拖拽
+        title_bar.mousePressEvent = self._title_mouse_press
+        title_bar.mouseMoveEvent = self._title_mouse_move
+        title_bar.mouseReleaseEvent = self._title_mouse_release
+
+        main_layout.addWidget(title_bar)
+
+        # ── 主内容区域 ─────────────────────────────────────
+        content = QWidget()
+        layout = QHBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -166,6 +257,8 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         layout.addWidget(self._stack, 1)
 
+        main_layout.addWidget(content)
+
         # 创建页面（Phase 1: 任务、文献、设置）
         self._init_pages()
 
@@ -209,10 +302,13 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         open_action = QAction("打开主窗口", self)
         open_action.triggered.connect(self._show_window)
+        clock_action = QAction("显示浮动时钟", self)
+        clock_action.triggered.connect(self._launch_floating_clock)
         quit_action = QAction("退出", self)
         quit_action.triggered.connect(self._quit_app)
 
         menu.addAction(open_action)
+        menu.addAction(clock_action)
         menu.addSeparator()
         menu.addAction(quit_action)
 
@@ -306,10 +402,69 @@ class MainWindow(QMainWindow):
         """)
 
     def _on_theme_changed(self, mode: str):
-        """主题切换回调"""
+        """主题切换回调 — 重新渲染所有组件"""
         self._apply_style()
-        # 重新绘制托盘图标
         self._tray.setIcon(self._create_tray_icon())
+
+        # 重新设置侧边栏样式
+        self._sidebar.setStyleSheet(f"""
+            QWidget {{
+                background-color: {self._theme.get('sidebar')};
+                border-right: 1px solid {self._theme.get('border')};
+            }}
+        """)
+
+        # 重新设置导航列表样式
+        self._nav_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: transparent;
+                border: none;
+                outline: none;
+                padding: 12px 10px;
+            }}
+            QListWidget::item {{
+                padding: 12px 16px;
+                color: {self._theme.get('text_d')};
+                border-left: 3px solid transparent;
+                border-radius: 12px;
+                font-size: 13px;
+                margin: 2px 0;
+            }}
+            QListWidget::item:hover {{
+                background-color: {self._theme.get('row_h')};
+                color: {self._theme.get('text')};
+            }}
+            QListWidget::item:selected {{
+                background-color: {self._theme.get('accent_bg')};
+                color: {self._theme.get('accent')};
+                border-left: 3px solid {self._theme.get('accent')};
+                font-weight: 600;
+            }}
+        """)
+
+        # 重新设置状态栏样式
+        if hasattr(self, 'statusBar'):
+            sb = self.statusBar()
+            if sb:
+                sb.setStyleSheet(f"""
+                    QStatusBar {{
+                        background-color: {self._theme.get('statusbar')};
+                        color: {self._theme.get('text_d')};
+                        border-top: 1px solid {self._theme.get('border')};
+                        padding: 6px 16px;
+                        font-size: 12px;
+                    }}
+                """)
+
+        # 刷新所有页面的主题
+        for page in self._pages:
+            if hasattr(page, 'reapply_theme'):
+                page.reapply_theme()
+
+        # 刷新当前页面
+        current_row = self._nav_list.currentRow()
+        if current_row >= 0:
+            self._switch_page(current_row)
 
     def _setup_status_bar(self):
         """状态栏 — 时钟 + 信息"""
@@ -370,3 +525,37 @@ class MainWindow(QMainWindow):
                 print(f"[Backup] Cleaned {result['cleaned']} old backups")
         except Exception as e:
             print(f"[Backup] Error: {e}")
+
+    # ── 无边框窗口拖拽 ──────────────────────────────────────
+
+    def _title_mouse_press(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.pos()
+
+    def _title_mouse_move(self, event):
+        if self._drag_pos:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+
+    def _title_mouse_release(self, event):
+        self._drag_pos = None
+
+    def _toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+            self._max_btn.setText("□")
+        else:
+            self.showMaximized()
+            self._max_btn.setText("❐")
+
+    # ── 浮动时钟 ────────────────────────────────────────────
+
+    def _launch_floating_clock(self):
+        """启动独立的 clock-1999 浮动时钟窗口"""
+        if self._floating_clock is not None and self._floating_clock.isVisible():
+            self._floating_clock.activateWindow()
+            return
+
+        from app.ui.widgets.clock_widget import ClockWidget
+        self._floating_clock = ClockWidget(compact=False)
+        self._floating_clock.setWindowTitle("Clock")
+        self._floating_clock.show()

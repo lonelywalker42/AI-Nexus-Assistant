@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QColor
 
-from app.ui.theme import get_theme
+from app.ui.theme import get_theme, BTN_SECONDARY_QSS, SCROLLBAR_QSS, RADIUS
 from app.ui.widgets.stat_card import StatCard
 from app.db import get_session
 from app.services import task_service, experiment_service, knowledge_service
@@ -36,20 +36,8 @@ class DashboardPage(QWidget):
         header.addWidget(title)
         header.addStretch()
 
-        refresh_btn = QPushButton("🔄 刷新")
-        refresh_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: transparent;
-                color: {t.get('text_d')};
-                border: 1px solid {t.get('border')};
-                border-radius: 6px;
-                padding: 6px 12px;
-            }}
-            QPushButton:hover {{
-                border-color: {t.get('accent')};
-                color: {t.get('accent')};
-            }}
-        """)
+        refresh_btn = QPushButton("刷新")
+        refresh_btn.setStyleSheet(BTN_SECONDARY_QSS())
         refresh_btn.clicked.connect(self.refresh)
         header.addWidget(refresh_btn)
         layout.addLayout(header)
@@ -57,7 +45,13 @@ class DashboardPage(QWidget):
         # 滚动区域
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("background-color: transparent; border: none;")
+        scroll.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: transparent;
+                border: none;
+            }}
+            {SCROLLBAR_QSS()}
+        """)
         content = QWidget()
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -192,11 +186,12 @@ class DashboardPage(QWidget):
                         QFrame {{
                             background-color: {t.get('card')};
                             border: 1px solid {t.get('border')};
-                            border-radius: 6px;
+                            border-radius: {RADIUS['lg']};
                             padding: 4px;
                         }}
                         QFrame:hover {{
                             background-color: {t.get('card_h')};
+                            border-color: {t.get('border_l')};
                         }}
                     """)
                     row_layout = QHBoxLayout(row)

@@ -80,7 +80,13 @@ class UnifiedSearchEngine:
     def _select_engines(self, sources: list[str] | None) -> dict[str, SearchEngine]:
         if not sources:
             return dict(self.engines)
-        return {name: self.engines[name] for name in sources if name in self.engines}
+        # 小写匹配，忽略大小写
+        result = {}
+        for name in sources:
+            key = name.lower().strip()
+            if key in self.engines:
+                result[key] = self.engines[key]
+        return result
 
     def _search_one(self, engine: SearchEngine, query: str, max_results: int) -> List[PaperData]:
         return engine.search(query, max_results)

@@ -74,6 +74,9 @@ class LiteraturePage(QWidget):
     def refresh(self):
         self._load_history()
 
+    def reapply_theme(self):
+        self._theme = get_theme()
+
     # ── Tab 1: 关键词检索 ────────────────────────────────────
 
     def _build_keyword_tab(self) -> QWidget:
@@ -108,17 +111,27 @@ class LiteraturePage(QWidget):
         kw_btn_row.addStretch()
         layout.addLayout(kw_btn_row)
 
-        # 数据源选择
+        # 数据源选择（显示名 → 引擎内部key）
         sources_row = QHBoxLayout()
         sources_label = QLabel("数据源:")
         sources_row.addWidget(sources_label)
         self._source_cbs = {}
-        for name, default in [("OpenAlex", True), ("arXiv", True), ("Semantic Scholar", True),
-                               ("CrossRef", False), ("PubMed", False), ("Google Scholar", False), ("Scopus", False)]:
-            cb = QCheckBox(name)
+        # (显示名, 引擎key, 默认选中)
+        source_options = [
+            ("OpenAlex", "openalex", True),
+            ("arXiv", "arxiv", True),
+            ("Semantic Scholar", "semantic_scholar", True),
+            ("CrossRef", "crossref", False),
+            ("PubMed", "pubmed", False),
+            ("Google Scholar", "google_scholar", False),
+            ("Scopus", "scopus", False),
+        ]
+        for display_name, engine_key, default in source_options:
+            cb = QCheckBox(display_name)
             cb.setChecked(default)
             cb.setStyleSheet(f"color: {t.get('text')};")
-            self._source_cbs[name] = cb
+            cb.setProperty("engine_key", engine_key)  # 存储引擎key
+            self._source_cbs[engine_key] = cb  # 用引擎key作为字典key
             sources_row.addWidget(cb)
         sources_row.addStretch()
 
@@ -286,13 +299,14 @@ class LiteraturePage(QWidget):
             self._kw_stats.setStyleSheet(f"color: {self._theme.get('orange')};")
             return
 
-        # 构建查询字符串
-        query_parts = [" AND ".join(g) for g in query_groups]
-        query_str = " OR ".join(query_parts)
+        # 构建查询字符串（每个OR组内用空格连接，组间用空格分隔）
+        # 与 ai-literature 原版一致：group.join(' ')
+        query_parts = [" ".join(g) for g in query_groups]
+        query_str = " ".join(query_parts)
         self._current_query = query_str
 
-        # 获取选中的数据源
-        sources = [name for name, cb in self._source_cbs.items() if cb.isChecked()]
+        # 获取选中的数据源（使用引擎内部key）
+        sources = [key for key, cb in self._source_cbs.items() if cb.isChecked()]
         if not sources:
             self._kw_stats.setText("请至少选择一个数据源")
             self._kw_stats.setStyleSheet(f"color: {self._theme.get('orange')};")

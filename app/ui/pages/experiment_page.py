@@ -13,7 +13,7 @@ from PySide6.QtGui import QFont
 
 from app.ui.theme import (
     get_theme, BTN_PRIMARY_QSS, BTN_SECONDARY_QSS, BTN_DANGER_QSS,
-    INPUT_QSS, COMBO_QSS, TABLE_QSS, TAB_QSS,
+    INPUT_QSS, COMBO_QSS, TABLE_QSS, TAB_QSS, LIST_WIDGET_QSS, SCROLLBAR_QSS, RADIUS,
 )
 from app.db import get_session
 from app.services import experiment_service
@@ -58,24 +58,7 @@ class ExperimentPage(QWidget):
 
         # 试验列表
         self._exp_list = QListWidget()
-        self._exp_list.setStyleSheet(f"""
-            QListWidget {{
-                background-color: transparent;
-                border: none;
-            }}
-            QListWidget::item {{
-                padding: 10px;
-                border-radius: 6px;
-                color: {t.get('text')};
-            }}
-            QListWidget::item:hover {{
-                background-color: {t.get('sidebar_h')};
-            }}
-            QListWidget::item:selected {{
-                background-color: {t.get('sidebar_s')};
-                color: {t.get('accent')};
-            }}
-        """)
+        self._exp_list.setStyleSheet(LIST_WIDGET_QSS())
         self._exp_list.currentRowChanged.connect(self._on_exp_selected)
         left_layout.addWidget(self._exp_list, 1)
 

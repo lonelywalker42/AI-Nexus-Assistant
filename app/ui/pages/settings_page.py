@@ -151,24 +151,9 @@ class SettingsPage(QWidget):
         self._load_models()
 
     def _create_group(self, title: str) -> QGroupBox:
-        t = self._theme
+        from app.ui.theme import GROUPBOX_QSS
         group = QGroupBox(title)
-        group.setStyleSheet(f"""
-            QGroupBox {{
-                background-color: {t.get('card')};
-                border: 1px solid {t.get('border')};
-                border-radius: 8px;
-                margin-top: 12px;
-                padding: 16px 12px 12px 12px;
-                font-weight: bold;
-                color: {t.get('text_b')};
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 16px;
-                padding: 0 8px;
-            }}
-        """)
+        group.setStyleSheet(GROUPBOX_QSS())
         return group
 
     def _load_models(self):

@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QSplitter, QListWidget, QListWidgetItem, QFrame,
+    QTextEdit, QTextBrowser, QSplitter, QListWidget, QListWidgetItem, QFrame,
     QComboBox, QScrollArea, QMessageBox, QSizePolicy,
 )
 from PySide6.QtCore import Qt, QThread, Signal
@@ -400,6 +400,7 @@ class ChatPage(QWidget):
         self._start_streaming(messages, model_id)
 
     def _start_streaming(self, messages: list[dict], model_id: str | None):
+        self._stream_buffer = ""  # 重置流式缓冲区
         self._current_ai_widget = self._append_message_widget("assistant", "", "")
 
         if self._worker and self._worker.isRunning():
@@ -421,8 +422,15 @@ class ChatPage(QWidget):
 
     def _on_content_chunk(self, text: str):
         if hasattr(self, '_current_ai_widget'):
-            content_label = self._current_ai_widget._content_label
-            content_label.setText(content_label.text() + text)
+            content_widget = self._current_ai_widget._content_label
+            if isinstance(content_widget, QTextBrowser):
+                # QTextBrowser: 累积内容后设置Markdown
+                if not hasattr(self, '_stream_buffer'):
+                    self._stream_buffer = ""
+                self._stream_buffer += text
+                content_widget.setMarkdown(self._stream_buffer)
+            else:
+                content_widget.setText(content_widget.text() + text)
 
     def _on_stream_finished(self, thinking: str, content: str):
         if self._current_session_id:
@@ -496,12 +504,26 @@ class ChatPage(QWidget):
         layout.addWidget(thinking_label)
         frame._thinking_label = thinking_label
 
-        # 主内容
-        content_label = QLabel(content)
-        content_label.setWordWrap(True)
-        content_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
-        content_label.setFont(QFont("Inter", 13))
+        # 主内容 — AI用QTextBrowser支持Markdown渲染
+        if is_user:
+            content_label = QLabel(content)
+            content_label.setWordWrap(True)
+            content_label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+            content_label.setFont(QFont("Inter", 13))
+        else:
+            content_label = QTextBrowser()
+            content_label.setOpenExternalLinks(True)
+            content_label.setMarkdown(content) if content else None
+            content_label.setFont(QFont("Inter", 13))
+            content_label.setStyleSheet(f"""
+                QTextBrowser {{
+                    background-color: transparent;
+                    color: {t.get('text')};
+                    border: none;
+                    padding: 4px;
+                }}
+            """)
         content_label.setStyleSheet(f"""
             color: {'white' if is_user else t.get('text')};
             line-height: 1.5;

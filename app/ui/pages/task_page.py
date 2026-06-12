@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QFont
 
-from app.ui.theme import get_theme, BTN_PRIMARY_QSS, BTN_SECONDARY_QSS, INPUT_QSS, COMBO_QSS
+from app.ui.theme import get_theme, BTN_PRIMARY_QSS, BTN_SECONDARY_QSS, INPUT_QSS, COMBO_QSS, SCROLLBAR_QSS, RADIUS
 from app.ui.widgets.calendar_widget import CalendarWidget
 from app.ui.widgets.stat_card import StatCard
 from app.db import get_session
@@ -173,6 +173,17 @@ class TaskPage(QWidget):
         self._refresh_list()
         self._refresh_stats()
 
+    def reapply_theme(self):
+        """主题切换后重新应用样式"""
+        self._theme = get_theme()
+        t = self._theme
+        # 重新设置子组件样式
+        self.setStyleSheet(f"background-color: {t.get('bg')};")
+        if hasattr(self, '_calendar'):
+            self._calendar._theme = t
+            self._calendar._apply_style()
+        self._refresh_list()  # 重建任务卡片
+
     def _go_today(self):
         """跳转到今日"""
         today = QDate.currentDate()
@@ -249,11 +260,12 @@ class TaskPage(QWidget):
             QFrame {{
                 background-color: {t.get('card')};
                 border: 1px solid {t.get('border')};
-                border-radius: 8px;
+                border-radius: {RADIUS['lg']};
                 border-left: 3px solid {self._priority_color(task.priority)};
             }}
             QFrame:hover {{
                 background-color: {t.get('card_h')};
+                border-color: {t.get('border_l')};
             }}
         """)
 
@@ -320,7 +332,7 @@ class TaskPage(QWidget):
             }}
             QPushButton:hover {{
                 background-color: {t.get('red')};
-                color: white;
+                color: {t.get('text_w')};
             }}
         """)
         del_btn.clicked.connect(lambda _, tid=task.id: self._delete_task(tid))
