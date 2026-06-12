@@ -1,12 +1,12 @@
-"""主窗口框架 — 侧边栏导航 + QStackedWidget 页面切换 + 系统托盘"""
+"""主窗口框架 — 侧边栏导航 + QStackedWidget 页面切换 + 系统托盘 + 时钟 + 命令面板"""
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QStackedWidget, QSystemTrayIcon,
-    QMenu, QMessageBox,
+    QMenu, QMessageBox, QStatusBar,
 )
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction, QKeySequence, QShortcut
 
 from app.ui.theme import get_theme, SCROLLBAR_QSS
 
@@ -24,10 +24,15 @@ class MainWindow(QMainWindow):
         self._pages: list[QWidget] = []
         self._setup_ui()
         self._setup_tray()
+        self._setup_status_bar()
+        self._setup_shortcuts()
         self._apply_style()
 
         # 监听主题切换
         self._theme.theme_changed.connect(self._on_theme_changed)
+
+        # 自动备份
+        self._auto_backup()
 
     def _setup_ui(self):
         """构建 UI"""
@@ -84,6 +89,7 @@ class MainWindow(QMainWindow):
         """)
 
         nav_items = [
+            ("📊  仪表盘", True),
             ("📋  任务与日程", True),
             ("📚  文献管理", True),
             ("🧪  试验管理", True),
@@ -102,7 +108,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(self._nav_list, 1)
 
         # 底部版本标签
-        version_label = QLabel("v0.2.0")
+        version_label = QLabel("v0.3.0")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sidebar_layout.addWidget(version_label)
         sidebar_layout.addSpacing(8)
@@ -118,6 +124,7 @@ class MainWindow(QMainWindow):
 
     def _init_pages(self):
         """初始化所有页面"""
+        from app.ui.pages.dashboard_page import DashboardPage
         from app.ui.pages.task_page import TaskPage
         from app.ui.pages.literature_page import LiteraturePage
         from app.ui.pages.experiment_page import ExperimentPage
@@ -126,12 +133,13 @@ class MainWindow(QMainWindow):
         from app.ui.pages.settings_page import SettingsPage
 
         self._pages = [
-            TaskPage(),              # 0: 任务与日程
-            LiteraturePage(),        # 1: 文献管理
-            ExperimentPage(),        # 2: 试验管理
-            KnowledgePage(),         # 3: 知识库
-            ChatPage(),              # 4: AI 对话
-            SettingsPage(),          # 5: 设置
+            DashboardPage(),         # 0: 仪表盘
+            TaskPage(),              # 1: 任务与日程
+            LiteraturePage(),        # 2: 文献管理
+            ExperimentPage(),        # 3: 试验管理
+            KnowledgePage(),         # 4: 知识库
+            ChatPage(),              # 5: AI 对话
+            SettingsPage(),          # 6: 设置
         ]
 
         for page in self._pages:
@@ -230,3 +238,57 @@ class MainWindow(QMainWindow):
         self._apply_style()
         # 重新绘制托盘图标
         self._tray.setIcon(self._create_tray_icon())
+
+    def _setup_status_bar(self):
+        """状态栏 — 时钟 + 信息"""
+        from app.ui.widgets.clock_widget import ClockWidget
+
+        status_bar = QStatusBar()
+        status_bar.setStyleSheet(f"""
+            QStatusBar {{
+                background-color: {self._theme.get('sidebar')};
+                color: {self._theme.get('text_d')};
+                border-top: 1px solid {self._theme.get('border')};
+                padding: 2px 8px;
+            }}
+        """)
+
+        # 左侧信息
+        status_bar.addWidget(QLabel("  AI Nexus Assistant"))
+
+        # 右侧时钟
+        self._clock = ClockWidget(compact=True)
+        status_bar.addPermanentWidget(self._clock)
+
+        self.setStatusBar(status_bar)
+
+    def _setup_shortcuts(self):
+        """快捷键"""
+        # Ctrl+K: 命令面板
+        shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        shortcut.activated.connect(self._show_command_palette)
+
+    def _show_command_palette(self):
+        """显示命令面板"""
+        from app.ui.dialogs.command_palette import CommandPalette
+        palette = CommandPalette(self)
+        palette.navigate.connect(self._navigate_to)
+        palette.exec()
+
+    def _navigate_to(self, page_index: int, item_id: str):
+        """从命令面板导航到指定页面"""
+        if 0 <= page_index < len(self._pages):
+            self._nav_list.setCurrentRow(page_index)
+            self._switch_page(page_index)
+
+    def _auto_backup(self):
+        """启动时自动备份"""
+        try:
+            from app.services.backup_service import auto_backup
+            result = auto_backup()
+            if result.get("created"):
+                print(f"[Backup] Created: {result['created']}")
+            if result.get("cleaned", 0) > 0:
+                print(f"[Backup] Cleaned {result['cleaned']} old backups")
+        except Exception as e:
+            print(f"[Backup] Error: {e}")
