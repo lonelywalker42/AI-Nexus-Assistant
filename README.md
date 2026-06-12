@@ -16,7 +16,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS + FastAPI | **11MB** | ✅ 可用 |
+| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS + FastAPI | **358MB** | ✅ 可用 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ### 整合的源项目
@@ -32,16 +32,17 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 
 ### 核心特性
 
-- **全局仪表盘** — 统计聚合 + 近期活动流 + 月度完成率
-- **任务与日程** — 日历视图 + 待办管理 + 周计划 + 四级优先级
-- **8源文献搜索** — OpenAlex, CrossRef, Semantic Scholar, arXiv, PubMed, Google Scholar, Scopus + OpenAlex摘要补全
+- **全局仪表盘** — 统计聚合 + 近期活动 + 可点击跳转
+- **任务与日程** — 日历视图 + 待办 + 主线任务置顶 + 四级优先级
+- **8源文献搜索** — OpenAlex/CrossRef/Semantic Scholar/arXiv/PubMed/Google Scholar/Scopus + 摘要补全
 - **AI综述与选题** — 流式Markdown渲染 + JSON结构化选题 + 历史重载
 - **试验管理** — 版本化结果 + 参数快照 + 代码片段存档 + Markdown导出
-- **知识库** — 知识卡片 + 标签分类 + 星级评分 + 多格式导入
+- **知识库** — 知识卡片 + 多格式导入(JSON/Markdown/PDF) + AI生成 + 标签分类
 - **AI对话** — 流式输出 + Markdown渲染 + thinking折叠 + 写作辅助
-- **统一AI服务** — OpenAI + Anthropic 双协议，DeepSeek thinking 内容折叠
-- **桌面时钟** — 辉光管/机械表/番茄钟三模式 + 浮动窗口
-- **玻璃质感UI** — 清新蓝绿配色 + 高圆角 + Open Sans字体
+- **统一AI服务** — OpenAI + Anthropic 双协议
+- **桌面时钟** — 辉光管/机械表/番茄钟 + 浮动窗口
+- **无边框窗口** — 自定义标题栏拖拽 + 最小化/最大化/关闭
+- **自动备份** — 1月 + 1周 + 6日策略
 
 ## 技术架构
 
@@ -55,7 +56,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 │                 │ HTTP REST API              │
 │  ┌──────────────▼────────────────────────┐  │
 │  │  Python FastAPI 后端 (server.py)       │  │
-│  │  31 个 REST 路由                       │  │
+│  │  36+ REST 路由                         │  │
 │  └──────────────┬────────────────────────┘  │
 │                 │                            │
 │  ┌──────────────▼────────────────────────┐  │
@@ -70,13 +71,15 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 ### Tauri 2 版（推荐）
 
 ```bash
-# 前置条件: Rust + Node.js + VS Build Tools (C++)
+# 前置条件: Rust + Node.js + VS Build Tools (C++) + Windows SDK
 git clone https://github.com/lonelywalker42/AI-Nexus-Assistant.git
 cd AI-Nexus-Assistant
 
-# 启动 Python 后端
+# 安装 Python 依赖
 pip install -e .
 pip install fastapi uvicorn
+
+# 启动 Python 后端
 python server.py &
 
 # 启动 Tauri 前端
@@ -94,6 +97,10 @@ pip install -e .
 python main.py
 ```
 
+### 便携版（无需开发环境）
+
+将 `release/` 目录下的两个 exe 放在同一目录，双击 `AI-Nexus-Assistant.exe` 即可。
+
 详细说明见 [usage.md](usage.md)
 
 ## 项目结构
@@ -101,12 +108,14 @@ python main.py
 ```
 AI-Nexus-Assistant/
 ├── main.py                     # PySide6 入口
-├── server.py                   # FastAPI 后端 API (31 路由)
+├── server.py                   # FastAPI 后端 (36+ 路由)
 ├── pyproject.toml              # Python 项目配置
+├── build_server.py             # 后端 sidecar 构建脚本
+├── build_tauri.py              # 一键构建脚本
 │
 ├── app/                        # Python 核心层
 │   ├── db.py                   # 数据库 (SQLAlchemy + SQLite)
-│   ├── models/                 # 数据模型 (7个)
+│   ├── models/                 # 数据模型 (8个)
 │   ├── services/               # 业务逻辑 (7个)
 │   ├── ai/                     # AI服务 (OpenAI + Anthropic)
 │   ├── search/                 # 搜索引擎 (8源)
@@ -114,17 +123,43 @@ AI-Nexus-Assistant/
 │
 ├── nexus-ui/                   # Tauri 2 前端
 │   ├── src/
-│   │   ├── api/client.ts       # API 客户端 (连接 FastAPI)
-│   │   ├── App.tsx             # 主应用
+│   │   ├── api/client.ts       # API 客户端
+│   │   ├── App.tsx             # 主应用 (无边框窗口+拖拽)
 │   │   ├── components/         # 组件
 │   │   └── pages/              # 7 个页面
 │   └── src-tauri/              # Rust 壳
-│       ├── Cargo.toml
-│       ├── tauri.conf.json
-│       └── target/release/nexus-ui.exe (11MB)
+│
+├── release/                    # 便携版发布文件
+│   ├── AI-Nexus-Assistant.exe  # Tauri 壳 (11MB)
+│   └── nexus-server-*.exe      # Python 后端 (347MB)
 │
 └── data/                       # 运行时数据 (gitignore)
 ```
+
+## API 接口
+
+FastAPI 后端提供 36+ REST 路由：
+
+| 模块 | 路由 | 方法 | 说明 |
+|------|------|------|------|
+| 仪表盘 | `/api/dashboard` | GET | 聚合统计 |
+| 任务 | `/api/tasks` | GET/POST | CRUD |
+| 任务 | `/api/tasks/{id}/toggle` | POST | 切换完成 |
+| 搜索 | `/api/search` | POST | 8源文献搜索 |
+| 试验 | `/api/experiments` | GET/POST | CRUD |
+| 试验 | `/api/experiments/{id}/results` | POST | 添加结果 |
+| 知识库 | `/api/knowledge/cards` | GET/POST | CRUD |
+| 知识库 | `/api/knowledge/import/json` | POST | JSON导入 |
+| 知识库 | `/api/knowledge/import/pdf` | POST | PDF导入+AI提取 |
+| 知识库 | `/api/knowledge/import/md` | POST | Markdown导入 |
+| 知识库 | `/api/knowledge/generate` | POST | AI生成卡片 |
+| 对话 | `/api/chat/sessions` | GET/POST | 会话管理 |
+| 对话 | `/api/chat/stream` | POST | 流式对话(SSE) |
+| 模型 | `/api/models` | GET/POST/DELETE | 模型配置 |
+| 备份 | `/api/backup` | POST | 手动备份 |
+| 历史 | `/api/history` | GET | 搜索历史 |
+
+API 文档: `http://127.0.0.1:8765/docs`
 
 ## 开发进度
 
@@ -135,32 +170,9 @@ AI-Nexus-Assistant/
 | Phase 3 | 仪表盘 + 时钟 + 命令面板 + 打包备份 | ✅ 完成 |
 | Phase 4 | Bug修复 + UI优化 + 无边框窗口 | ✅ 完成 |
 | Phase 5 | Tauri 2 前端 + FastAPI 后端 | ✅ 完成 |
+| Phase 6 | Issue修复 + 知识库增强 + 窗口控制 | ✅ 完成 |
 
 详细进展见 [development.md](development.md)
-
-## API 接口
-
-FastAPI 后端提供 31 个 REST 路由：
-
-| 模块 | 路由 | 方法 |
-|------|------|------|
-| 仪表盘 | `/api/dashboard` | GET |
-| 任务 | `/api/tasks` | GET/POST |
-| 任务 | `/api/tasks/{id}` | PATCH/DELETE |
-| 任务 | `/api/tasks/{id}/toggle` | POST |
-| 搜索 | `/api/search` | POST |
-| 试验 | `/api/experiments` | GET/POST |
-| 试验 | `/api/experiments/{id}/results` | POST |
-| 知识库 | `/api/knowledge/cards` | GET/POST |
-| 知识库 | `/api/knowledge/cards/{id}` | PATCH/DELETE |
-| 知识库 | `/api/knowledge/tags` | GET |
-| 对话 | `/api/chat/sessions` | GET/POST |
-| 对话 | `/api/chat/sessions/{id}/messages` | GET/POST |
-| 对话 | `/api/chat/stream` | POST (SSE) |
-| 模型 | `/api/models` | GET/POST/DELETE |
-| 历史 | `/api/history` | GET |
-
-API 文档：启动后端后访问 `http://127.0.0.1:8765/docs`
 
 ## 相关文档
 
