@@ -318,64 +318,57 @@ class MainWindow(QMainWindow):
         self._tray.show()
 
     def _create_tray_icon(self) -> QIcon:
-        """绘制精致托盘图标 — 渐变蓝绿 + 阴影 + 高光"""
-        pixmap = QPixmap(64, 64)
-        pixmap.fill(QColor(0, 0, 0, 0))
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
+        """绘制精致托盘图标 — 蓝紫渐变 + 神经网络风格"""
         from PySide6.QtGui import QRadialGradient, QLinearGradient, QBrush, QPen
 
-        # 外层柔光
-        glow = QRadialGradient(32, 32, 36)
-        glow.setColorAt(0.5, QColor(59, 130, 246, 30))
-        glow.setColorAt(1.0, QColor(59, 130, 246, 0))
-        painter.setBrush(QBrush(glow))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(0, 0, 64, 64)
+        icon = QIcon()
+        for size in [16, 32, 48, 64, 128]:
+            pixmap = QPixmap(size, size)
+            pixmap.fill(QColor(0, 0, 0, 0))
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            s = size / 64.0  # 缩放因子
 
-        # 底层阴影
-        shadow = QRadialGradient(33, 34, 28)
-        shadow.setColorAt(0.7, QColor(0, 0, 0, 25))
-        shadow.setColorAt(1.0, QColor(0, 0, 0, 0))
-        painter.setBrush(QBrush(shadow))
-        painter.drawEllipse(6, 7, 52, 52)
+            # 外层柔光
+            glow = QRadialGradient(32*s, 32*s, 34*s)
+            glow.setColorAt(0.5, QColor(124, 106, 239, 25))
+            glow.setColorAt(1.0, QColor(124, 106, 239, 0))
+            painter.setBrush(QBrush(glow))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(0, 0, size, size)
 
-        # 主体圆 — 蓝→青 渐变
-        grad = QLinearGradient(8, 8, 56, 56)
-        grad.setColorAt(0.0, QColor(96, 165, 250))    # 亮蓝
-        grad.setColorAt(0.4, QColor(59, 130, 246))    # 蓝
-        grad.setColorAt(1.0, QColor(6, 182, 212))     # 青
-        painter.setBrush(QBrush(grad))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(8, 8, 48, 48)
+            # 主体圆 — 蓝紫渐变
+            grad = QLinearGradient(8*s, 8*s, 56*s, 56*s)
+            grad.setColorAt(0.0, QColor(139, 124, 240))   # 亮紫
+            grad.setColorAt(0.5, QColor(96, 165, 250))    # 蓝
+            grad.setColorAt(1.0, QColor(59, 130, 246))    # 深蓝
+            painter.setBrush(QBrush(grad))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(int(6*s), int(6*s), int(52*s), int(52*s))
 
-        # 内环高光（左上）
-        highlight = QRadialGradient(24, 22, 22)
-        highlight.setColorAt(0.0, QColor(255, 255, 255, 70))
-        highlight.setColorAt(0.6, QColor(255, 255, 255, 15))
-        highlight.setColorAt(1.0, QColor(255, 255, 255, 0))
-        painter.setBrush(QBrush(highlight))
-        painter.drawEllipse(10, 10, 44, 40)
+            # 内环高光
+            highlight = QRadialGradient(24*s, 22*s, 20*s)
+            highlight.setColorAt(0.0, QColor(255, 255, 255, 60))
+            highlight.setColorAt(0.7, QColor(255, 255, 255, 10))
+            highlight.setColorAt(1.0, QColor(255, 255, 255, 0))
+            painter.setBrush(QBrush(highlight))
+            painter.drawEllipse(int(10*s), int(10*s), int(44*s), int(38*s))
 
-        # 顶部弧形高光
-        arc_highlight = QRadialGradient(32, 18, 20)
-        arc_highlight.setColorAt(0.0, QColor(255, 255, 255, 45))
-        arc_highlight.setColorAt(1.0, QColor(255, 255, 255, 0))
-        painter.setBrush(QBrush(arc_highlight))
-        painter.drawEllipse(16, 8, 32, 24)
+            # 文字 "N"
+            if size >= 32:
+                font_size = int(22 * s)
+                painter.setFont(QFont("Segoe UI", font_size, QFont.Weight.Bold))
+                # 阴影
+                painter.setPen(QColor(0, 0, 0, 50))
+                painter.drawText(pixmap.rect().adjusted(1, 2, 1, 2), Qt.AlignmentFlag.AlignCenter, "N")
+                # 本体
+                painter.setPen(QColor(255, 255, 255, 250))
+                painter.drawText(pixmap.rect().adjusted(0, 1, 0, 1), Qt.AlignmentFlag.AlignCenter, "N")
 
-        # 文字 "N" 带阴影
-        painter.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
-        # 文字阴影
-        painter.setPen(QColor(0, 0, 0, 40))
-        painter.drawText(pixmap.rect().adjusted(1, 1, 1, 1), Qt.AlignmentFlag.AlignCenter, "N")
-        # 文字本体
-        painter.setPen(QColor(255, 255, 255, 245))
-        painter.drawText(pixmap.rect().adjusted(0, -1, 0, -1), Qt.AlignmentFlag.AlignCenter, "N")
+            painter.end()
+            icon.addPixmap(pixmap)
 
-        painter.end()
-        return QIcon(pixmap)
+        return icon
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:

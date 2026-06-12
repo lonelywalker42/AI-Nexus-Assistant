@@ -111,9 +111,6 @@ def step4_package():
     print("=" * 60)
 
     release_dir = PROJECT_DIR / "release"
-    if release_dir.exists():
-        shutil.rmtree(release_dir)
-    release_dir.mkdir()
 
     # 复制 Tauri exe
     tauri_exe = RELEASE_DIR / "nexus-ui.exe"
@@ -121,19 +118,13 @@ def step4_package():
         shutil.copy2(tauri_exe, release_dir / "AI-Nexus-Assistant.exe")
         print(f"  -> {release_dir / 'AI-Nexus-Assistant.exe'}")
 
-    # 复制 sidecar（Tauri 需要在同目录找到它）
-    sidecar = BINARIES_DIR / "nexus-server-x86_64-pc-windows-msvc.exe"
-    if sidecar.exists():
-        shutil.copy2(sidecar, release_dir / "nexus-server-x86_64-pc-windows-msvc.exe")
-        print(f"  -> {release_dir / 'nexus-server-x86_64-pc-windows-msvc.exe'}")
-
     # 复制 WebView2 loader（如果存在）
     for dll in RELEASE_DIR.glob("*.dll"):
         shutil.copy2(dll, release_dir / dll.name)
         print(f"  -> {release_dir / dll.name}")
 
     # 统计
-    total = sum(f.stat().st_size for f in release_dir.iterdir())
+    total = sum(f.stat().st_size for f in release_dir.iterdir() if f.is_file())
     print(f"\nRelease package: {release_dir}")
     print(f"Total size: {total / 1024 / 1024:.1f} MB")
 

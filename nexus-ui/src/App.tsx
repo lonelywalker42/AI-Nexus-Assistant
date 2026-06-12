@@ -100,18 +100,21 @@ function App() {
         data-tauri-drag-region
       >
         <span className="text-xs text-slate-400 pointer-events-none">AI Nexus Assistant</span>
-        <div className="flex gap-0.5" style={{ pointerEvents: "auto" }}>
+        <div className="flex gap-0.5" data-tauri-drag-region="false">
           <button
             onClick={windowMinimize}
             className="w-9 h-7 rounded hover:bg-slate-200 text-slate-500 text-sm flex items-center justify-center"
+            data-tauri-drag-region="false"
           >—</button>
           <button
             onClick={windowToggleMaximize}
             className="w-9 h-7 rounded hover:bg-slate-200 text-slate-500 text-sm flex items-center justify-center"
+            data-tauri-drag-region="false"
           >□</button>
           <button
             onClick={windowClose}
             className="w-9 h-7 rounded hover:bg-red-500 hover:text-white text-slate-500 text-sm flex items-center justify-center"
+            data-tauri-drag-region="false"
           >×</button>
         </div>
       </div>

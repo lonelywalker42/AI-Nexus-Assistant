@@ -12,8 +12,17 @@ from datetime import date, datetime
 from typing import Optional
 from pathlib import Path
 
-# 确保 app 包可导入
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 确保 app 包可导入（兼容 PyInstaller frozen 模式）
+if getattr(sys, 'frozen', False):
+    base_dir = Path(sys.executable).parent
+    sys.path.insert(0, str(Path(sys._MEIPASS)))
+else:
+    base_dir = Path(__file__).parent
+    sys.path.insert(0, str(base_dir))
+
+# 确保 data 目录存在（exe 旁边，不在临时目录）
+data_dir = base_dir / "data"
+data_dir.mkdir(parents=True, exist_ok=True)
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
