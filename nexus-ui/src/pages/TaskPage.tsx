@@ -12,6 +12,7 @@ export default function TaskPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTask, setNewTask] = useState("");
   const [priority, setPriority] = useState("normal");
+  const [category, setCategory] = useState("general");
   const [marks, setMarks] = useState<Record<string, string>>({});
 
   const loadTasks = () => tasksApi.list(selectedDate).then(setTasks).catch(console.error);
@@ -25,7 +26,7 @@ export default function TaskPage() {
 
   const handleAdd = async () => {
     if (!newTask.trim()) return;
-    await tasksApi.create({ date: selectedDate, content: newTask.trim(), priority });
+    await tasksApi.create({ date: selectedDate, content: newTask.trim(), priority, category });
     setNewTask("");
     loadTasks();
     loadMarks();
@@ -125,14 +126,29 @@ export default function TaskPage() {
             <option value="high">高</option>
             <option value="urgent">紧急</option>
           </select>
+          <select className="input-glass w-24" value={category} onChange={e => setCategory(e.target.value)}>
+            <option value="general">普通</option>
+            <option value="main">主线</option>
+            <option value="literature">文献</option>
+            <option value="experiment">试验</option>
+          </select>
           <button className="btn-gradient btn-click" onClick={handleAdd}>添加</button>
         </div>
 
         <div className="space-y-3">
           {tasks.length === 0 ? (
             <p className="text-center text-slate-400 py-8">暂无待办事项</p>
-          ) : tasks.map(task => (
-            <div key={task.id} className={`glass-card p-4 flex items-center gap-4 border-l-4 ${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal}`}>
+          ) : (() => {
+            // 主线任务置顶
+            const mainTasks = tasks.filter(t => (t as any).category === "main");
+            const otherTasks = tasks.filter(t => (t as any).category !== "main");
+            const sorted = [...mainTasks, ...otherTasks];
+            return sorted.map(task => {
+              const isMain = (task as any).category === "main";
+              return (
+            <div key={task.id} className={`glass-card p-4 flex items-center gap-4 border-l-4 ${
+              isMain ? "border-purple-500 ring-1 ring-purple-200" : (PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal)
+            }`}>
               <button
                 onClick={() => handleToggle(task.id)}
                 className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${
@@ -142,6 +158,7 @@ export default function TaskPage() {
                 {task.completed && <span className="text-xs">✓</span>}
               </button>
               <span className={`flex-1 text-sm ${task.completed ? "text-slate-400 line-through" : "text-slate-700"}`}>
+                {isMain && <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-600 mr-2">主线</span>}
                 {task.content}
               </span>
               <span className="text-xs text-slate-400">
@@ -150,7 +167,9 @@ export default function TaskPage() {
               </span>
               <button onClick={() => handleDelete(task.id)} className="text-slate-400 hover:text-red-500 text-xs">✕</button>
             </div>
-          ))}
+              );
+            });
+          })()}
         </div>
       </div>
     </div>

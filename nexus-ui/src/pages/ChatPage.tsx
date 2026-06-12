@@ -1,6 +1,23 @@
 import { useEffect, useState, useRef } from "react";
 import { chatApi, modelsApi, type ChatSession, type ChatMessage, type ModelConfig } from "../api/client";
 
+function renderMarkdown(md: string): string {
+  if (!md) return "";
+  return md
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>');
+}
+
 export default function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
@@ -136,7 +153,7 @@ export default function ChatPage() {
                     <p className="text-xs text-slate-500 italic mt-1 whitespace-pre-wrap">{msg.thinking_content}</p>
                   </details>
                 )}
-                <div className="markdown-body text-sm whitespace-pre-wrap">{msg.content}</div>
+                <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
               </div>
             </div>
           ))}
@@ -152,7 +169,7 @@ export default function ChatPage() {
                     <p className="text-xs text-slate-500 italic mt-1 whitespace-pre-wrap">{streamThinking}</p>
                   </details>
                 )}
-                <div className="markdown-body text-sm whitespace-pre-wrap">{streamContent || "..."}</div>
+                <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(streamContent || "...") }} />
               </div>
             </div>
           )}

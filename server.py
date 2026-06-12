@@ -107,7 +107,7 @@ class TaskCreate(BaseModel):
     date: str
     content: str
     priority: str = "normal"
-    category: str = "general"
+    category: str = "general"  # general/main/literature/experiment
 
 
 class TaskUpdate(BaseModel):
@@ -193,7 +193,7 @@ def _task_to_dict(t: Task) -> dict:
         "content": t.content,
         "completed": t.completed,
         "priority": t.priority,
-        "category": t.category,
+        "category": t.category or "general",
         "created_at": t.created_at.isoformat() if t.created_at else None,
         "completed_at": t.completed_at.isoformat() if t.completed_at else None,
     }
@@ -580,6 +580,67 @@ def list_history(limit: int = 50):
 # ══════════════════════════════════════════════════════════════
 #  启动
 # ══════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════
+#  备份
+# ══════════════════════════════════════════════════════════════
+
+@app.post("/api/backup")
+def manual_backup():
+    from app.services.backup_service import create_backup
+    result = create_backup("manual")
+    return {"path": str(result) if result else None, "ok": bool(result)}
+
+
+# ══════════════════════════════════════════════════════════════
+#  导入
+# ══════════════════════════════════════════════════════════════
+
+@app.post("/api/knowledge/import/json")
+def import_json(data: dict):
+    """导入 JSON 数据（ai-literature 或 DeepSeek 格式）"""
+    imported = 0
+    db = get_session()
+    try:
+        # ai-literature 格式: {kbPapers: [...]}
+        papers = data.get("kbPapers", data.get("papers", []))
+        for p in papers:
+            existing = db.query(KnowledgeCard).filter(KnowledgeCard.title == p.get("title", "")).first()
+            if not existing:
+                card = KnowledgeCard(
+                    title=p.get("title", "")[:200],
+                    summary=p.get("summary", p.get("abstract", ""))[:1000],
+                    key_points=json.dumps(p.get("key_points", []), ensure_ascii=False),
+                    source_type="literature",
+                    star_rating=p.get("starRating", 0),
+                    user_notes=p.get("userNotes", ""),
+                )
+                db.add(card)
+                imported += 1
+
+        # DeepSeek 格式: {topics: [{sessions: [...]}]}
+        topics = data.get("topics", [])
+        for topic in topics:
+            sessions = topic.get("sessions", []) if isinstance(topic, dict) else []
+            for session in sessions:
+                messages = session.get("messages", [])
+                if not messages:
+                    continue
+                title = session.get("title", topic.get("title", "DeepSeek对话"))[:200]
+                summary_parts = [m.get("content", "")[:200] for m in messages if m.get("role") == "assistant"]
+                card = KnowledgeCard(
+                    title=title,
+                    summary="\n".join(summary_parts)[:1000],
+                    source_type="deepseek",
+                )
+                db.add(card)
+                imported += 1
+
+        db.commit()
+        return {"imported": imported}
+    finally:
+        db.close()
+
 
 if __name__ == "__main__":
     import argparse

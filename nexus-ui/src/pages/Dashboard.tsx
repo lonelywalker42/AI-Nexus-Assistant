@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { dashboardApi, type DashboardData } from "../api/client";
 
-export default function Dashboard() {
+interface DashboardProps {
+  onNavigate?: (page: string) => void;
+}
+
+export default function Dashboard({ onNavigate }: DashboardProps) {
   const [data, setData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
@@ -19,12 +23,12 @@ export default function Dashboard() {
       <h2 className="text-2xl font-bold text-slate-800">仪表盘</h2>
 
       <div className="grid grid-cols-3 gap-4">
-        <StatCard title="今日任务" value={String(tasks?.total ?? 0)} subtitle={`完成 ${tasks?.done ?? 0}/${tasks?.total ?? 0}`} color="text-amber-500" />
-        <StatCard title="月度完成率" value={`${rate}%`} subtitle={`${monthly?.done ?? 0}/${monthly?.total ?? 0} 本月`} color="text-emerald-500" />
-        <StatCard title="进行中试验" value={String(exps?.running ?? 0)} subtitle={`共 ${exps?.total ?? 0} 项`} color="text-blue-500" />
-        <StatCard title="知识卡片" value={String(kb?.total ?? 0)} subtitle={`${kb?.tag_count ?? 0} 个标签`} color="text-purple-500" />
-        <StatCard title="规划中试验" value={String(exps?.planning ?? 0)} subtitle="待启动" color="text-slate-500" />
-        <StatCard title="已完成试验" value={String(exps?.completed ?? 0)} subtitle="已归档" color="text-emerald-400" />
+        <StatCard title="今日任务" value={String(tasks?.total ?? 0)} subtitle={`完成 ${tasks?.done ?? 0}/${tasks?.total ?? 0}`} color="text-amber-500" onClick={() => onNavigate?.("tasks")} />
+        <StatCard title="月度完成率" value={`${rate}%`} subtitle={`${monthly?.done ?? 0}/${monthly?.total ?? 0} 本月`} color="text-emerald-500" onClick={() => onNavigate?.("tasks")} />
+        <StatCard title="进行中试验" value={String(exps?.running ?? 0)} subtitle={`共 ${exps?.total ?? 0} 项`} color="text-blue-500" onClick={() => onNavigate?.("experiments")} />
+        <StatCard title="知识卡片" value={String(kb?.total ?? 0)} subtitle={`${kb?.tag_count ?? 0} 个标签`} color="text-purple-500" onClick={() => onNavigate?.("knowledge")} />
+        <StatCard title="规划中试验" value={String(exps?.planning ?? 0)} subtitle="待启动" color="text-slate-500" onClick={() => onNavigate?.("experiments")} />
+        <StatCard title="已完成试验" value={String(exps?.completed ?? 0)} subtitle="已归档" color="text-emerald-400" onClick={() => onNavigate?.("experiments")} />
       </div>
 
       <div className="glass-card p-6">
@@ -39,9 +43,9 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, subtitle, color }: { title: string; value: string; subtitle: string; color: string }) {
+function StatCard({ title, value, subtitle, color, onClick }: { title: string; value: string; subtitle: string; color: string; onClick?: () => void }) {
   return (
-    <div className="glass-card p-5">
+    <div className={`glass-card p-5 ${onClick ? "cursor-pointer" : ""}`} onClick={onClick}>
       <p className="text-sm text-slate-500">{title}</p>
       <p className={`text-3xl font-bold mt-1 ${color}`}>{value}</p>
       <p className="text-xs text-slate-400 mt-1">{subtitle}</p>

@@ -62,14 +62,14 @@ export interface Task {
   content: string;
   completed: boolean;
   priority: string;
-  category: string;
+  category: string;  // general/main/literature/experiment
   created_at: string | null;
   completed_at: string | null;
 }
 
 export const tasksApi = {
   list: (date: string) => request<Task[]>(`/api/tasks?date=${date}`),
-  create: (data: { date: string; content: string; priority?: string }) =>
+  create: (data: { date: string; content: string; priority?: string; category?: string }) =>
     request<Task>("/api/tasks", { method: "POST", body: JSON.stringify(data) }),
   toggle: (id: string) => request<Task>(`/api/tasks/${id}/toggle`, { method: "POST" }),
   delete: (id: string) => request<{ ok: boolean }>(`/api/tasks/${id}`, { method: "DELETE" }),

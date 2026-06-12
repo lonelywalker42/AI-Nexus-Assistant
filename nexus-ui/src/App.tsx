@@ -53,14 +53,14 @@ function App() {
 
   const renderPage = () => {
     switch (activePage) {
-      case "dashboard": return <Dashboard />;
+      case "dashboard": return <Dashboard onNavigate={setActivePage} />;
       case "tasks": return <TaskPage />;
       case "literature": return <LiteraturePage />;
       case "experiments": return <ExperimentPage />;
       case "knowledge": return <KnowledgePage />;
       case "chat": return <ChatPage />;
       case "settings": return <SettingsPage />;
-      default: return <Dashboard />;
+      default: return <Dashboard onNavigate={setActivePage} />;
     }
   };
 
