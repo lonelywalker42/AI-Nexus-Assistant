@@ -282,21 +282,33 @@ class LiteraturePage(QWidget):
         """执行关键词搜索"""
         query_groups = self._get_kw_query()
         if not query_groups:
+            self._kw_stats.setText("请输入至少一个关键词")
+            self._kw_stats.setStyleSheet(f"color: {self._theme.get('orange')};")
             return
 
         # 构建查询字符串
         query_parts = [" AND ".join(g) for g in query_groups]
         query_str = " OR ".join(query_parts)
-        self._current_query = query_str  # 保存用于历史记录
+        self._current_query = query_str
 
         # 获取选中的数据源
         sources = [name for name, cb in self._source_cbs.items() if cb.isChecked()]
+        if not sources:
+            self._kw_stats.setText("请至少选择一个数据源")
+            self._kw_stats.setStyleSheet(f"color: {self._theme.get('orange')};")
+            return
+
         max_results = self._kw_max.value()
 
         # 懒加载搜索引擎
         if self._search_engine is None:
-            from app.search.engine import UnifiedSearchEngine
-            self._search_engine = UnifiedSearchEngine()
+            try:
+                from app.search.engine import UnifiedSearchEngine
+                self._search_engine = UnifiedSearchEngine()
+            except Exception as e:
+                self._kw_stats.setText(f"搜索引擎初始化失败: {e}")
+                self._kw_stats.setStyleSheet(f"color: {self._theme.get('red')};")
+                return
 
         # 停止之前的搜索 worker
         if self._worker is not None and self._worker.isRunning():
@@ -306,7 +318,8 @@ class LiteraturePage(QWidget):
 
         self._kw_progress.setVisible(True)
         self._kw_progress.setRange(0, 0)
-        self._kw_stats.setText("搜索中...")
+        self._kw_stats.setText(f"搜索中... 查询: {query_str[:50]}")
+        self._kw_stats.setStyleSheet(f"color: {self._theme.get('text_d')};")
 
         self._worker = _SearchWorker(self._search_engine, query_str, sources, max_results)
         self._worker.finished.connect(self._on_search_finished)
@@ -316,7 +329,12 @@ class LiteraturePage(QWidget):
     def _on_search_finished(self, results: list[dict]):
         self._kw_progress.setVisible(False)
         self._results = results
-        self._kw_stats.setText(f"找到 {len(results)} 篇文献")
+        if results:
+            self._kw_stats.setText(f"找到 {len(results)} 篇文献")
+            self._kw_stats.setStyleSheet(f"color: {self._theme.get('green')};")
+        else:
+            self._kw_stats.setText("未找到相关文献，请尝试修改关键词或更换数据源")
+            self._kw_stats.setStyleSheet(f"color: {self._theme.get('orange')};")
 
         # 清空结果列表
         while self._kw_results_layout.count() > 1:
@@ -334,7 +352,10 @@ class LiteraturePage(QWidget):
 
     def _on_search_error(self, error: str):
         self._kw_progress.setVisible(False)
-        self._kw_stats.setText(f"❌ 搜索失败: {error}")
+        self._kw_stats.setText(f"搜索失败: {error}")
+        self._kw_stats.setStyleSheet(f"color: {self._theme.get('red')};")
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.warning(self, "搜索失败", f"搜索过程中发生错误:\n\n{error}\n\n请检查网络连接或稍后重试。")
 
     # ── Tab 2: 标题检索 ──────────────────────────────────────
 

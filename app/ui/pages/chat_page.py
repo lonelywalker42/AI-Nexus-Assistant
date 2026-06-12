@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 
 from app.ui.theme import (
-    get_theme, BTN_PRIMARY_QSS, BTN_SECONDARY_QSS, INPUT_QSS, COMBO_QSS,
+    get_theme, BTN_PRIMARY_QSS, BTN_SECONDARY_QSS, BTN_DANGER_QSS, INPUT_QSS, COMBO_QSS,
 )
 from app.db import get_session
 from app.services import chat_service
@@ -95,9 +95,10 @@ class ChatPage(QWidget):
                 border: none;
             }}
             QListWidget::item {{
-                padding: 8px;
+                padding: 8px 12px;
                 border-radius: 6px;
                 color: {t.get('text')};
+                margin: 2px 0;
             }}
             QListWidget::item:hover {{
                 background-color: {t.get('sidebar_h')};
@@ -110,16 +111,15 @@ class ChatPage(QWidget):
         self._session_list.currentRowChanged.connect(self._on_session_selected)
         left_layout.addWidget(self._session_list, 1)
 
-        # 按钮
+        # 按钮行
         btn_row = QHBoxLayout()
-        new_btn = QPushButton("➕ 新对话")
+        new_btn = QPushButton("新对话")
         new_btn.setStyleSheet(BTN_PRIMARY_QSS())
         new_btn.clicked.connect(self._new_session)
         btn_row.addWidget(new_btn)
 
-        del_btn = QPushButton("🗑️")
-        del_btn.setStyleSheet(BTN_SECONDARY_QSS())
-        del_btn.setFixedSize(36, 32)
+        del_btn = QPushButton("删除")
+        del_btn.setStyleSheet(BTN_DANGER_QSS())
         del_btn.clicked.connect(self._delete_session)
         btn_row.addWidget(del_btn)
         left_layout.addLayout(btn_row)
@@ -205,12 +205,14 @@ class ChatPage(QWidget):
         self._refresh_models()
 
     def _refresh_models(self):
+        """从数据库重新加载模型列表"""
+        self._ai_router.reload()  # 重新加载模型配置
         self._model_combo.clear()
         models = self._ai_router.get_all_models()
         for m in models:
             self._model_combo.addItem(f"{m.name} ({m.model_name})", m.id)
         if not models:
-            self._model_combo.addItem("未配置模型", "")
+            self._model_combo.addItem("未配置模型，请在设置中添加", "")
 
     def _refresh_sessions(self):
         self._session_list.clear()
@@ -239,6 +241,11 @@ class ChatPage(QWidget):
 
     def _delete_session(self):
         if not self._current_session_id:
+            return
+        from PySide6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(self, "确认删除", "确定要删除这个对话吗？",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
             return
         db = get_session()
         try:

@@ -1,124 +1,125 @@
-"""统一主题系统 — 暖色调双主题
+"""统一主题系统 — 玻璃质感 + 清新蓝绿配色
 
 设计原则:
-- 暖色调统一：琥珀/蜂蜜/暖棕/奶油
+- 玻璃质感 (Glassmorphism): 半透明白色 + 模糊背景 + 柔和阴影
+- 清新配色: 浅蓝→浅绿渐变背景，蓝/绿强调色
+- 高圆角: 16-24px 大面积圆角
+- 清晰字体: Inter/Segoe UI，深灰蓝文字
 - 8px 网格基准间距
-- 高对比度文字 (WCAG AAA)
-- 微妙的阴影层次
-- 一致的圆角体系 (4/8/12/16px)
 """
 
 from PySide6.QtCore import QObject, Signal
 
 
-# ── 暗色主题（暖色调 — 琥珀之夜） ──────────────────────────
-DARK_THEME: dict[str, str] = {
-    # 背景层次 (由深到浅) — 暖棕色调
-    "bg":           "#141210",      # 最深背景（暖黑棕）
-    "bg_secondary": "#1c1916",      # 次级背景
-    "sidebar":      "#1e1b18",      # 侧边栏
-    "sidebar_h":    "#2a2520",      # 侧边栏 hover
-    "sidebar_s":    "#352e28",      # 侧边栏 selected
-    "card":         "#211e1a",      # 卡片背景
-    "card_h":       "#2c2822",      # 卡片 hover
-    "input":        "#1c1916",      # 输入框背景
+# ── 浅色主题（清新玻璃质感 — 默认主题） ─────────────────────
+LIGHT_THEME: dict[str, str] = {
+    # 背景层次 — 浅蓝→浅绿渐变基调
+    "bg":           "#f0f7ff",      # 主背景（浅蓝白）
+    "bg_secondary": "#e8f4f8",      # 次级背景（浅青白）
+    "sidebar":      "#ffffff",      # 侧边栏（纯白玻璃）
+    "sidebar_h":    "#f0f8ff",      # 侧边栏 hover
+    "sidebar_s":    "#e0f0ff",      # 侧边栏 selected
+    "card":         "#ffffff",      # 卡片背景（纯白）
+    "card_h":       "#f8fbff",      # 卡片 hover
+    "input":        "#ffffff",      # 输入框背景
 
-    # 强调色 — 琥珀/蜂蜜色系
-    "accent":       "#e8a84c",      # 主强调色（琥珀金）
-    "accent_l":     "#f0be6a",      # 强调色 hover（亮蜂蜜）
-    "accent_dim":   "#c88a30",      # 强调色 pressed（深琥珀）
-    "accent_bg":    "#2e2518",      # 强调色背景（暖深棕）
+    # 强调色 — 蓝/绿双色系
+    "accent":       "#3b82f6",      # 主强调色（蓝）
+    "accent_l":     "#60a5fa",      # 强调色 hover（亮蓝）
+    "accent_dim":   "#2563eb",      # 强调色 pressed（深蓝）
+    "accent_bg":    "#eff6ff",      # 强调色背景（浅蓝）
 
-    # 语义色 — 暖色调整
-    "green":        "#7ac48a",      # 成功/完成（暖绿）
-    "green_dim":    "#5a9e6a",      # 成功暗色
-    "orange":       "#e8a040",      # 警告/待办（暖橙）
-    "orange_dim":   "#c88030",      # 警告暗色
-    "red":          "#e07060",      # 错误/紧急（暖红）
-    "red_dim":      "#c05848",      # 错误暗色
-    "blue":         "#6aaeD8",      # 信息（暖蓝）
-    "blue_dim":     "#4a8eb8",      # 信息暗色
-    "purple":       "#b898c8",      # 次要紫（暖紫）
-    "cyan":         "#70b8c0",      # 青色（暖青）
-    "yellow":       "#e8c860",      # 黄色（暖黄）
-    "pink":         "#d89090",      # 粉色（暖粉）
+    # 语义色
+    "green":        "#10b981",      # 成功/完成（翠绿）
+    "green_dim":    "#059669",      # 成功暗色
+    "orange":       "#f59e0b",      # 警告/待办（琥珀）
+    "orange_dim":   "#d97706",      # 警告暗色
+    "red":          "#ef4444",      # 错误/紧急
+    "red_dim":      "#dc2626",      # 错误暗色
+    "blue":         "#3b82f6",      # 信息（蓝）
+    "blue_dim":     "#2563eb",      # 信息暗色
+    "purple":       "#8b5cf6",      # 次要紫
+    "cyan":         "#06b6d4",      # 青色
+    "yellow":       "#eab308",      # 黄色
+    "pink":         "#ec4899",      # 粉色
 
-    # 文字层次 — 暖白/米色
-    "text":         "#d8d0c8",      # 主文字（暖米白）
-    "text_d":       "#908878",      # 暗淡文字（暖灰）
-    "text_b":       "#f0e8e0",      # 亮文字（暖亮白）
-    "text_w":       "#fff8f0",      # 纯白文字（暖纯白）
+    # 文字层次 — 深灰蓝系
+    "text":         "#1e293b",      # 主文字（深灰蓝）
+    "text_d":       "#64748b",      # 暗淡文字（中灰）
+    "text_b":       "#0f172a",      # 标题文字（深黑蓝）
+    "text_w":       "#ffffff",      # 纯白文字
 
-    # 边框 — 暖棕色
-    "border":       "#302820",      # 主边框
-    "border_l":     "#403830",      # 亮边框（hover）
+    # 边框 — 浅灰蓝
+    "border":       "#e2e8f0",      # 主边框
+    "border_l":     "#cbd5e1",      # 亮边框（hover）
 
     # 表格
-    "row_h":        "#282320",      # 行 hover
-    "row_s":        "#332c26",      # 行 selected
-    "row_alt":      "#1a1714",      # 交替行
+    "row_h":        "#f1f5f9",      # 行 hover
+    "row_s":        "#e0f2fe",      # 行 selected
+    "row_alt":      "#f8fafc",      # 交替行
 
-    # 阴影
+    # 阴影 — 柔和轻阴影
+    "shadow":       "rgba(0, 0, 0, 0.05)",
+    "shadow_l":     "rgba(0, 0, 0, 0.1)",
+
+    # 状态栏
+    "statusbar":    "#ffffff",
+
+    # 玻璃效果专用
+    "glass_bg":     "rgba(255, 255, 255, 0.7)",
+    "glass_border": "rgba(255, 255, 255, 0.4)",
+    "glass_shadow": "0 8px 20px rgba(0, 0, 0, 0.03)",
+}
+
+# ── 暗色主题（深色玻璃质感） ────────────────────────────────
+DARK_THEME: dict[str, str] = {
+    "bg":           "#0f172a",      # 深蓝黑
+    "bg_secondary": "#1e293b",      # 次级背景
+    "sidebar":      "#1e293b",      # 侧边栏
+    "sidebar_h":    "#334155",      # 侧边栏 hover
+    "sidebar_s":    "#3b5274",      # 侧边栏 selected
+    "card":         "#1e293b",      # 卡片背景
+    "card_h":       "#334155",      # 卡片 hover
+    "input":        "#1e293b",      # 输入框背景
+
+    "accent":       "#3b82f6",      # 主强调色（蓝）
+    "accent_l":     "#60a5fa",      # 强调色 hover
+    "accent_dim":   "#2563eb",      # 强调色 pressed
+    "accent_bg":    "#1e3a5f",      # 强调色背景
+
+    "green":        "#34d399",      # 成功/完成
+    "green_dim":    "#10b981",      # 成功暗色
+    "orange":       "#fbbf24",      # 警告/待办
+    "orange_dim":   "#f59e0b",      # 警告暗色
+    "red":          "#f87171",      # 错误/紧急
+    "red_dim":      "#ef4444",      # 错误暗色
+    "blue":         "#60a5fa",      # 信息
+    "blue_dim":     "#3b82f6",      # 信息暗色
+    "purple":       "#a78bfa",      # 次要紫
+    "cyan":         "#22d3ee",      # 青色
+    "yellow":       "#fde047",      # 黄色
+    "pink":         "#f472b6",      # 粉色
+
+    "text":         "#e2e8f0",      # 主文字（浅灰白）
+    "text_d":       "#94a3b8",      # 暗淡文字
+    "text_b":       "#f1f5f9",      # 标题文字
+    "text_w":       "#ffffff",      # 纯白文字
+
+    "border":       "#334155",      # 主边框
+    "border_l":     "#475569",      # 亮边框
+
+    "row_h":        "#334155",      # 行 hover
+    "row_s":        "#3b5274",      # 行 selected
+    "row_alt":      "#1e293b",      # 交替行
+
     "shadow":       "rgba(0, 0, 0, 0.3)",
     "shadow_l":     "rgba(0, 0, 0, 0.5)",
 
-    # 状态栏
-    "statusbar":    "#121010",
-}
+    "statusbar":    "#1e293b",
 
-# ── 亮色主题（暖色调 — 蜂蜜奶油） ─────────────────────────
-LIGHT_THEME: dict[str, str] = {
-    # 背景层次 — 暖奶油色
-    "bg":           "#faf6f0",      # 最浅背景（奶油白）
-    "bg_secondary": "#f4efe6",      # 次级背景（暖灰白）
-    "sidebar":      "#f0ebe2",      # 侧边栏
-    "sidebar_h":    "#e8e0d4",      # 侧边栏 hover
-    "sidebar_s":    "#ddd4c6",      # 侧边栏 selected
-    "card":         "#ffffff",      # 卡片背景
-    "card_h":       "#faf6f0",      # 卡片 hover
-    "input":        "#ffffff",      # 输入框背景
-
-    # 强调色 — 琥珀金
-    "accent":       "#c88a28",      # 主强调色（深琥珀）
-    "accent_l":     "#e0a040",      # 强调色 hover（亮琥珀）
-    "accent_dim":   "#a87020",      # 强调色 pressed
-    "accent_bg":    "#faf0e0",      # 强调色背景（浅蜂蜜）
-
-    # 语义色 — 暖色调
-    "green":        "#5a9e60",      # 成功/完成
-    "green_dim":    "#4a8850",      # 成功暗色
-    "orange":       "#d08020",      # 警告/待办
-    "orange_dim":   "#b86818",      # 警告暗色
-    "red":          "#c85040",      # 错误/紧急
-    "red_dim":      "#a84030",      # 错误暗色
-    "blue":         "#4888b0",      # 信息
-    "blue_dim":     "#3870a0",      # 信息暗色
-    "purple":       "#8870a0",      # 次要紫
-    "cyan":         "#5098a0",      # 青色
-    "yellow":       "#c09820",      # 黄色
-    "pink":         "#b07070",      # 粉色
-
-    # 文字层次 — 暖深色
-    "text":         "#3a3228",      # 主文字（暖深棕）
-    "text_d":       "#807060",      # 暗淡文字（暖灰棕）
-    "text_b":       "#201810",      # 标题文字（深暖黑）
-    "text_w":       "#fff8f0",      # 纯白文字
-
-    # 边框 — 暖灰
-    "border":       "#e0d8cc",      # 主边框
-    "border_l":     "#d0c8b8",      # 亮边框
-
-    # 表格
-    "row_h":        "#f0ebe2",      # 行 hover
-    "row_s":        "#e8e0d4",      # 行 selected
-    "row_alt":      "#faf6f0",      # 交替行
-
-    # 阴影
-    "shadow":       "rgba(80, 60, 30, 0.08)",
-    "shadow_l":     "rgba(80, 60, 30, 0.15)",
-
-    # 状态栏
-    "statusbar":    "#eee8de",
+    "glass_bg":     "rgba(30, 41, 59, 0.7)",
+    "glass_border": "rgba(51, 65, 85, 0.5)",
+    "glass_shadow": "0 8px 20px rgba(0, 0, 0, 0.2)",
 }
 
 
@@ -128,8 +129,8 @@ class ThemeManager(QObject):
 
     def __init__(self):
         super().__init__()
-        self._mode: str = "dark"
-        self._colors: dict[str, str] = DARK_THEME.copy()
+        self._mode: str = "light"  # 默认浅色主题
+        self._colors: dict[str, str] = LIGHT_THEME.copy()
 
     @property
     def mode(self) -> str:
@@ -146,11 +147,11 @@ class ThemeManager(QObject):
         if mode == self._mode:
             return
         self._mode = mode
-        self._colors = (DARK_THEME if mode == "dark" else LIGHT_THEME).copy()
+        self._colors = (LIGHT_THEME if mode == "light" else DARK_THEME).copy()
         self.theme_changed.emit(mode)
 
     def toggle(self) -> str:
-        new_mode = "light" if self._mode == "dark" else "dark"
+        new_mode = "dark" if self._mode == "light" else "light"
         self.set_theme(new_mode)
         return new_mode
 
@@ -176,88 +177,83 @@ SPACING = {
     "3xl": "48px",
 }
 
-# ── 圆角常量 ─────────────────────────────────────────────────
+# ── 圆角常量 — 大圆角设计 ────────────────────────────────────
 RADIUS = {
-    "sm": "4px",
-    "md": "8px",
-    "lg": "12px",
-    "xl": "16px",
+    "sm": "8px",
+    "md": "12px",
+    "lg": "16px",
+    "xl": "24px",
     "full": "9999px",
 }
 
 
 # ══════════════════════════════════════════════════════════════
-#  QSS 模板 — 暖色调组件样式
+#  QSS 模板 — 玻璃质感组件样式
 # ══════════════════════════════════════════════════════════════
 
 def BTN_PRIMARY_QSS() -> str:
-    """主按钮 — 琥珀金实心"""
+    """主按钮 — 蓝色渐变实心，圆角40px"""
     t = get_theme()
     return f"""
         QPushButton {{
-            background-color: {t.get('accent')};
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {t.get('accent')}, stop:1 {t.get('cyan')});
             color: {t.get('text_w')};
             border: none;
-            border-radius: {RADIUS['md']};
-            padding: 8px 20px;
-            font-weight: bold;
+            border-radius: 40px;
+            padding: 10px 24px;
+            font-weight: 600;
             font-size: 13px;
         }}
         QPushButton:hover {{
-            background-color: {t.get('accent_l')};
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {t.get('accent_l')}, stop:1 {t.get('cyan')});
         }}
         QPushButton:pressed {{
-            background-color: {t.get('accent_dim')};
+            background: {t.get('accent_dim')};
         }}
         QPushButton:disabled {{
-            background-color: {t.get('border')};
+            background: {t.get('border')};
             color: {t.get('text_d')};
         }}
     """
 
 
 def BTN_SECONDARY_QSS() -> str:
-    """次级按钮 — 暖色边框"""
+    """次级按钮 — 玻璃边框"""
     t = get_theme()
     return f"""
         QPushButton {{
-            background-color: transparent;
+            background-color: {t.get('glass_bg')};
             color: {t.get('text')};
-            border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['md']};
+            border: 1px solid {t.get('glass_border')};
+            border-radius: 40px;
             padding: 8px 20px;
             font-size: 13px;
         }}
         QPushButton:hover {{
-            background-color: {t.get('card_h')};
+            background-color: {t.get('card')};
             border-color: {t.get('accent')};
-            color: {t.get('accent_l')};
-        }}
-        QPushButton:pressed {{
-            background-color: {t.get('accent_bg')};
+            color: {t.get('accent')};
         }}
     """
 
 
 def BTN_DANGER_QSS() -> str:
-    """危险按钮 — 暖红边框"""
+    """危险按钮"""
     t = get_theme()
     return f"""
         QPushButton {{
             background-color: transparent;
             color: {t.get('red')};
-            border: 1px solid {t.get('red_dim')};
-            border-radius: {RADIUS['md']};
+            border: 1px solid {t.get('red')};
+            border-radius: 40px;
             padding: 8px 20px;
             font-size: 13px;
         }}
         QPushButton:hover {{
             background-color: {t.get('red')};
             color: {t.get('text_w')};
-            border-color: {t.get('red')};
-        }}
-        QPushButton:pressed {{
-            background-color: {t.get('red_dim')};
         }}
     """
 
@@ -270,27 +266,27 @@ def BTN_GHOST_QSS() -> str:
             background-color: transparent;
             color: {t.get('text_d')};
             border: none;
-            border-radius: {RADIUS['md']};
+            border-radius: 12px;
             padding: 6px 12px;
             font-size: 12px;
         }}
         QPushButton:hover {{
-            background-color: {t.get('card_h')};
+            background-color: {t.get('row_h')};
             color: {t.get('text')};
         }}
     """
 
 
 def INPUT_QSS() -> str:
-    """输入框"""
+    """输入框 — 玻璃风格，圆角16px"""
     t = get_theme()
     return f"""
         QLineEdit, QTextEdit, QPlainTextEdit {{
             background-color: {t.get('input')};
             color: {t.get('text')};
             border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['md']};
-            padding: 8px 12px;
+            border-radius: 16px;
+            padding: 10px 16px;
             font-size: 13px;
             selection-background-color: {t.get('accent_bg')};
         }}
@@ -305,15 +301,15 @@ def INPUT_QSS() -> str:
 
 
 def COMBO_QSS() -> str:
-    """下拉框"""
+    """下拉框 — 圆角16px"""
     t = get_theme()
     return f"""
         QComboBox {{
             background-color: {t.get('input')};
             color: {t.get('text')};
             border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['md']};
-            padding: 8px 12px;
+            border-radius: 16px;
+            padding: 8px 16px;
             font-size: 13px;
             min-height: 20px;
         }}
@@ -326,7 +322,6 @@ def COMBO_QSS() -> str:
         QComboBox::drop-down {{
             border: none;
             width: 24px;
-            subcontrol-position: center right;
         }}
         QComboBox::down-arrow {{
             image: none;
@@ -339,37 +334,36 @@ def COMBO_QSS() -> str:
             background-color: {t.get('card')};
             color: {t.get('text')};
             border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['md']};
+            border-radius: 12px;
             padding: 4px;
-            selection-background-color: {t.get('sidebar_s')};
-            selection-color: {t.get('accent_l')};
-            outline: none;
+            selection-background-color: {t.get('accent_bg')};
+            selection-color: {t.get('accent')};
         }}
         QComboBox QAbstractItemView::item {{
-            padding: 6px 12px;
-            border-radius: {RADIUS['sm']};
+            padding: 8px 12px;
+            border-radius: 8px;
             min-height: 28px;
         }}
         QComboBox QAbstractItemView::item:hover {{
-            background-color: {t.get('sidebar_h')};
+            background-color: {t.get('row_h')};
         }}
     """
 
 
 def TABLE_QSS() -> str:
-    """表格"""
+    """表格 — 玻璃风格"""
     t = get_theme()
     return f"""
         QTableWidget {{
-            background-color: {t.get('bg')};
+            background-color: transparent;
             color: {t.get('text')};
             border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['md']};
+            border-radius: 16px;
             gridline-color: {t.get('border')};
             font-size: 13px;
         }}
         QTableWidget::item {{
-            padding: 8px 12px;
+            padding: 10px 12px;
             border-bottom: 1px solid transparent;
         }}
         QTableWidget::item:hover {{
@@ -377,32 +371,28 @@ def TABLE_QSS() -> str:
         }}
         QTableWidget::item:selected {{
             background-color: {t.get('row_s')};
-            color: {t.get('accent_l')};
+            color: {t.get('accent')};
         }}
         QHeaderView::section {{
-            background-color: {t.get('sidebar')};
+            background-color: transparent;
             color: {t.get('text_d')};
             border: none;
             border-bottom: 2px solid {t.get('border')};
-            padding: 10px 12px;
-            font-weight: bold;
+            padding: 12px;
+            font-weight: 600;
             font-size: 12px;
-        }}
-        QHeaderView::section:hover {{
-            background-color: {t.get('sidebar_h')};
-            color: {t.get('text')};
         }}
     """
 
 
 def TAB_QSS() -> str:
-    """Tab 页签"""
+    """Tab 页签 — 圆角风格"""
     t = get_theme()
     return f"""
         QTabWidget::pane {{
             border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['md']};
-            background-color: {t.get('bg')};
+            border-radius: 16px;
+            background-color: transparent;
             top: -1px;
         }}
         QTabBar {{
@@ -420,28 +410,26 @@ def TAB_QSS() -> str:
         QTabBar::tab:selected {{
             color: {t.get('accent')};
             border-bottom: 2px solid {t.get('accent')};
-            font-weight: bold;
+            font-weight: 600;
         }}
         QTabBar::tab:hover {{
             color: {t.get('text')};
-            background-color: {t.get('card_h')};
-            border-radius: {RADIUS['md']} {RADIUS['md']} 0 0;
         }}
     """
 
 
 def SCROLLBAR_QSS() -> str:
-    """滚动条"""
+    """滚动条 — 细圆风格"""
     t = get_theme()
     return f"""
         QScrollBar:vertical {{
             background: transparent;
-            width: 8px;
+            width: 6px;
             margin: 0;
         }}
         QScrollBar::handle:vertical {{
             background: {t.get('border')};
-            border-radius: 4px;
+            border-radius: 3px;
             min-height: 40px;
         }}
         QScrollBar::handle:vertical:hover {{
@@ -450,17 +438,14 @@ def SCROLLBAR_QSS() -> str:
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
             height: 0;
         }}
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-            background: transparent;
-        }}
         QScrollBar:horizontal {{
             background: transparent;
-            height: 8px;
+            height: 6px;
             margin: 0;
         }}
         QScrollBar::handle:horizontal {{
             background: {t.get('border')};
-            border-radius: 4px;
+            border-radius: 3px;
             min-width: 40px;
         }}
         QScrollBar::handle:horizontal:hover {{
@@ -468,9 +453,6 @@ def SCROLLBAR_QSS() -> str:
         }}
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
             width: 0;
-        }}
-        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
-            background: transparent;
         }}
     """
 
@@ -482,38 +464,36 @@ def LIST_WIDGET_QSS() -> str:
         QListWidget {{
             background-color: transparent;
             border: none;
-            outline: none;
             font-size: 13px;
         }}
         QListWidget::item {{
             padding: 10px 14px;
-            border-radius: {RADIUS['md']};
+            border-radius: 12px;
             color: {t.get('text')};
             margin: 2px 4px;
         }}
         QListWidget::item:hover {{
-            background-color: {t.get('sidebar_h')};
+            background-color: {t.get('row_h')};
         }}
         QListWidget::item:selected {{
-            background-color: {t.get('sidebar_s')};
-            color: {t.get('accent_l')};
-            font-weight: bold;
+            background-color: {t.get('row_s')};
+            color: {t.get('accent')};
+            font-weight: 600;
         }}
     """
 
 
 def CARD_QSS() -> str:
-    """卡片容器"""
+    """卡片容器 — 玻璃质感"""
     t = get_theme()
     return f"""
         QFrame {{
             background-color: {t.get('card')};
             border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['lg']};
+            border-radius: 24px;
         }}
         QFrame:hover {{
             border-color: {t.get('border_l')};
-            background-color: {t.get('card_h')};
         }}
     """
 
@@ -526,80 +506,27 @@ def CARD_ACCENT_QSS(accent_color_key: str = "accent") -> str:
         QFrame {{
             background-color: {t.get('card')};
             border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['lg']};
+            border-radius: 24px;
             border-left: 3px solid {color};
         }}
         QFrame:hover {{
             border-color: {t.get('border_l')};
             border-left-color: {color};
-            background-color: {t.get('card_h')};
-        }}
-    """
-
-
-def RADIO_QSS() -> str:
-    """单选按钮"""
-    t = get_theme()
-    return f"""
-        QRadioButton {{
-            color: {t.get('text')};
-            spacing: 8px;
-            font-size: 13px;
-        }}
-        QRadioButton::indicator {{
-            width: 16px;
-            height: 16px;
-            border-radius: 8px;
-            border: 2px solid {t.get('border')};
-            background-color: {t.get('input')};
-        }}
-        QRadioButton::indicator:hover {{
-            border-color: {t.get('accent')};
-        }}
-        QRadioButton::indicator:checked {{
-            background-color: {t.get('accent')};
-            border-color: {t.get('accent')};
-        }}
-    """
-
-
-def CHECKBOX_QSS() -> str:
-    """复选框"""
-    t = get_theme()
-    return f"""
-        QCheckBox {{
-            color: {t.get('text')};
-            spacing: 8px;
-            font-size: 13px;
-        }}
-        QCheckBox::indicator {{
-            width: 16px;
-            height: 16px;
-            border-radius: 4px;
-            border: 2px solid {t.get('border')};
-            background-color: {t.get('input')};
-        }}
-        QCheckBox::indicator:hover {{
-            border-color: {t.get('accent')};
-        }}
-        QCheckBox::indicator:checked {{
-            background-color: {t.get('accent')};
-            border-color: {t.get('accent')};
         }}
     """
 
 
 def GROUPBOX_QSS() -> str:
-    """分组框"""
+    """分组框 — 玻璃风格"""
     t = get_theme()
     return f"""
         QGroupBox {{
             background-color: {t.get('card')};
             border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['lg']};
+            border-radius: 24px;
             margin-top: 14px;
-            padding: 20px 16px 16px 16px;
-            font-weight: bold;
+            padding: 24px 16px 16px 16px;
+            font-weight: 600;
             font-size: 14px;
             color: {t.get('text_b')};
         }}
@@ -620,7 +547,7 @@ def TOOLTIP_QSS() -> str:
             background-color: {t.get('card')};
             color: {t.get('text')};
             border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['sm']};
+            border-radius: 8px;
             padding: 6px 10px;
             font-size: 12px;
         }}

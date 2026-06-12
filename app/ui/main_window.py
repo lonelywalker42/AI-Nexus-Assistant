@@ -42,9 +42,9 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # ── 侧边栏 ────────────────────────────────────────
+        # ── 侧边栏（玻璃质感） ─────────────────────────────
         self._sidebar = QWidget()
-        self._sidebar.setFixedWidth(220)
+        self._sidebar.setFixedWidth(260)
         self._sidebar.setStyleSheet(f"""
             QWidget {{
                 background-color: {self._theme.get('sidebar')};
@@ -55,9 +55,9 @@ class MainWindow(QMainWindow):
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(0)
 
-        # Logo 区域
+        # Logo 区域（清新风格）
         logo_frame = QWidget()
-        logo_frame.setFixedHeight(72)
+        logo_frame.setFixedHeight(80)
         logo_frame.setStyleSheet(f"""
             QWidget {{
                 background-color: transparent;
@@ -65,53 +65,54 @@ class MainWindow(QMainWindow):
             }}
         """)
         logo_layout = QVBoxLayout(logo_frame)
-        logo_layout.setContentsMargins(20, 16, 20, 12)
+        logo_layout.setContentsMargins(24, 18, 24, 14)
         title = QLabel("NEXUS")
-        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {self._theme.get('accent_l')}; letter-spacing: 2px;")
-        subtitle = QLabel("个人科研助手")
-        subtitle.setFont(QFont("Microsoft YaHei", 9))
+        title.setFont(QFont("Inter", 18, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {self._theme.get('accent')}; letter-spacing: 3px;")
+        subtitle = QLabel("AI 科研助手")
+        subtitle.setFont(QFont("Inter", 10))
         subtitle.setStyleSheet(f"color: {self._theme.get('text_d')};")
         logo_layout.addWidget(title)
         logo_layout.addWidget(subtitle)
         sidebar_layout.addWidget(logo_frame)
 
-        # 导航列表
+        # 导航列表（圆角玻璃风格）
         self._nav_list = QListWidget()
         self._nav_list.setStyleSheet(f"""
             QListWidget {{
                 background-color: transparent;
                 border: none;
                 outline: none;
-                padding: 8px 6px;
+                padding: 12px 10px;
             }}
             QListWidget::item {{
-                padding: 11px 16px;
+                padding: 12px 16px;
                 color: {self._theme.get('text_d')};
                 border-left: 3px solid transparent;
-                border-radius: 0 6px 6px 0;
+                border-radius: 12px;
                 font-size: 13px;
-                margin: 1px 0;
+                margin: 2px 0;
             }}
             QListWidget::item:hover {{
-                background-color: {self._theme.get('sidebar_h')};
+                background-color: {self._theme.get('row_h')};
                 color: {self._theme.get('text')};
-                border-left-color: {self._theme.get('border_l')};
             }}
             QListWidget::item:selected {{
-                background-color: {self._theme.get('sidebar_s')};
-                color: {self._theme.get('accent_l')};
+                background-color: {self._theme.get('accent_bg')};
+                color: {self._theme.get('accent')};
                 border-left: 3px solid {self._theme.get('accent')};
-                font-weight: bold;
+                font-weight: 600;
             }}
         """)
 
         nav_items = [
             ("◆  仪表盘", True),
             ("◇  任务与日程", True),
+            ("", False),  # 分隔符
             ("◈  文献管理", True),
             ("◉  试验管理", True),
             ("◎  知识库", True),
+            ("", False),  # 分隔符
             ("◊  AI 对话", True),
             ("○  设置", True),
         ]
@@ -125,13 +126,13 @@ class MainWindow(QMainWindow):
         self._nav_list.currentRowChanged.connect(self._switch_page)
         sidebar_layout.addWidget(self._nav_list, 1)
 
-        # 底部版本标签
+        # 底部版本标签（药丸样式）
         version_label = QLabel("v0.3.0")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(f"""
             color: {self._theme.get('text_d')};
             font-size: 11px;
-            padding: 8px;
+            padding: 6px 12px;
             border-top: 1px solid {self._theme.get('border')};
         """)
         sidebar_layout.addWidget(version_label)
@@ -197,7 +198,7 @@ class MainWindow(QMainWindow):
         self._tray.show()
 
     def _create_tray_icon(self) -> QIcon:
-        """绘制精致托盘图标 — 琥珀暖色调渐变"""
+        """绘制精致托盘图标 — 蓝绿清新渐变"""
         pixmap = QPixmap(64, 64)
         pixmap.fill(QColor(0, 0, 0, 0))
         painter = QPainter(pixmap)
@@ -205,19 +206,19 @@ class MainWindow(QMainWindow):
 
         from PySide6.QtGui import QRadialGradient, QLinearGradient, QBrush
 
-        # 外层光晕（琥珀色）
+        # 外层光晕（蓝色）
         glow = QRadialGradient(32, 32, 32)
-        glow.setColorAt(0.6, QColor(232, 168, 76, 40))
-        glow.setColorAt(1.0, QColor(232, 168, 76, 0))
+        glow.setColorAt(0.6, QColor(59, 130, 246, 40))
+        glow.setColorAt(1.0, QColor(59, 130, 246, 0))
         painter.setBrush(QBrush(glow))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(0, 0, 64, 64)
 
-        # 主体圆 — 琥珀渐变
+        # 主体圆 — 蓝绿渐变
         grad = QLinearGradient(10, 10, 54, 54)
-        grad.setColorAt(0.0, QColor(240, 190, 106))    # 浅蜂蜜
-        grad.setColorAt(0.5, QColor(220, 160, 60))     # 中琥珀
-        grad.setColorAt(1.0, QColor(200, 138, 40))     # 深琥珀
+        grad.setColorAt(0.0, QColor(59, 130, 246))    # 蓝
+        grad.setColorAt(0.5, QColor(37, 99, 235))     # 深蓝
+        grad.setColorAt(1.0, QColor(6, 182, 212))     # 青
         painter.setBrush(QBrush(grad))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(8, 8, 48, 48)
@@ -230,8 +231,8 @@ class MainWindow(QMainWindow):
         painter.drawEllipse(12, 12, 40, 36)
 
         # 文字 "N"
-        painter.setPen(QColor(255, 250, 240, 240))
-        painter.setFont(QFont("Segoe UI", 26, QFont.Weight.DemiBold))
+        painter.setPen(QColor(255, 255, 255, 240))
+        painter.setFont(QFont("Inter", 26, QFont.Weight.Bold))
         painter.drawText(pixmap.rect().adjusted(0, -2, 0, 0), Qt.AlignmentFlag.AlignCenter, "N")
 
         painter.end()
@@ -296,7 +297,7 @@ class MainWindow(QMainWindow):
                 background-color: {self._theme.get('statusbar')};
                 color: {self._theme.get('text_d')};
                 border-top: 1px solid {self._theme.get('border')};
-                padding: 4px 12px;
+                padding: 6px 16px;
                 font-size: 12px;
             }}
         """)
