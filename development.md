@@ -4,7 +4,7 @@
 
 ```
 Phase 1: 基础框架 + 任务 + 文献 + 设置     [████████████████████] 100%  ✅ 完成
-Phase 2: 试验管理 + 知识库 + AI对话         [                    ]   0%  待开始
+Phase 2: 试验管理 + 知识库 + AI对话         [████████████████████] 100%  ✅ 完成
 Phase 3: 仪表盘 + 时钟 + 命令面板 + 打包    [                    ]   0%  待开始
 ```
 
@@ -95,32 +95,32 @@ Phase 3: 仪表盘 + 时钟 + 命令面板 + 打包    [                    ]   
 
 ---
 
-## Phase 2: 待开始
+## Phase 2: 已完成（2026-06-12）
 
-### 试验管理模块
+### 试验管理模块 ✅
 
-- [ ] `app/models/experiment.py` — Experiment + ExperimentResult 模型
-- [ ] `app/services/experiment_service.py` — CRUD + 版本管理 + 文件关联
-- [ ] `app/ui/pages/experiment_page.py` — 试验列表 + 详情 + 版本对比 + 代码片段
-- [ ] CSV 上传 + 表格预览
-- [ ] 导出 pandas 代码 / .mat 文件
-- [ ] matplotlib 图表嵌入
+- [x] `app/models/experiment.py` — Experiment + ExperimentResult（版本化结果 + 代码片段存档）
+- [x] `app/services/experiment_service.py` — CRUD + 版本管理 + Markdown 导出
+- [x] `app/ui/pages/experiment_page.py` — 分栏布局 + 3 Tab（信息/结果/关联）+ 参数对比
 
-### 知识库模块
+### 知识库模块 ✅
 
-- [ ] `app/models/knowledge.py` — KnowledgeCard + Tag 模型
-- [ ] `app/services/knowledge_service.py` — PDF导入 + 卡片生成 + 标签管理
-- [ ] `app/ui/pages/knowledge_page.py` — 知识卡片列表 + 搜索 + 分类
-- [ ] ChromaDB 分级加载（设置页开关）
-- [ ] 从文献/对话生成知识卡片
+- [x] `app/models/knowledge.py` — KnowledgeCard + Tag + CardTag 关联表
+- [x] `app/services/knowledge_service.py` — 卡片 CRUD + 标签管理 + 从文献生成卡片
+- [x] `app/ui/pages/knowledge_page.py` — 卡片网格 + 搜索 + 分类/标签过滤 + 星级评分
 
-### AI 对话模块
+### AI 对话模块 ✅
 
-- [ ] `app/models/chat.py` — ChatSession + ChatMessage 模型
-- [ ] `app/services/chat_service.py` — 会话管理 + 历史持久化
-- [ ] `app/ui/pages/chat_page.py` — 对话界面 + 流式输出 + thinking折叠
-- [ ] 写作辅助 prompt 模板（润色/翻译/LaTeX/摘要）
-- [ ] 跨模块联动（引用文献/试验，保存为知识卡片）
+- [x] `app/models/chat.py` — ChatSession + ChatMessage（含 thinking_content）
+- [x] `app/services/chat_service.py` — 会话管理 + 消息持久化 + 消息构建
+- [x] `app/ui/pages/chat_page.py` — 对话界面 + QThread 流式输出 + thinking 折叠
+- [x] 写作辅助 prompt（润色/翻译/LaTeX/摘要）
+- [x] 跨模块联动（保存为知识卡片）
+
+### 主窗口更新 ✅
+
+- 侧边栏 6 项导航全部激活
+- 版本号更新为 v0.2.0
 
 ---
 

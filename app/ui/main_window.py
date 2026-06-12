@@ -86,9 +86,9 @@ class MainWindow(QMainWindow):
         nav_items = [
             ("📋  任务与日程", True),
             ("📚  文献管理", True),
-            ("🧪  试验管理", False),   # Phase 2
-            ("🧠  知识库", False),      # Phase 2
-            ("💬  AI 对话", False),     # Phase 2
+            ("🧪  试验管理", True),
+            ("🧠  知识库", True),
+            ("💬  AI 对话", True),
             ("⚙️  设置", True),
         ]
         for text, enabled in nav_items:
@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(self._nav_list, 1)
 
         # 底部版本标签
-        version_label = QLabel("v0.1.0")
+        version_label = QLabel("v0.2.0")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sidebar_layout.addWidget(version_label)
         sidebar_layout.addSpacing(8)
@@ -118,27 +118,19 @@ class MainWindow(QMainWindow):
 
     def _init_pages(self):
         """初始化所有页面"""
-        # 占位页面（未实现的模块）
-        def placeholder(title: str) -> QWidget:
-            w = QWidget()
-            l = QVBoxLayout(w)
-            lbl = QLabel(f"🚧 {title}\n\n将在后续阶段实现")
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setFont(QFont("Microsoft YaHei", 16))
-            l.addWidget(lbl)
-            return w
-
-        # Phase 1 页面
         from app.ui.pages.task_page import TaskPage
         from app.ui.pages.literature_page import LiteraturePage
+        from app.ui.pages.experiment_page import ExperimentPage
+        from app.ui.pages.knowledge_page import KnowledgePage
+        from app.ui.pages.chat_page import ChatPage
         from app.ui.pages.settings_page import SettingsPage
 
         self._pages = [
             TaskPage(),              # 0: 任务与日程
             LiteraturePage(),        # 1: 文献管理
-            placeholder("试验管理"),  # 2: Phase 2
-            placeholder("知识库"),    # 3: Phase 2
-            placeholder("AI 对话"),   # 4: Phase 2
+            ExperimentPage(),        # 2: 试验管理
+            KnowledgePage(),         # 3: 知识库
+            ChatPage(),              # 4: AI 对话
             SettingsPage(),          # 5: 设置
         ]
 
