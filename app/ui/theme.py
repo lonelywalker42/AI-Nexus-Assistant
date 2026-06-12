@@ -11,52 +11,52 @@
 from PySide6.QtCore import QObject, Signal
 
 
-# ── 暗色主题（Catppuccin Mocha 精致版） ─────────────────────
+# ── 暗色主题（Catppuccin Mocha 明亮易读版） ──────────────────
 DARK_THEME: dict[str, str] = {
-    # 背景层次 (由深到浅)
-    "bg":           "#0b0d13",      # 最深背景
-    "bg_secondary": "#111320",      # 次级背景
-    "sidebar":      "#131625",      # 侧边栏
-    "sidebar_h":    "#1a1e33",      # 侧边栏 hover
-    "sidebar_s":    "#222744",      # 侧边栏 selected
-    "card":         "#171b2e",      # 卡片背景
-    "card_h":       "#1e2240",      # 卡片 hover
-    "input":        "#151930",      # 输入框背景
+    # 背景层次 (由深到浅) — 提亮以增强可读性
+    "bg":           "#0f1117",      # 最深背景
+    "bg_secondary": "#151825",      # 次级背景
+    "sidebar":      "#181c2e",      # 侧边栏
+    "sidebar_h":    "#222844",      # 侧边栏 hover
+    "sidebar_s":    "#2c3358",      # 侧边栏 selected
+    "card":         "#1c2038",      # 卡片背景
+    "card_h":       "#252a4a",      # 卡片 hover
+    "input":        "#1a1e34",      # 输入框背景
 
-    # 强调色
-    "accent":       "#7c6aef",      # 主强调色（紫）
-    "accent_l":     "#9d8af0",      # 强调色 hover
-    "accent_dim":   "#5b4dc7",      # 强调色 pressed
-    "accent_bg":    "#2a2450",      # 强调色背景
+    # 强调色 — 更明亮
+    "accent":       "#8b7cf0",      # 主强调色（紫）
+    "accent_l":     "#a99af5",      # 强调色 hover
+    "accent_dim":   "#6b5cd6",      # 强调色 pressed
+    "accent_bg":    "#2e2860",      # 强调色背景
 
-    # 语义色
-    "green":        "#40c790",      # 成功/完成
-    "green_dim":    "#2a8f65",      # 成功暗色
-    "orange":       "#f0a050",      # 警告/待办
-    "orange_dim":   "#b87a3a",      # 警告暗色
-    "red":          "#ef6b6b",      # 错误/紧急
-    "red_dim":      "#c44e4e",      # 错误暗色
-    "blue":         "#6ba3ef",      # 信息
-    "blue_dim":     "#4d7ec4",      # 信息暗色
-    "purple":       "#b07aed",      # 次要紫
-    "cyan":         "#7dc4e4",      # 青色
-    "yellow":       "#f9e2af",      # 黄色
-    "pink":         "#f5c2e7",      # 粉色
+    # 语义色 — 更明亮鲜艳
+    "green":        "#50d9a0",      # 成功/完成
+    "green_dim":    "#3aaf7a",      # 成功暗色
+    "orange":       "#ffb347",      # 警告/待办
+    "orange_dim":   "#d9952e",      # 警告暗色
+    "red":          "#ff7b7b",      # 错误/紧急
+    "red_dim":      "#d95555",      # 错误暗色
+    "blue":        "#7ab8ff",      # 信息
+    "blue_dim":     "#5a96dd",      # 信息暗色
+    "purple":       "#c08aff",      # 次要紫
+    "cyan":         "#8ad4f0",      # 青色
+    "yellow":       "#ffe08a",      # 黄色
+    "pink":         "#ffa0d0",      # 粉色
 
-    # 文字层次
-    "text":         "#c6cee3",      # 主文字
-    "text_d":       "#6b7394",      # 暗淡文字
-    "text_b":       "#eef1f8",      # 亮文字（标题）
+    # 文字层次 — 更高对比度
+    "text":         "#d0d8f0",      # 主文字 (更亮)
+    "text_d":       "#8090b8",      # 暗淡文字 (提亮，不再灰暗)
+    "text_b":       "#f0f4ff",      # 亮文字（标题）
     "text_w":       "#ffffff",      # 纯白文字（按钮上）
 
-    # 边框
-    "border":       "#2a2e45",      # 主边框
-    "border_l":     "#363b58",      # 亮边框（hover）
+    # 边框 — 更清晰
+    "border":       "#303658",      # 主边框
+    "border_l":     "#404a70",      # 亮边框（hover）
 
     # 表格
-    "row_h":        "#1a1e33",      # 行 hover
-    "row_s":        "#222744",      # 行 selected
-    "row_alt":      "#141828",      # 交替行
+    "row_h":        "#222844",      # 行 hover
+    "row_s":        "#2c3358",      # 行 selected
+    "row_alt":      "#161a2a",      # 交替行
 
     # 阴影
     "shadow":       "rgba(0, 0, 0, 0.3)",
@@ -66,15 +66,15 @@ DARK_THEME: dict[str, str] = {
     "statusbar":    "#0e1019",
 }
 
-# ── 亮色主题（精致版） ──────────────────────────────────────
+# ── 亮色主题（明亮易读版） ─────────────────────────────────
 LIGHT_THEME: dict[str, str] = {
-    "bg":           "#f8f9fc",
-    "bg_secondary": "#f0f2f7",
-    "sidebar":      "#eef0f6",
-    "sidebar_h":    "#e4e7ef",
-    "sidebar_s":    "#d8dce8",
+    "bg":           "#f5f7fb",
+    "bg_secondary": "#edf0f7",
+    "sidebar":      "#e8ecf4",
+    "sidebar_h":    "#dde2ee",
+    "sidebar_s":    "#d0d6e6",
     "card":         "#ffffff",
-    "card_h":       "#f5f6fa",
+    "card_h":       "#f8f9fd",
     "input":        "#ffffff",
 
     "accent":       "#6c5ce7",
@@ -82,35 +82,35 @@ LIGHT_THEME: dict[str, str] = {
     "accent_dim":   "#5a4bd6",
     "accent_bg":    "#ede9fc",
 
-    "green":        "#2ecc71",
-    "green_dim":    "#27ae60",
-    "orange":       "#f39c12",
-    "orange_dim":   "#d68910",
+    "green":        "#27ae60",
+    "green_dim":    "#219a52",
+    "orange":       "#e67e22",
+    "orange_dim":   "#d35400",
     "red":          "#e74c3c",
     "red_dim":      "#c0392b",
-    "blue":         "#3498db",
-    "blue_dim":     "#2980b9",
-    "purple":       "#9b59b6",
-    "cyan":         "#1abc9c",
-    "yellow":       "#f1c40f",
+    "blue":         "#2980b9",
+    "blue_dim":     "#2471a3",
+    "purple":       "#8e44ad",
+    "cyan":         "#16a085",
+    "yellow":       "#f39c12",
     "pink":         "#e91e63",
 
-    "text":         "#2c3e50",
-    "text_d":       "#7f8c8d",
-    "text_b":       "#1a1a2e",
+    "text":         "#1a1a2e",      # 深色文字，高对比度
+    "text_d":       "#5a6080",      # 暗淡文字 (提亮)
+    "text_b":       "#0d0d1a",      # 标题文字 (更深)
     "text_w":       "#ffffff",
 
-    "border":       "#dce1ea",
-    "border_l":     "#c8ceda",
+    "border":       "#d0d6e4",
+    "border_l":     "#b8c0d4",
 
-    "row_h":        "#f0f2f7",
-    "row_s":        "#e4e7ef",
-    "row_alt":      "#f8f9fc",
+    "row_h":        "#edf0f7",
+    "row_s":        "#dde2ee",
+    "row_alt":      "#f8f9fd",
 
-    "shadow":       "rgba(0, 0, 0, 0.08)",
-    "shadow_l":     "rgba(0, 0, 0, 0.15)",
+    "shadow":       "rgba(0, 0, 0, 0.06)",
+    "shadow_l":     "rgba(0, 0, 0, 0.12)",
 
-    "statusbar":    "#eef0f6",
+    "statusbar":    "#e8ecf4",
 }
 
 

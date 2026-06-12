@@ -197,21 +197,42 @@ class MainWindow(QMainWindow):
         self._tray.show()
 
     def _create_tray_icon(self) -> QIcon:
-        """绘制托盘图标"""
+        """绘制精致托盘图标 — 渐变背景 + 发光效果"""
         pixmap = QPixmap(64, 64)
         pixmap.fill(QColor(0, 0, 0, 0))
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # 背景圆
-        painter.setBrush(QColor(self._theme.get('accent')))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(4, 4, 56, 56)
+        from PySide6.QtGui import QRadialGradient, QLinearGradient, QPen, QBrush
 
-        # 文字
-        painter.setPen(QColor("white"))
-        painter.setFont(QFont("Microsoft YaHei", 24, QFont.Weight.Bold))
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "N")
+        # 外层光晕
+        glow = QRadialGradient(32, 32, 32)
+        glow.setColorAt(0.6, QColor(124, 106, 239, 40))
+        glow.setColorAt(1.0, QColor(124, 106, 239, 0))
+        painter.setBrush(QBrush(glow))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, 64, 64)
+
+        # 主体圆 — 渐变
+        grad = QLinearGradient(10, 10, 54, 54)
+        grad.setColorAt(0.0, QColor(139, 124, 240))    # 浅紫
+        grad.setColorAt(0.5, QColor(107, 90, 220))     # 中紫
+        grad.setColorAt(1.0, QColor(76, 60, 180))      # 深紫
+        painter.setBrush(QBrush(grad))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(8, 8, 48, 48)
+
+        # 内部高光
+        highlight = QRadialGradient(26, 24, 20)
+        highlight.setColorAt(0.0, QColor(255, 255, 255, 50))
+        highlight.setColorAt(1.0, QColor(255, 255, 255, 0))
+        painter.setBrush(QBrush(highlight))
+        painter.drawEllipse(12, 12, 40, 36)
+
+        # 文字 "N" — 精致排版
+        painter.setPen(QColor(255, 255, 255, 240))
+        painter.setFont(QFont("Segoe UI", 26, QFont.Weight.DemiBold))
+        painter.drawText(pixmap.rect().adjusted(0, -2, 0, 0), Qt.AlignmentFlag.AlignCenter, "N")
 
         painter.end()
         return QIcon(pixmap)

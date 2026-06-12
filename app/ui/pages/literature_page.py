@@ -50,6 +50,7 @@ class LiteraturePage(QWidget):
         self._results: list[dict] = []
         self._search_engine = None
         self._worker = None
+        self._current_query: str = ""
         self._setup_ui()
 
     def _setup_ui(self):
@@ -252,9 +253,17 @@ class LiteraturePage(QWidget):
         group.deleteLater()
 
     def _clear_kw_groups(self):
+        """清空所有关键词组"""
+        # 删除所有组（除了最后一个）
         for group in self._kw_groups[:]:
-            self._remove_kw_group(group)
-        self._add_kw_group()
+            if len(self._kw_groups) > 1:
+                self._kw_groups.remove(group)
+                self._kw_layout.removeWidget(group)
+                group.deleteLater()
+        # 清空最后一个组的输入
+        if self._kw_groups:
+            for inp in self._kw_groups[0]._inputs:
+                inp.clear()
 
     def _get_kw_query(self) -> list[list[str]]:
         """获取关键词组查询"""
@@ -278,6 +287,7 @@ class LiteraturePage(QWidget):
         # 构建查询字符串
         query_parts = [" AND ".join(g) for g in query_groups]
         query_str = " OR ".join(query_parts)
+        self._current_query = query_str  # 保存用于历史记录
 
         # 获取选中的数据源
         sources = [name for name, cb in self._source_cbs.items() if cb.isChecked()]
@@ -288,9 +298,15 @@ class LiteraturePage(QWidget):
             from app.search.engine import UnifiedSearchEngine
             self._search_engine = UnifiedSearchEngine()
 
+        # 停止之前的搜索 worker
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.terminate()
+            self._worker.wait(1000)
+            self._worker.deleteLater()
+
         self._kw_progress.setVisible(True)
-        self._kw_progress.setRange(0, 0)  # 不确定进度
-        self._kw_stats.setText("🔍 搜索中...")
+        self._kw_progress.setRange(0, 0)
+        self._kw_stats.setText("搜索中...")
 
         self._worker = _SearchWorker(self._search_engine, query_str, sources, max_results)
         self._worker.finished.connect(self._on_search_finished)
@@ -314,7 +330,7 @@ class LiteraturePage(QWidget):
             self._kw_results_layout.insertWidget(i, card)
 
         # 保存搜索历史
-        self._save_history("search", query="", result_count=len(results), data=results)
+        self._save_history("search", query=self._current_query, result_count=len(results), data=results)
 
     def _on_search_error(self, error: str):
         self._kw_progress.setVisible(False)
@@ -372,6 +388,7 @@ class LiteraturePage(QWidget):
         btn_row = QHBoxLayout()
         gen_btn = QPushButton("📊 生成综述")
         gen_btn.setStyleSheet(BTN_PRIMARY_QSS())
+        gen_btn.clicked.connect(self._generate_review)
         btn_row.addWidget(gen_btn)
         btn_row.addStretch()
         layout.addLayout(btn_row)
@@ -398,6 +415,7 @@ class LiteraturePage(QWidget):
 
         discuss_btn = QPushButton("💡 开始讨论")
         discuss_btn.setStyleSheet(BTN_PRIMARY_QSS())
+        discuss_btn.clicked.connect(self._start_topic_discussion)
         layout.addWidget(discuss_btn)
 
         self._topic_output = QTextEdit()
@@ -406,6 +424,78 @@ class LiteraturePage(QWidget):
         layout.addWidget(self._topic_output, 1)
 
         return page
+
+    # ── Tab 3/4: AI 综述 + 选题讨论 ─────────────────────────
+
+    def _generate_review(self):
+        """生成 AI 综述"""
+        if not self._results:
+            self._review_output.setText("请先在关键词检索 Tab 中搜索文献。")
+            return
+
+        from app.ai.router import AIRouter
+        ai = AIRouter()
+        model = ai.get_model("review")
+        if not model:
+            self._review_output.setText("未配置 AI 模型，请在设置中添加。")
+            return
+
+        # 构建文献列表
+        papers_with_abs = [p for p in self._results if p.get("abstract")]
+        if not papers_with_abs:
+            self._review_output.setText("没有包含摘要的文献，无法生成综述。")
+            return
+
+        paper_list = "\n\n".join(
+            f"[{i+1}] {p['title']}\nAuthors: {', '.join(p.get('authors', []))}\n"
+            f"Year: {p.get('year', '')}\nJournal: {p.get('journal', '')}\n"
+            f"Abstract: {p.get('abstract', '')[:300]}"
+            for i, p in enumerate(papers_with_abs[:20])
+        )
+
+        system_prompt = "你是一位学术文献综述专家。请根据以下文献摘要撰写结构化综述。包含：引言、研究现状、方法分类、趋势、展望。引用时使用[编号]格式。用中文撰写，约800-1500字。"
+        user_prompt = f"以下是 {len(papers_with_abs)} 篇文献：\n\n{paper_list}\n\n请撰写综述。"
+
+        self._review_output.setText("正在生成综述...")
+        result = ai.chat([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ], purpose="review")
+        self._review_output.setText(result.get("content", "生成失败"))
+
+        # 保存历史
+        self._save_history("review", query=self._current_query, result_count=len(papers_with_abs))
+
+    def _start_topic_discussion(self):
+        """选题讨论"""
+        input_text = self._topic_input.toPlainText().strip()
+        if not input_text:
+            self._topic_output.setText("请输入研究方向或兴趣。")
+            return
+
+        from app.ai.router import AIRouter
+        ai = AIRouter()
+        model = ai.get_model("review")
+        if not model:
+            self._topic_output.setText("未配置 AI 模型，请在设置中添加。")
+            return
+
+        system_prompt = """你是一位资深学术研究导师。请根据用户描述，输出 JSON 格式的选题方案：
+{
+  "analysis": "深度分析总结(200-400字)",
+  "topics": [{"title": "选题名称", "description": "描述", "difficulty": "难度", "innovation": "创新点"}],
+  "fields": [{"name": "领域", "description": "简述", "keywords": [{"label": "标签", "terms": ["kw1","kw2"], "logic": "AND"}]}]
+}
+要求：3-5个选题，3-5个领域，关键词用英文。直接输出JSON。"""
+
+        self._topic_output.setText("正在分析...")
+        result = ai.chat([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"研究方向：{input_text}"}
+        ], purpose="review")
+        self._topic_output.setText(result.get("content", "生成失败"))
+
+        self._save_history("topic", query=input_text[:80], result_count=0)
 
     # ── Tab 5: 历史记录 ─────────────────────────────────────
 

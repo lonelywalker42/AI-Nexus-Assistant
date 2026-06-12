@@ -41,7 +41,29 @@ class TaskPage(QWidget):
         # 日历
         self._calendar = CalendarWidget()
         self._calendar.clicked.connect(self._on_date_selected)
+        self._calendar.currentPageChanged.connect(self._on_month_changed)
         left_layout.addWidget(self._calendar)
+
+        # 跳转今日按钮
+        today_btn = QPushButton("  跳转今日")
+        today_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {t.get('accent_bg')};
+                color: {t.get('accent_l')};
+                border: 1px solid {t.get('accent')};
+                border-radius: {t.get('border') and '6px' or '6px'};
+                padding: 6px 12px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {t.get('accent')};
+                color: {t.get('text_w')};
+            }}
+        """)
+        today_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        today_btn.clicked.connect(self._go_today)
+        left_layout.addWidget(today_btn)
 
         # 统计卡片
         stats_row = QHBoxLayout()
@@ -151,19 +173,32 @@ class TaskPage(QWidget):
         self._refresh_list()
         self._refresh_stats()
 
+    def _go_today(self):
+        """跳转到今日"""
+        today = QDate.currentDate()
+        self._calendar.setSelectedDate(today)
+        self._calendar.showToday()
+        self._on_date_selected(today)
+
+    def _on_month_changed(self, year: int, month: int):
+        """日历月份切换时刷新标记"""
+        self._refresh_calendar(year, month)
+
     def _on_date_selected(self, qdate: QDate):
         self._selected_date = qdate.toString("yyyy-MM-dd")
         self._date_title.setText(f"📅 {self._selected_date}")
         self._refresh_list()
         self._refresh_stats()
+        self._refresh_calendar()
 
-    def _refresh_calendar(self):
-        """刷新日历标记"""
+    def _refresh_calendar(self, year: int | None = None, month: int | None = None):
+        """刷新日历标记 — 支持指定月份"""
         db = get_session()
         try:
-            # 获取当月日期范围
-            today = date.today()
-            year, month = today.year, today.month
+            if year is None or month is None:
+                # 使用当前显示的月份
+                current_date = self._calendar.selectedDate()
+                year, month = current_date.year(), current_date.month()
             start = f"{year:04d}-{month:02d}-01"
             if month == 12:
                 end = f"{year + 1:04d}-01-01"
