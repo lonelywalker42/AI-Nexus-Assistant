@@ -1,116 +1,124 @@
-"""统一主题系统 — 暗色/亮色双主题，精致 Catppuccin 色板
+"""统一主题系统 — 暖色调双主题
 
 设计原则:
+- 暖色调统一：琥珀/蜂蜜/暖棕/奶油
 - 8px 网格基准间距
 - 高对比度文字 (WCAG AAA)
 - 微妙的阴影层次
-- 平滑的状态过渡
 - 一致的圆角体系 (4/8/12/16px)
 """
 
 from PySide6.QtCore import QObject, Signal
 
 
-# ── 暗色主题（Catppuccin Mocha 明亮易读版） ──────────────────
+# ── 暗色主题（暖色调 — 琥珀之夜） ──────────────────────────
 DARK_THEME: dict[str, str] = {
-    # 背景层次 (由深到浅) — 提亮以增强可读性
-    "bg":           "#0f1117",      # 最深背景
-    "bg_secondary": "#151825",      # 次级背景
-    "sidebar":      "#181c2e",      # 侧边栏
-    "sidebar_h":    "#222844",      # 侧边栏 hover
-    "sidebar_s":    "#2c3358",      # 侧边栏 selected
-    "card":         "#1c2038",      # 卡片背景
-    "card_h":       "#252a4a",      # 卡片 hover
-    "input":        "#1a1e34",      # 输入框背景
+    # 背景层次 (由深到浅) — 暖棕色调
+    "bg":           "#141210",      # 最深背景（暖黑棕）
+    "bg_secondary": "#1c1916",      # 次级背景
+    "sidebar":      "#1e1b18",      # 侧边栏
+    "sidebar_h":    "#2a2520",      # 侧边栏 hover
+    "sidebar_s":    "#352e28",      # 侧边栏 selected
+    "card":         "#211e1a",      # 卡片背景
+    "card_h":       "#2c2822",      # 卡片 hover
+    "input":        "#1c1916",      # 输入框背景
 
-    # 强调色 — 更明亮
-    "accent":       "#8b7cf0",      # 主强调色（紫）
-    "accent_l":     "#a99af5",      # 强调色 hover
-    "accent_dim":   "#6b5cd6",      # 强调色 pressed
-    "accent_bg":    "#2e2860",      # 强调色背景
+    # 强调色 — 琥珀/蜂蜜色系
+    "accent":       "#e8a84c",      # 主强调色（琥珀金）
+    "accent_l":     "#f0be6a",      # 强调色 hover（亮蜂蜜）
+    "accent_dim":   "#c88a30",      # 强调色 pressed（深琥珀）
+    "accent_bg":    "#2e2518",      # 强调色背景（暖深棕）
 
-    # 语义色 — 更明亮鲜艳
-    "green":        "#50d9a0",      # 成功/完成
-    "green_dim":    "#3aaf7a",      # 成功暗色
-    "orange":       "#ffb347",      # 警告/待办
-    "orange_dim":   "#d9952e",      # 警告暗色
-    "red":          "#ff7b7b",      # 错误/紧急
-    "red_dim":      "#d95555",      # 错误暗色
-    "blue":        "#7ab8ff",      # 信息
-    "blue_dim":     "#5a96dd",      # 信息暗色
-    "purple":       "#c08aff",      # 次要紫
-    "cyan":         "#8ad4f0",      # 青色
-    "yellow":       "#ffe08a",      # 黄色
-    "pink":         "#ffa0d0",      # 粉色
+    # 语义色 — 暖色调整
+    "green":        "#7ac48a",      # 成功/完成（暖绿）
+    "green_dim":    "#5a9e6a",      # 成功暗色
+    "orange":       "#e8a040",      # 警告/待办（暖橙）
+    "orange_dim":   "#c88030",      # 警告暗色
+    "red":          "#e07060",      # 错误/紧急（暖红）
+    "red_dim":      "#c05848",      # 错误暗色
+    "blue":         "#6aaeD8",      # 信息（暖蓝）
+    "blue_dim":     "#4a8eb8",      # 信息暗色
+    "purple":       "#b898c8",      # 次要紫（暖紫）
+    "cyan":         "#70b8c0",      # 青色（暖青）
+    "yellow":       "#e8c860",      # 黄色（暖黄）
+    "pink":         "#d89090",      # 粉色（暖粉）
 
-    # 文字层次 — 更高对比度
-    "text":         "#d0d8f0",      # 主文字 (更亮)
-    "text_d":       "#8090b8",      # 暗淡文字 (提亮，不再灰暗)
-    "text_b":       "#f0f4ff",      # 亮文字（标题）
-    "text_w":       "#ffffff",      # 纯白文字（按钮上）
+    # 文字层次 — 暖白/米色
+    "text":         "#d8d0c8",      # 主文字（暖米白）
+    "text_d":       "#908878",      # 暗淡文字（暖灰）
+    "text_b":       "#f0e8e0",      # 亮文字（暖亮白）
+    "text_w":       "#fff8f0",      # 纯白文字（暖纯白）
 
-    # 边框 — 更清晰
-    "border":       "#303658",      # 主边框
-    "border_l":     "#404a70",      # 亮边框（hover）
+    # 边框 — 暖棕色
+    "border":       "#302820",      # 主边框
+    "border_l":     "#403830",      # 亮边框（hover）
 
     # 表格
-    "row_h":        "#222844",      # 行 hover
-    "row_s":        "#2c3358",      # 行 selected
-    "row_alt":      "#161a2a",      # 交替行
+    "row_h":        "#282320",      # 行 hover
+    "row_s":        "#332c26",      # 行 selected
+    "row_alt":      "#1a1714",      # 交替行
 
     # 阴影
     "shadow":       "rgba(0, 0, 0, 0.3)",
     "shadow_l":     "rgba(0, 0, 0, 0.5)",
 
     # 状态栏
-    "statusbar":    "#0e1019",
+    "statusbar":    "#121010",
 }
 
-# ── 亮色主题（明亮易读版） ─────────────────────────────────
+# ── 亮色主题（暖色调 — 蜂蜜奶油） ─────────────────────────
 LIGHT_THEME: dict[str, str] = {
-    "bg":           "#f5f7fb",
-    "bg_secondary": "#edf0f7",
-    "sidebar":      "#e8ecf4",
-    "sidebar_h":    "#dde2ee",
-    "sidebar_s":    "#d0d6e6",
-    "card":         "#ffffff",
-    "card_h":       "#f8f9fd",
-    "input":        "#ffffff",
+    # 背景层次 — 暖奶油色
+    "bg":           "#faf6f0",      # 最浅背景（奶油白）
+    "bg_secondary": "#f4efe6",      # 次级背景（暖灰白）
+    "sidebar":      "#f0ebe2",      # 侧边栏
+    "sidebar_h":    "#e8e0d4",      # 侧边栏 hover
+    "sidebar_s":    "#ddd4c6",      # 侧边栏 selected
+    "card":         "#ffffff",      # 卡片背景
+    "card_h":       "#faf6f0",      # 卡片 hover
+    "input":        "#ffffff",      # 输入框背景
 
-    "accent":       "#6c5ce7",
-    "accent_l":     "#8577ed",
-    "accent_dim":   "#5a4bd6",
-    "accent_bg":    "#ede9fc",
+    # 强调色 — 琥珀金
+    "accent":       "#c88a28",      # 主强调色（深琥珀）
+    "accent_l":     "#e0a040",      # 强调色 hover（亮琥珀）
+    "accent_dim":   "#a87020",      # 强调色 pressed
+    "accent_bg":    "#faf0e0",      # 强调色背景（浅蜂蜜）
 
-    "green":        "#27ae60",
-    "green_dim":    "#219a52",
-    "orange":       "#e67e22",
-    "orange_dim":   "#d35400",
-    "red":          "#e74c3c",
-    "red_dim":      "#c0392b",
-    "blue":         "#2980b9",
-    "blue_dim":     "#2471a3",
-    "purple":       "#8e44ad",
-    "cyan":         "#16a085",
-    "yellow":       "#f39c12",
-    "pink":         "#e91e63",
+    # 语义色 — 暖色调
+    "green":        "#5a9e60",      # 成功/完成
+    "green_dim":    "#4a8850",      # 成功暗色
+    "orange":       "#d08020",      # 警告/待办
+    "orange_dim":   "#b86818",      # 警告暗色
+    "red":          "#c85040",      # 错误/紧急
+    "red_dim":      "#a84030",      # 错误暗色
+    "blue":         "#4888b0",      # 信息
+    "blue_dim":     "#3870a0",      # 信息暗色
+    "purple":       "#8870a0",      # 次要紫
+    "cyan":         "#5098a0",      # 青色
+    "yellow":       "#c09820",      # 黄色
+    "pink":         "#b07070",      # 粉色
 
-    "text":         "#1a1a2e",      # 深色文字，高对比度
-    "text_d":       "#5a6080",      # 暗淡文字 (提亮)
-    "text_b":       "#0d0d1a",      # 标题文字 (更深)
-    "text_w":       "#ffffff",
+    # 文字层次 — 暖深色
+    "text":         "#3a3228",      # 主文字（暖深棕）
+    "text_d":       "#807060",      # 暗淡文字（暖灰棕）
+    "text_b":       "#201810",      # 标题文字（深暖黑）
+    "text_w":       "#fff8f0",      # 纯白文字
 
-    "border":       "#d0d6e4",
-    "border_l":     "#b8c0d4",
+    # 边框 — 暖灰
+    "border":       "#e0d8cc",      # 主边框
+    "border_l":     "#d0c8b8",      # 亮边框
 
-    "row_h":        "#edf0f7",
-    "row_s":        "#dde2ee",
-    "row_alt":      "#f8f9fd",
+    # 表格
+    "row_h":        "#f0ebe2",      # 行 hover
+    "row_s":        "#e8e0d4",      # 行 selected
+    "row_alt":      "#faf6f0",      # 交替行
 
-    "shadow":       "rgba(0, 0, 0, 0.06)",
-    "shadow_l":     "rgba(0, 0, 0, 0.12)",
+    # 阴影
+    "shadow":       "rgba(80, 60, 30, 0.08)",
+    "shadow_l":     "rgba(80, 60, 30, 0.15)",
 
-    "statusbar":    "#e8ecf4",
+    # 状态栏
+    "statusbar":    "#eee8de",
 }
 
 
@@ -132,7 +140,6 @@ class ThemeManager(QObject):
         return self._colors
 
     def get(self, key: str) -> str:
-        """获取当前主题的颜色值"""
         return self._colors.get(key, "#ff00ff")
 
     def set_theme(self, mode: str) -> None:
@@ -180,11 +187,11 @@ RADIUS = {
 
 
 # ══════════════════════════════════════════════════════════════
-#  QSS 模板 — 精致组件样式
+#  QSS 模板 — 暖色调组件样式
 # ══════════════════════════════════════════════════════════════
 
 def BTN_PRIMARY_QSS() -> str:
-    """主按钮 — 实心紫色"""
+    """主按钮 — 琥珀金实心"""
     t = get_theme()
     return f"""
         QPushButton {{
@@ -210,7 +217,7 @@ def BTN_PRIMARY_QSS() -> str:
 
 
 def BTN_SECONDARY_QSS() -> str:
-    """次级按钮 — 边框样式"""
+    """次级按钮 — 暖色边框"""
     t = get_theme()
     return f"""
         QPushButton {{
@@ -233,7 +240,7 @@ def BTN_SECONDARY_QSS() -> str:
 
 
 def BTN_DANGER_QSS() -> str:
-    """危险按钮 — 红色边框"""
+    """危险按钮 — 暖红边框"""
     t = get_theme()
     return f"""
         QPushButton {{
@@ -256,7 +263,7 @@ def BTN_DANGER_QSS() -> str:
 
 
 def BTN_GHOST_QSS() -> str:
-    """幽灵按钮 — 无边框"""
+    """幽灵按钮"""
     t = get_theme()
     return f"""
         QPushButton {{
@@ -380,7 +387,6 @@ def TABLE_QSS() -> str:
             padding: 10px 12px;
             font-weight: bold;
             font-size: 12px;
-            text-transform: uppercase;
         }}
         QHeaderView::section:hover {{
             background-color: {t.get('sidebar_h')};
@@ -602,18 +608,6 @@ def GROUPBOX_QSS() -> str:
             left: 16px;
             padding: 0 8px;
             background-color: {t.get('card')};
-        }}
-    """
-
-
-def SPLASH_QSS() -> str:
-    """启动画面"""
-    t = get_theme()
-    return f"""
-        QSplashScreen {{
-            background-color: {t.get('bg')};
-            border: 1px solid {t.get('border')};
-            border-radius: {RADIUS['xl']};
         }}
     """
 

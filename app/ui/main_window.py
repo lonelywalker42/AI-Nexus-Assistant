@@ -197,40 +197,40 @@ class MainWindow(QMainWindow):
         self._tray.show()
 
     def _create_tray_icon(self) -> QIcon:
-        """绘制精致托盘图标 — 渐变背景 + 发光效果"""
+        """绘制精致托盘图标 — 琥珀暖色调渐变"""
         pixmap = QPixmap(64, 64)
         pixmap.fill(QColor(0, 0, 0, 0))
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        from PySide6.QtGui import QRadialGradient, QLinearGradient, QPen, QBrush
+        from PySide6.QtGui import QRadialGradient, QLinearGradient, QBrush
 
-        # 外层光晕
+        # 外层光晕（琥珀色）
         glow = QRadialGradient(32, 32, 32)
-        glow.setColorAt(0.6, QColor(124, 106, 239, 40))
-        glow.setColorAt(1.0, QColor(124, 106, 239, 0))
+        glow.setColorAt(0.6, QColor(232, 168, 76, 40))
+        glow.setColorAt(1.0, QColor(232, 168, 76, 0))
         painter.setBrush(QBrush(glow))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(0, 0, 64, 64)
 
-        # 主体圆 — 渐变
+        # 主体圆 — 琥珀渐变
         grad = QLinearGradient(10, 10, 54, 54)
-        grad.setColorAt(0.0, QColor(139, 124, 240))    # 浅紫
-        grad.setColorAt(0.5, QColor(107, 90, 220))     # 中紫
-        grad.setColorAt(1.0, QColor(76, 60, 180))      # 深紫
+        grad.setColorAt(0.0, QColor(240, 190, 106))    # 浅蜂蜜
+        grad.setColorAt(0.5, QColor(220, 160, 60))     # 中琥珀
+        grad.setColorAt(1.0, QColor(200, 138, 40))     # 深琥珀
         painter.setBrush(QBrush(grad))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(8, 8, 48, 48)
 
         # 内部高光
         highlight = QRadialGradient(26, 24, 20)
-        highlight.setColorAt(0.0, QColor(255, 255, 255, 50))
+        highlight.setColorAt(0.0, QColor(255, 255, 255, 60))
         highlight.setColorAt(1.0, QColor(255, 255, 255, 0))
         painter.setBrush(QBrush(highlight))
         painter.drawEllipse(12, 12, 40, 36)
 
-        # 文字 "N" — 精致排版
-        painter.setPen(QColor(255, 255, 255, 240))
+        # 文字 "N"
+        painter.setPen(QColor(255, 250, 240, 240))
         painter.setFont(QFont("Segoe UI", 26, QFont.Weight.DemiBold))
         painter.drawText(pixmap.rect().adjusted(0, -2, 0, 0), Qt.AlignmentFlag.AlignCenter, "N")
 

@@ -49,9 +49,9 @@ class TaskPage(QWidget):
         today_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {t.get('accent_bg')};
-                color: {t.get('accent_l')};
+                color: {t.get('accent')};
                 border: 1px solid {t.get('accent')};
-                border-radius: {t.get('border') and '6px' or '6px'};
+                border-radius: 6px;
                 padding: 6px 12px;
                 font-size: 12px;
                 font-weight: bold;
