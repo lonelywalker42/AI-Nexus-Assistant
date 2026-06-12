@@ -4,7 +4,7 @@ import json
 from datetime import datetime, date, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func
 from app.models.task import Task, WeeklyPlan
 
 
@@ -83,18 +83,6 @@ def update_task(db: Session, task_id: str, **kwargs) -> Optional[Task]:
 
 def get_dates_with_todos(db: Session, start: str, end: str) -> dict[str, str]:
     """获取日期范围内有待办的日期，返回 {date_str: "pending"|"completed"}"""
-    rows = (
-        db.query(
-            Task.date,
-            func.min(Task.completed.cast(db.bind.dialect.name == 'sqlite' and int or int)).label("all_done"),
-        )
-        .filter(Task.date.between(start, end))
-        .group_by(Task.date)
-        .all()
-    )
-
-    result = {}
-    # 简化实现：分别查询 pending 和 completed
     pending_dates = (
         db.query(Task.date)
         .filter(Task.date.between(start, end), Task.completed == False)
@@ -111,11 +99,9 @@ def get_dates_with_todos(db: Session, start: str, end: str) -> dict[str, str]:
     pending_set = {r[0] for r in pending_dates}
     completed_set = {r[0] for r in completed_dates}
 
+    result = {}
     for d in pending_set | completed_set:
-        if d in pending_set:
-            result[d] = "pending"
-        else:
-            result[d] = "completed"
+        result[d] = "pending" if d in pending_set else "completed"
 
     return result
 

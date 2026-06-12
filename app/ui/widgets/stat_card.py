@@ -1,6 +1,6 @@
 """统计卡片组件 — 复用自 ai-research-manager，增强 hover 效果"""
 
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QLabel
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QLabel, QSizePolicy
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from app.ui.theme import get_theme
@@ -15,7 +15,7 @@ class StatCard(QFrame):
         self._theme = get_theme()
         self._accent = accent or self._theme.get('accent')
         self.setMinimumHeight(140)
-        self.setSizePolicy(QFrame.Policy.Expanding, QFrame.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
