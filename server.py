@@ -582,6 +582,11 @@ def list_history(limit: int = 50):
 # ══════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=8765)
+    args = parser.parse_args()
+
+    print(f"NEXUS_SERVER_READY:{args.port}", flush=True)
     import uvicorn
-    print("Starting AI Nexus Assistant API on http://127.0.0.1:8765")
-    uvicorn.run(app, host="127.0.0.1", port=8765)
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")

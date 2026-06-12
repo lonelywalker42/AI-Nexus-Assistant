@@ -52,3 +52,10 @@ nexus-ui/src-tauri/target/
 
 # VS Build Tools
 vs_BuildTools.exe
+
+# Built binaries (large files, not in git)
+release/
+nexus-ui/src-tauri/binaries/
+*.exe
+dist/
+build/

@@ -4,8 +4,31 @@
  */
 
 const API_BASE = "http://127.0.0.1:8765";
+const MAX_RETRIES = 30;
+const RETRY_DELAY = 1000;
+
+async function waitForBackend(): Promise<void> {
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      const res = await fetch(`${API_BASE}/api/dashboard`, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) return;
+    } catch {}
+    await new Promise(r => setTimeout(r, RETRY_DELAY));
+  }
+  throw new Error("Backend not ready after 30 seconds");
+}
+
+let backendReady = false;
+
+async function ensureBackend() {
+  if (!backendReady) {
+    await waitForBackend();
+    backendReady = true;
+  }
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  await ensureBackend();
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,

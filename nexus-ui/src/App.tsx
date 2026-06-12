@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import TaskPage from "./pages/TaskPage";
@@ -7,6 +7,7 @@ import ExperimentPage from "./pages/ExperimentPage";
 import KnowledgePage from "./pages/KnowledgePage";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
+import { dashboardApi } from "./api/client";
 
 const PAGES = [
   { id: "dashboard", label: "仪表盘", icon: "📊" },
@@ -20,6 +21,35 @@ const PAGES = [
 
 function App() {
   const [activePage, setActivePage] = useState("dashboard");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    dashboardApi.get()
+      .then(() => setLoading(false))
+      .catch(() => {
+        const interval = setInterval(() => {
+          dashboardApi.get().then(() => {
+            setLoading(false);
+            clearInterval(interval);
+          }).catch(() => {});
+        }, 1000);
+      });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen" style={{ background: 'var(--bg-gradient)' }}>
+        <div className="glass-card p-8 text-center space-y-4">
+          <div className="text-4xl">🧠</div>
+          <h1 className="text-xl font-bold text-slate-700">AI Nexus Assistant</h1>
+          <p className="text-sm text-slate-500">正在启动后端服务...</p>
+          <div className="w-48 h-1.5 bg-slate-200 rounded-full overflow-hidden mx-auto">
+            <div className="h-full bg-primary-500 rounded-full animate-pulse" style={{ width: "60%" }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const renderPage = () => {
     switch (activePage) {
