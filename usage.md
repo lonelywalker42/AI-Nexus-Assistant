@@ -181,8 +181,13 @@ python main.py
 ### Tauri 便携版
 
 ```bash
-python build_server.py   # 构建后端 sidecar
-cd nexus-ui && npm run tauri build  # 构建前端
+python build_tauri.py    # 一键构建 (sidecar + 前端 + 嵌入 + 打包)
+```
+
+或分步：
+```bash
+python build_server.py   # 构建后端 sidecar (~31MB)
+cd nexus-ui && npx tauri build  # 构建前端 + 嵌入 + 打包
 ```
 
 ### PySide6 版
@@ -233,4 +238,10 @@ A: 在设置中添加 AI 模型配置。
 A: 是的，共用 `data/nexus.db`。
 
 **Q: 便携版如何使用？**
-A: 两个 exe 放同一目录，双击 `AI-Nexus-Assistant.exe`。
+A: 两个 exe 放同一目录，双击 `AI-Nexus-Assistant.exe`，后端自动启动（约 5-10 秒）。
+
+**Q: Tauri 窗口显示 "localhost 拒绝连接"？**
+A: 必须用 `npx tauri build`（不是 `cargo build --release`）构建，否则前端文件不会嵌入 exe。运行 `python build_tauri.py` 可自动完成。
+
+**Q: 端口 8765 被占用？**
+A: 关闭之前启动的 sidecar 进程。Tauri 应用会自动检测端口占用，如果后端已在运行则跳过启动。

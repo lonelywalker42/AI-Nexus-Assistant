@@ -16,7 +16,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS + FastAPI | **358MB** | ✅ 可用 |
+| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS + FastAPI | **~42MB** | ✅ 可用 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ### 整合的源项目
@@ -131,8 +131,8 @@ AI-Nexus-Assistant/
 │       └── capabilities/       # Tauri 2 权限声明 (窗口控制)
 │
 ├── release/                    # 便携版发布文件
-│   ├── AI-Nexus-Assistant.exe  # Tauri 壳 (11MB)
-│   └── nexus-server-*.exe      # Python 后端 (347MB)
+│   ├── AI-Nexus-Assistant.exe  # Tauri 壳 (11MB，含嵌入前端)
+│   └── nexus-server-*.exe      # Python 后端 (31MB)
 │
 └── data/                       # 运行时数据 (gitignore)
 ```
@@ -172,6 +172,7 @@ API 文档: `http://127.0.0.1:8765/docs`
 | Phase 4 | Bug修复 + UI优化 + 无边框窗口 | ✅ 完成 |
 | Phase 5 | Tauri 2 前端 + FastAPI 后端 | ✅ 完成 |
 | Phase 6 | Issue修复 + 知识库增强 + 窗口控制 | ✅ 完成 |
+| Phase 7 | Sidecar优化 + 前端嵌入 + 端口冲突检测 | ✅ 完成 |
 
 详细进展见 [development.md](development.md)
 

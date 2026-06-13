@@ -11,7 +11,7 @@ AI Nexus Assistant is a personal research assistant desktop application that int
 The project has **two independent frontends** sharing the same Python backend services:
 
 1. **PySide6 version** (`main.py` + `app/ui/`) — Python desktop app, ~235MB packaged
-2. **Tauri 2 version** (`nexus-ui/` + `server.py`) — Rust shell + React/TypeScript frontend + FastAPI API, ~11MB shell + ~347MB sidecar
+2. **Tauri 2 version** (`nexus-ui/` + `server.py`) — Rust shell + React/TypeScript frontend + FastAPI API, ~11MB shell + ~31MB sidecar
 
 Both share:
 - `app/models/` — SQLAlchemy ORM models (8 tables in `data/nexus.db`)
@@ -98,9 +98,10 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - `src-tauri/capabilities/default.json` — Tauri 2 capability permissions (window controls, drag, shell)
 
 ### Build Notes
-- `externalBin` was removed from tauri.conf.json to avoid build-time dependency on sidecar
-- Rust `setup()` gracefully handles missing sidecar (dev mode)
-- Frontend waits for backend via polling `/api/dashboard` with retry
+- Must use `npx tauri build` (not `cargo build --release`) to embed frontend files into exe
+- `build_tauri.py` runs `npx tauri build` which auto-executes Vite build + Rust compile + frontend embedding
+- `build_server.py` uses `--exclude-module` to keep sidecar at ~31MB (excludes torch/scipy/numpy etc.)
+- Rust `setup()` checks port 8765 first — if backend already running, skips sidecar spawn
 - Tauri 2 requires `capabilities/` directory for window operations (minimize/maximize/close/drag)
 
 ## FastAPI Backend: `server.py`

@@ -112,16 +112,31 @@ Phase 7: Sidecar修复 + Tauri2窗口权限       [█████████�
 
 | 修复 | 说明 |
 |------|------|
-| lib.rs wait_for_backend() | Rust 侧轮询 /api/dashboard，最多等 30 秒后才打开 webview |
-| Cargo.toml reqwest | 添加 reqwest(blocking) 用于健康检查 |
+| lib.rs wait_for_backend() | Rust 侧 TCP 探测端口 8765，最多等 30 秒后才打开 webview |
+| lib.rs 端口冲突检测 | 启动前先检查端口是否已被占用，避免重复绑定 Errno 10048 |
 
 **根因**: `--onefile` exe 解压需 5-8 秒，Rust 未等待后端就绪就打开 webview，导致首次连接失败。
+
+### Tauri 2 前端嵌入修复
+
+| 修复 | 说明 |
+|------|------|
+| build_tauri.py | `cargo build --release` 改为 `npx tauri build`，正确嵌入 dist/ 到 exe |
+| lib.rs 端口检测 | 启动前 TCP 探测，后端已运行则跳过 sidecar 启动 |
+
+**根因**: `cargo build --release` 不会嵌入前端资源到 exe，webview 加载空白页显示 "localhost 拒绝连接"。必须用 `npx tauri build` 触发完整的构建流程（Vite 构建前端 → 编译 Rust → 嵌入 dist/ → 打包）。
 
 ---
 
 ## Git 历史
 
 ```
+53b4ccb fix: 用npx tauri build替代cargo build，正确嵌入前端资源
+7870603 fix: 先检查端口占用再启动sidecar，避免重复绑定冲突
+5219629 fix: 移除reqwest依赖，改用TCP探测后端端口
+3a4a2d7 fix: sidecar 2.6GB→31MB + Rust等待后端就绪再打开webview
+df928e0 refactor: build_server改用专用最小venv构建
+60d7caf fix: 排除40+个不需要的模块，sidecar从2.6GB预期降至~50MB
 78f41d4 fix: sidecar启动日志+补全hidden imports+Tauri2窗口权限
 34600b7 fix: 剩余issue修复 — 托盘图标/窗口控制/知识库导入
 979b1f2 fix: 多项修复 — 设置/对话/仪表盘/任务/后端API
