@@ -109,11 +109,10 @@ fn create_clock_window(app: &tauri::AppHandle) {
         WebviewUrl::App("clock.html".into()),
     )
     .title("Nexus Clock")
-    .inner_size(340.0, 105.0)
-    .min_inner_size(280.0, 90.0)
-    .max_inner_size(500.0, 150.0)
-    .resizable(true)
+    .inner_size(360.0, 130.0)
+    .resizable(false)
     .decorations(false)
+    .content_protected(false)
     .always_on_top(true)
     .center()
     .build();
