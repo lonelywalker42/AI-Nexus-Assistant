@@ -1,7 +1,7 @@
 {
   "identifier": "default",
-  "description": "默认权限 — 窗口控制、拖拽、shell 插件",
-  "windows": ["main"],
+  "description": "默认权限 — 所有窗口",
+  "windows": ["*"],
   "permissions": [
     "core:default",
     "core:window:allow-minimize",
@@ -13,6 +13,9 @@
     "core:window:allow-is-maximized",
     "core:window:allow-set-focus",
     "core:window:allow-center",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-skip-taskbar",
     "shell:allow-open"
   ]
 }

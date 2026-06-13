@@ -115,9 +115,9 @@ body.transparent { background: transparent; }
 }
 .led-text {
   font-family: 'Consolas', monospace;
-  font-size: 11px; letter-spacing: 1.5px;
+  font-size: 14px; letter-spacing: 2px; font-weight: 600;
   color: var(--led);
-  text-shadow: 0 0 6px rgba(204,102,0,0.5);
+  text-shadow: 0 0 8px rgba(204,102,0,0.6);
   white-space: nowrap; text-align: center;
 }
 
@@ -221,17 +221,35 @@ body.transparent { background: transparent; }
 </div>
 
 <script>
-// ── Tauri API（异步加载，就绪后绑定事件） ──
+// ── Tauri API（三重降级：import → __TAURI__ → __TAURI_INTERNALS__） ──
 let invoke = null;
 
-async function init() {
+async function initTauri() {
+  // 方式1: ES module import
   try {
-    const core = await import('@tauri-apps/api/core');
-    invoke = core.invoke;
-  } catch (e) {
-    console.warn('Tauri API unavailable:', e);
-  }
-  bindEvents();
+    const { invoke: fn } = await import('@tauri-apps/api/core');
+    if (typeof fn === 'function') { invoke = fn; console.log('[clock] Tauri API via import'); return; }
+  } catch {}
+
+  // 方式2: __TAURI__ 全局对象
+  try {
+    if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+      invoke = window.__TAURI__.core.invoke;
+      console.log('[clock] Tauri API via __TAURI__');
+      return;
+    }
+  } catch {}
+
+  // 方式3: __TAURI_INTERNALS__
+  try {
+    if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+      invoke = window.__TAURI_INTERNALS__.invoke;
+      console.log('[clock] Tauri API via __TAURI_INTERNALS__');
+      return;
+    }
+  } catch {}
+
+  console.warn('[clock] No Tauri API available');
 }
 
 // ── 状态 ──
@@ -366,7 +384,7 @@ function startCD(min) {
   cdTarget = Date.now() + min * 60 * 1000;
 }
 
-init();
+initTauri().then(() => bindEvents());
 </script>
 </body>
 </html>
