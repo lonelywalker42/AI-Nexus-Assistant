@@ -22,8 +22,9 @@ fn show_main_window(app: tauri::AppHandle) {
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
         let _ = cw.close();
     }
-    // 显示主窗口
+    // 显示主窗口并恢复任务栏
     if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_skip_taskbar(false);
         let _ = w.show();
         let _ = w.set_focus();
     }
@@ -140,11 +141,11 @@ pub fn run() {
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
                         "show" => {
-                            // 关闭时钟，显示主窗口
                             if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
                                 let _ = cw.close();
                             }
                             if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.set_skip_taskbar(false);
                                 let _ = w.show();
                                 let _ = w.set_focus();
                             }
@@ -172,6 +173,7 @@ pub fn run() {
                             let _ = cw.close();
                         }
                         if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.set_skip_taskbar(false);
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
@@ -179,17 +181,16 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // ── 主窗口关闭 → 弹出时钟 ──
+            // ── 主窗口关闭 → 隐藏到托盘 + 弹出时钟 ──
             let ah = app_handle.clone();
             if let Some(window) = app.get_webview_window("main") {
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        // 隐藏主窗口
                         if let Some(w) = ah.get_webview_window("main") {
+                            let _ = w.set_skip_taskbar(true);
                             let _ = w.hide();
                         }
-                        // 显示时钟
                         create_clock_window(&ah);
                     }
                 });

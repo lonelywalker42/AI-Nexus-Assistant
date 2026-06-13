@@ -19,7 +19,6 @@
   --off: #18181e;
   --off-l: #222228;
   --led: #cc6600;
-  --led-dim: #442200;
   --menu-bg: #1a1a2e;
   --menu-border: #333346;
 }
@@ -31,21 +30,18 @@ body {
   user-select: none;
   font-family: 'Consolas', 'Courier New', monospace;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100vh;
-  position: relative;
 }
+body.transparent { background: transparent; }
 
-body.transparent { --bg: transparent; }
-
-/* ── 辉光管容器 ── */
+/* ── 主容器 ── */
 .clock-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
+  gap: 6px;
 }
 
 .clock-row {
@@ -55,246 +51,139 @@ body.transparent { --bg: transparent; }
   position: relative;
 }
 
-/* ── 单个数字管 ── */
+/* ── 辉光管 ── */
 .tube {
-  width: 38px;
-  height: 72px;
+  width: 38px; height: 72px;
   background: var(--tube);
   border: 1px solid var(--tube-border);
   border-radius: 8px 8px 4px 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   position: relative;
-  box-shadow:
-    inset 0 0 15px rgba(0,0,0,0.8),
-    0 1px 0 #3a3a44;
+  box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 1px 0 #3a3a44;
 }
-
 .tube::before {
-  content: '';
-  position: absolute;
-  top: 8px; bottom: 8px; left: 3px; right: 3px;
+  content: ''; position: absolute; top: 8px; bottom: 8px; left: 3px; right: 3px;
   background: repeating-linear-gradient(0deg, transparent, transparent 8px, rgba(26,26,32,0.3) 8px, rgba(26,26,32,0.3) 9px);
-  border-radius: 4px;
-  pointer-events: none;
+  border-radius: 4px; pointer-events: none;
 }
-
 .tube::after {
-  content: '';
-  position: absolute;
-  bottom: -4px;
-  left: 4px; right: 4px;
-  height: 6px;
-  background: var(--base);
-  border: 1px solid var(--metal);
-  border-radius: 0 0 3px 3px;
+  content: ''; position: absolute; bottom: -4px; left: 4px; right: 4px; height: 6px;
+  background: var(--base); border: 1px solid var(--metal); border-radius: 0 0 3px 3px;
 }
 
-/* ── 辉光数字 ── */
 .digit {
-  font-size: 48px;
-  font-weight: 700;
-  font-family: 'Consolas', monospace;
-  line-height: 1;
-  z-index: 2;
+  font-size: 48px; font-weight: 700; font-family: 'Consolas', monospace;
+  line-height: 1; z-index: 2;
   color: var(--core);
-  text-shadow:
-    0 0 3px var(--hot),
-    0 0 6px var(--wire),
-    0 0 12px var(--glow),
-    0 0 20px var(--glow),
-    0 0 30px var(--halo);
+  text-shadow: 0 0 3px var(--hot), 0 0 6px var(--wire), 0 0 12px var(--glow), 0 0 20px var(--glow), 0 0 30px var(--halo);
 }
-
-.digit.off {
-  color: var(--off);
-  text-shadow: 0 0 2px var(--off-l);
-}
-
-.digit.flash {
-  animation: glow-flash 0.5s ease-in-out infinite;
-}
-
+.digit.off { color: var(--off); text-shadow: 0 0 2px var(--off-l); }
+.digit.flash { animation: gf 0.5s ease-in-out infinite; }
 .digit.expire {
   color: #ef4444;
-  text-shadow:
-    0 0 3px #f87171,
-    0 0 8px #ef4444,
-    0 0 15px #dc2626,
-    0 0 25px #b91c1c;
-  animation: glow-flash 0.4s ease-in-out infinite;
+  text-shadow: 0 0 3px #f87171, 0 0 8px #ef4444, 0 0 15px #dc2626, 0 0 25px #b91c1c;
+  animation: gf 0.4s ease-in-out infinite;
 }
+@keyframes gf { 0%,100%{opacity:1} 50%{opacity:0.15} }
 
-@keyframes glow-flash {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.15; }
-}
-
-/* ── 冒号 ── */
 .colon {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  align-items: center;
-  padding: 0 4px;
-  z-index: 2;
+  display: flex; flex-direction: column; gap: 16px;
+  align-items: center; padding: 0 4px; z-index: 2;
 }
-
 .colon-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  width: 8px; height: 8px; border-radius: 50%;
   background: var(--wire);
-  box-shadow:
-    0 0 4px var(--hot),
-    0 0 8px var(--wire),
-    0 0 14px var(--glow),
-    0 0 20px var(--halo);
+  box-shadow: 0 0 4px var(--hot), 0 0 8px var(--wire), 0 0 14px var(--glow), 0 0 20px var(--halo);
   transition: all 0.2s;
 }
+.colon-dot.off { background: var(--off); box-shadow: 0 0 2px var(--off-l); }
 
-.colon-dot.off {
-  background: var(--off);
-  box-shadow: 0 0 2px var(--off-l);
-}
-
-/* ── 像素风格日期显示屏 ── */
+/* ── LED 日期屏（与管体等宽） ── */
 .led-panel {
-  margin-top: 8px;
+  width: 100%;
   background: #060608;
   border: 1px solid #12121a;
   border-radius: 4px;
-  padding: 4px 12px;
-  position: relative;
+  padding: 4px 8px;
   box-shadow: inset 0 0 8px rgba(0,0,0,0.9);
+  position: relative;
 }
-
 .led-panel::before {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border: 1px solid #22222a;
-  border-radius: 6px;
-  background: #0e0e12;
-  z-index: -1;
+  content: ''; position: absolute; inset: -3px;
+  border: 1px solid #22222a; border-radius: 6px;
+  background: #0e0e12; z-index: -1;
 }
-
 .led-text {
   font-family: 'Consolas', monospace;
-  font-size: 11px;
-  letter-spacing: 1.5px;
+  font-size: 11px; letter-spacing: 1.5px;
   color: var(--led);
   text-shadow: 0 0 6px rgba(204,102,0,0.5);
-  white-space: nowrap;
-  text-align: center;
+  white-space: nowrap; text-align: center;
 }
 
-/* ── 倒计时标签 ── */
+/* ── 标签 ── */
 .countdown-label {
-  font-size: 9px;
-  color: var(--glow);
+  font-size: 9px; color: var(--glow);
   text-shadow: 0 0 4px rgba(204,85,0,0.5);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  margin-bottom: 4px;
-  height: 12px;
+  letter-spacing: 2px; text-transform: uppercase;
+  height: 12px; text-align: center;
 }
-
 .countdown-label.expire {
   color: #ef4444;
   text-shadow: 0 0 4px rgba(239,68,68,0.5);
-  animation: glow-flash 0.5s ease-in-out infinite;
+  animation: gf 0.5s ease-in-out infinite;
 }
 
 /* ── 右键菜单 ── */
-.context-menu {
-  display: none;
-  position: fixed;
-  background: var(--menu-bg);
-  border: 1px solid var(--menu-border);
-  border-radius: 8px;
-  padding: 4px 0;
-  z-index: 1000;
+.ctx {
+  display: none; position: fixed;
+  background: var(--menu-bg); border: 1px solid var(--menu-border);
+  border-radius: 8px; padding: 4px 0; z-index: 1000;
   -webkit-app-region: no-drag;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-  min-width: 170px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6); min-width: 170px;
 }
-.context-menu.show { display: block; }
-
-.menu-item {
-  padding: 7px 14px;
-  font-size: 12px;
-  color: #e0e6ed;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.ctx.show { display: block; }
+.mi {
+  padding: 7px 14px; font-size: 12px; color: #e0e6ed;
+  cursor: pointer; display: flex; align-items: center; gap: 8px;
   transition: background 0.12s;
 }
-.menu-item:hover { background: var(--wire); color: #fff; }
-
-.menu-sep { height: 1px; background: var(--menu-border); margin: 3px 0; }
+.mi:hover { background: var(--wire); color: #fff; }
+.sep { height: 1px; background: var(--menu-border); margin: 3px 0; }
 
 /* ── 自定义输入 ── */
-.custom-input-wrap {
-  display: none;
-  position: fixed;
-  background: var(--menu-bg);
-  border: 1px solid var(--menu-border);
-  border-radius: 8px;
-  padding: 10px;
-  z-index: 1001;
+.cust {
+  display: none; position: fixed;
+  background: var(--menu-bg); border: 1px solid var(--menu-border);
+  border-radius: 8px; padding: 10px; z-index: 1001;
   -webkit-app-region: no-drag;
   box-shadow: 0 8px 24px rgba(0,0,0,0.6);
 }
-.custom-input-wrap.show { display: flex; gap: 6px; align-items: center; }
-
-.custom-input-wrap input {
-  width: 56px;
-  background: var(--tube);
-  border: 1px solid var(--menu-border);
-  border-radius: 4px;
-  color: var(--core);
-  padding: 4px 6px;
-  font-size: 13px;
-  text-align: center;
-  outline: none;
+.cust.show { display: flex; gap: 6px; align-items: center; }
+.cust input {
+  width: 56px; background: var(--tube); border: 1px solid var(--menu-border);
+  border-radius: 4px; color: var(--core); padding: 4px 6px;
+  font-size: 13px; text-align: center; outline: none;
 }
-.custom-input-wrap input:focus { border-color: var(--wire); }
-
-.custom-input-wrap button {
-  background: var(--wire);
-  border: none;
-  border-radius: 4px;
-  color: #fff;
-  padding: 4px 10px;
-  font-size: 12px;
-  cursor: pointer;
+.cust input:focus { border-color: var(--wire); }
+.cust button {
+  background: var(--wire); border: none; border-radius: 4px;
+  color: #fff; padding: 4px 10px; font-size: 12px; cursor: pointer;
 }
 
-/* ── 关闭按钮 ── */
 .close-btn {
-  position: absolute;
-  top: 6px;
-  right: 10px;
-  font-size: 10px;
-  color: #3a3a44;
-  -webkit-app-region: no-drag;
-  cursor: pointer;
-  z-index: 10;
-  transition: color 0.15s;
+  position: absolute; top: 6px; right: 10px;
+  font-size: 10px; color: #3a3a44;
+  -webkit-app-region: no-drag; cursor: pointer; z-index: 10;
 }
 .close-btn:hover { color: #ef4444; }
 </style>
 </head>
 <body>
 
-<div class="clock-wrap" id="clockWrap">
-  <div class="countdown-label" id="countdownLabel">&nbsp;</div>
-
-  <div class="clock-row">
-    <!-- HH:MM:SS -->
+<div class="clock-wrap">
+  <div class="countdown-label" id="cdLabel">&nbsp;</div>
+  <div class="clock-row" id="clockRow">
     <div class="tube"><span class="digit" id="h1">0</span></div>
     <div class="tube"><span class="digit" id="h2">0</span></div>
     <div class="colon"><div class="colon-dot" id="c1"></div><div class="colon-dot" id="c2"></div></div>
@@ -305,206 +194,179 @@ body.transparent { --bg: transparent; }
     <div class="tube"><span class="digit" id="s2">0</span></div>
     <span class="close-btn" id="closeBtn">✕</span>
   </div>
-
-  <!-- 像素风格 LED 日期屏 -->
-  <div class="led-panel">
+  <div class="led-panel" id="ledPanel">
     <div class="led-text" id="ledDate"></div>
   </div>
 </div>
 
 <!-- 右键菜单 -->
-<div class="context-menu" id="ctxMenu">
-  <div class="menu-item" data-min="15">⏱ 15 分钟</div>
-  <div class="menu-item" data-min="30">⏱ 30 分钟</div>
-  <div class="menu-item" data-min="45">⏱ 45 分钟</div>
-  <div class="menu-item" data-min="60">⏱ 60 分钟</div>
-  <div class="menu-item" data-min="90">⏱ 90 分钟</div>
-  <div class="menu-sep"></div>
-  <div class="menu-item" id="customBtn">✏️ 自定义...</div>
-  <div class="menu-sep"></div>
-  <div class="menu-item" id="cancelBtn" style="display:none">⏹ 取消倒计时</div>
-  <div class="menu-item" id="toggleBg">🎨 切换透明背景</div>
-  <div class="menu-sep"></div>
-  <div class="menu-item" id="backBtn">↩ 返回主窗口</div>
+<div class="ctx" id="menu">
+  <div class="mi" data-m="15">⏱ 15 分钟</div>
+  <div class="mi" data-m="30">⏱ 30 分钟</div>
+  <div class="mi" data-m="45">⏱ 45 分钟</div>
+  <div class="mi" data-m="60">⏱ 60 分钟</div>
+  <div class="mi" data-m="90">⏱ 90 分钟</div>
+  <div class="sep"></div>
+  <div class="mi" id="custBtn">✏️ 自定义...</div>
+  <div class="sep"></div>
+  <div class="mi" id="cancelBtn" style="display:none">⏹ 取消倒计时</div>
+  <div class="mi" id="bgBtn">🎨 切换透明背景</div>
+  <div class="sep"></div>
+  <div class="mi" id="backBtn">↩ 返回主窗口</div>
 </div>
 
-<!-- 自定义输入 -->
-<div class="custom-input-wrap" id="customWrap">
-  <input type="number" id="customInput" min="1" max="999" value="45">
-  <button id="customOk">确定</button>
+<div class="cust" id="custBox">
+  <input type="number" id="custIn" min="1" max="999" value="45">
+  <button id="custOk">确定</button>
 </div>
 
 <script>
+// ── Tauri API（异步加载，就绪后绑定事件） ──
 let invoke = null;
-(async () => {
-  try { invoke = (await import('@tauri-apps/api/core')).invoke; } catch {}
-})();
+
+async function init() {
+  try {
+    const core = await import('@tauri-apps/api/core');
+    invoke = core.invoke;
+  } catch (e) {
+    console.warn('Tauri API unavailable:', e);
+  }
+  bindEvents();
+}
 
 // ── 状态 ──
-let isCountdown = false;
-let countdownTarget = 0;
-let blinkOn = true;
-let isTransparent = false;
-let countdownDone = false;
+let isCD = false, cdTarget = 0, blink = true, transparent = false, cdDone = false;
 
 // ── DOM ──
-const $ = id => document.getElementById(id);
-const digits = { h1:$('h1'), h2:$('h2'), m1:$('m1'), m2:$('m2'), s1:$('s1'), s2:$('s2') };
-const colons = [$('c1'),$('c2'),$('c3'),$('c4')];
-const ledDate = $('ledDate');
-const countdownLabel = $('countdownLabel');
-const ctxMenu = $('ctxMenu');
-const customWrap = $('customWrap');
-const customInput = $('customInput');
+const el = id => document.getElementById(id);
+const digs = { h1:el('h1'), h2:el('h2'), m1:el('m1'), m2:el('m2'), s1:el('s1'), s2:el('s2') };
+const cdots = [el('c1'),el('c2'),el('c3'),el('c4')];
 
-function pad2(n) { return String(n).padStart(2, '0'); }
+function pad2(n) { return String(n).padStart(2,'0'); }
 
-function updateDisplay(h, m, s, cls) {
-  const str = pad2(h) + pad2(m) + pad2(s);
-  const keys = ['h1','h2','m1','m2','s1','s2'];
-  for (let i = 0; i < 6; i++) {
-    const el = digits[keys[i]];
-    el.textContent = str[i];
-    el.className = 'digit' + (cls ? ' ' + cls : '');
-  }
+function show(h, m, s, cls) {
+  const t = pad2(h)+pad2(m)+pad2(s);
+  ['h1','h2','m1','m2','s1','s2'].forEach((k,i) => {
+    digs[k].textContent = t[i];
+    digs[k].className = 'digit' + (cls ? ' '+cls : '');
+  });
 }
 
-function updateDate() {
-  const now = new Date();
-  const wk = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-  const y = now.getFullYear();
-  const m = pad2(now.getMonth() + 1);
-  const d = pad2(now.getDate());
-  const w = wk[now.getDay()];
-  const ap = now.getHours() < 12 ? 'AM' : 'PM';
-  ledDate.textContent = `${y}.${m}.${d}  ${w}  ${ap}`;
+function showDate() {
+  const n = new Date();
+  const w = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  el('ledDate').textContent = `${n.getFullYear()}.${pad2(n.getMonth()+1)}.${pad2(n.getDate())}  ${w[n.getDay()]}  ${n.getHours()<12?'AM':'PM'}`;
 }
 
-// ── 主循环 (500ms) ──
 function tick() {
-  blinkOn = !blinkOn;
-  colons.forEach(c => c.classList.toggle('off', !blinkOn));
+  blink = !blink;
+  cdots.forEach(c => c.classList.toggle('off', !blink));
 
-  if (isCountdown) {
-    const rem = Math.max(0, Math.ceil((countdownTarget - Date.now()) / 1000));
+  if (isCD) {
+    const rem = Math.max(0, Math.ceil((cdTarget - Date.now()) / 1000));
     if (rem <= 0) {
-      // 倒计时结束 → 显示 99:99:99 并闪烁
-      if (!countdownDone) {
-        countdownDone = true;
-        countdownLabel.textContent = 'TIME UP!';
-        countdownLabel.classList.add('expire');
-      }
-      updateDisplay(99, 99, 99, 'expire');
+      if (!cdDone) { cdDone = true; el('cdLabel').textContent = 'TIME UP!'; el('cdLabel').className = 'countdown-label expire'; }
+      show(99, 99, 99, 'expire');
       return;
     }
-    const h = Math.floor(rem / 3600);
-    const m = Math.floor((rem % 3600) / 60);
-    const s = rem % 60;
-    updateDisplay(h, m, s, rem <= 10 ? 'flash' : '');
-    countdownLabel.textContent = 'COUNTDOWN';
-    countdownLabel.className = 'countdown-label' + (rem <= 10 ? ' expire' : '');
+    show(Math.floor(rem/3600), Math.floor((rem%3600)/60), rem%60, rem<=10?'flash':'');
+    el('cdLabel').textContent = 'COUNTDOWN';
+    el('cdLabel').className = 'countdown-label' + (rem<=10?' expire':'');
   } else {
-    const now = new Date();
-    updateDisplay(now.getHours(), now.getMinutes(), now.getSeconds(), '');
-    updateDate();
-    countdownLabel.innerHTML = '&nbsp;';
-    countdownLabel.className = 'countdown-label';
+    const n = new Date();
+    show(n.getHours(), n.getMinutes(), n.getSeconds(), '');
+    showDate();
+    el('cdLabel').innerHTML = '&nbsp;';
+    el('cdLabel').className = 'countdown-label';
   }
 }
 
 setInterval(tick, 500);
 tick();
 
-// ── 右键菜单 ──
-function closeMenus() {
-  ctxMenu.classList.remove('show');
-  customWrap.classList.remove('show');
-}
+// ── 事件绑定 ──
+function bindEvents() {
+  const menu = el('menu');
+  const custBox = el('custBox');
+  const custIn = el('custIn');
 
-document.addEventListener('contextmenu', e => {
-  e.preventDefault();
-  closeMenus();
-  $('cancelBtn').style.display = isCountdown ? 'flex' : 'none';
-  $('toggleBg').textContent = isTransparent ? '🎨 切换黑色背景' : '🎨 切换透明背景';
+  function closeAll() { menu.classList.remove('show'); custBox.classList.remove('show'); }
 
-  // 菜单定位，防止超出窗口
-  const x = Math.min(e.clientX, window.innerWidth - 180);
-  const y = Math.min(e.clientY, window.innerHeight - 280);
-  ctxMenu.style.left = x + 'px';
-  ctxMenu.style.top = y + 'px';
-  ctxMenu.classList.add('show');
-});
-
-document.addEventListener('click', e => {
-  if (!ctxMenu.contains(e.target)) ctxMenu.classList.remove('show');
-  if (!customWrap.contains(e.target)) customWrap.classList.remove('show');
-});
-
-// 倒计时选项
-document.querySelectorAll('.menu-item[data-min]').forEach(el => {
-  el.addEventListener('click', () => {
-    startCountdown(parseInt(el.dataset.min));
-    closeMenus();
+  // 右键菜单
+  document.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    closeAll();
+    el('cancelBtn').style.display = isCD ? 'flex' : 'none';
+    el('bgBtn').textContent = transparent ? '🎨 切换黑色背景' : '🎨 切换透明背景';
+    const x = Math.min(e.clientX, window.innerWidth - 180);
+    const y = Math.min(e.clientY, window.innerHeight - 300);
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    menu.classList.add('show');
   });
-});
 
-// 自定义
-$('customBtn').addEventListener('click', () => {
-  ctxMenu.classList.remove('show');
-  customWrap.style.left = (parseInt(ctxMenu.style.left) || 100) + 'px';
-  customWrap.style.top = ctxMenu.style.top;
-  customWrap.classList.add('show');
-  customInput.focus();
-  customInput.select();
-});
+  // 点击空白关闭
+  document.addEventListener('click', e => {
+    if (!menu.contains(e.target)) menu.classList.remove('show');
+    if (!custBox.contains(e.target)) custBox.classList.remove('show');
+  });
 
-$('customOk').addEventListener('click', () => {
-  const v = parseInt(customInput.value);
-  if (v > 0) { startCountdown(v); closeMenus(); }
-});
+  // 倒计时选项
+  menu.querySelectorAll('[data-m]').forEach(el => {
+    el.addEventListener('click', () => { startCD(parseInt(el.dataset.m)); closeAll(); });
+  });
 
-customInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') $('customOk').click();
-  if (e.key === 'Escape') closeMenus();
-});
+  // 自定义
+  el('custBtn').addEventListener('click', () => {
+    menu.classList.remove('show');
+    custBox.style.left = (parseInt(menu.style.left)||100) + 'px';
+    custBox.style.top = menu.style.top;
+    custBox.classList.add('show');
+    custIn.focus(); custIn.select();
+  });
+  el('custOk').addEventListener('click', () => {
+    const v = parseInt(custIn.value);
+    if (v > 0) { startCD(v); closeAll(); }
+  });
+  custIn.addEventListener('keydown', e => {
+    if (e.key==='Enter') el('custOk').click();
+    if (e.key==='Escape') closeAll();
+  });
 
-// 取消倒计时
-$('cancelBtn').addEventListener('click', () => {
-  isCountdown = false;
-  countdownDone = false;
-  closeMenus();
-});
+  // 取消倒计时
+  el('cancelBtn').addEventListener('click', () => { isCD = false; cdDone = false; closeAll(); });
 
-// 切换背景
-$('toggleBg').addEventListener('click', () => {
-  isTransparent = !isTransparent;
-  document.body.classList.toggle('transparent', isTransparent);
-  closeMenus();
-});
+  // 透明背景
+  el('bgBtn').addEventListener('click', () => {
+    transparent = !transparent;
+    document.body.classList.toggle('transparent', transparent);
+    closeAll();
+  });
 
-// 返回主窗口
-$('backBtn').addEventListener('click', async () => {
-  closeMenus();
-  if (invoke) try { await invoke('show_main_window'); } catch {}
-});
+  // 返回主窗口
+  el('backBtn').addEventListener('click', async () => {
+    closeAll();
+    if (invoke) try { await invoke('show_main_window'); } catch(e) { console.error(e); }
+  });
 
-// 双击返回主窗口
-document.addEventListener('dblclick', async () => {
-  if (invoke) try { await invoke('show_main_window'); } catch {}
-});
+  // 双击返回主窗口
+  document.addEventListener('dblclick', async () => {
+    if (invoke) try { await invoke('show_main_window'); } catch(e) { console.error(e); }
+  });
 
-// 关闭按钮
-$('closeBtn').addEventListener('click', async e => {
-  e.stopPropagation();
-  if (invoke) try { await invoke('close_clock_window'); } catch {}
-});
-
-// ── 倒计时 ──
-function startCountdown(min) {
-  isCountdown = true;
-  countdownDone = false;
-  countdownTarget = Date.now() + min * 60 * 1000;
+  // 关闭按钮
+  el('closeBtn').addEventListener('click', async e => {
+    e.stopPropagation();
+    if (invoke) try { await invoke('close_clock_window'); } catch(e) { console.error(e); }
+  });
 }
+
+function startCD(min) {
+  isCD = true; cdDone = false;
+  cdTarget = Date.now() + min * 60 * 1000;
+}
+
+init();
 </script>
 </body>
 </html>
