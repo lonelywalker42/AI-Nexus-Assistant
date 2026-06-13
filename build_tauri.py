@@ -2,10 +2,10 @@
 
 步骤:
 1. 构建 Python 后端 sidecar (PyInstaller)
-2. 构建 Tauri 前端 + 壳 (cargo build)
-3. 输出: nexus-ui/src-tauri/target/release/nexus-ui.exe + nexus-server.exe
+2. 构建 Tauri 应用 (npx tauri build — 自动构建前端+嵌入+打包)
+3. 整理到 release/ 目录
 
-最终发布文件在 nexus-ui/src-tauri/target/release/ 目录下。
+最终发布文件在 release/ 目录下。
 """
 
 import subprocess
@@ -45,7 +45,6 @@ def step1_build_sidecar():
     print("Step 1: Building Python backend sidecar...")
     print("=" * 60)
 
-    # 运行 build_server.py
     result = subprocess.run(
         [sys.executable, "build_server.py"],
         cwd=PROJECT_DIR,
@@ -54,13 +53,12 @@ def step1_build_sidecar():
         print("ERROR: Sidecar build failed")
         sys.exit(1)
 
-    # build_server.py 输出到 release/ 目录
     sidecar = PROJECT_DIR / "release" / "nexus-server-x86_64-pc-windows-msvc.exe"
     if not sidecar.exists():
         print(f"ERROR: Sidecar not found at {sidecar}")
         sys.exit(1)
 
-    # 同时复制到 Tauri binaries 目录（供 Tauri bundler 使用）
+    # 复制到 Tauri binaries 目录
     BINARIES_DIR.mkdir(parents=True, exist_ok=True)
     shutil.copy2(sidecar, BINARIES_DIR / sidecar.name)
 
@@ -68,34 +66,22 @@ def step1_build_sidecar():
     return sidecar
 
 
-def step2_build_frontend():
-    """Step 2: 构建前端"""
+def step2_build_tauri(env):
+    """Step 2: 构建 Tauri 应用（前端+壳+嵌入前端资源）"""
     print("\n" + "=" * 60)
-    print("Step 2: Building frontend (Vite)...")
+    print("Step 2: Building Tauri app (frontend + shell)...")
     print("=" * 60)
 
+    # npx tauri build 会自动执行:
+    #   1. beforeBuildCommand (npm run build → Vite 构建前端)
+    #   2. cargo build --release (编译 Rust 壳)
+    #   3. 嵌入 dist/ 到 exe 中
+    #   4. 生成 MSI/NSIS 安装包
     result = subprocess.run(
-        ["npm", "run", "build"],
+        ["npx", "tauri", "build"],
         cwd=TAURI_DIR,
-        shell=True,
-    )
-    if result.returncode != 0:
-        print("ERROR: Frontend build failed")
-        sys.exit(1)
-
-    print("Frontend built successfully")
-
-
-def step3_build_tauri(env):
-    """Step 3: 构建 Tauri Rust 壳"""
-    print("\n" + "=" * 60)
-    print("Step 3: Building Tauri shell (Rust)...")
-    print("=" * 60)
-
-    result = subprocess.run(
-        ["cargo", "build", "--release"],
-        cwd=TAURI_DIR / "src-tauri",
         env=env,
+        shell=True,
     )
     if result.returncode != 0:
         print("ERROR: Tauri build failed")
@@ -108,10 +94,10 @@ def step3_build_tauri(env):
         print(f"WARNING: {exe} not found")
 
 
-def step4_package():
-    """Step 4: 整理发布文件"""
+def step3_package():
+    """Step 3: 整理发布文件"""
     print("\n" + "=" * 60)
-    print("Step 4: Packaging release...")
+    print("Step 3: Packaging release...")
     print("=" * 60)
 
     release_dir = PROJECT_DIR / "release"
@@ -139,9 +125,8 @@ def main():
 
     env = setup_msvc_env()
     step1_build_sidecar()
-    step2_build_frontend()
-    step3_build_tauri(env)
-    step4_package()
+    step2_build_tauri(env)
+    step3_package()
 
     print("\n" + "=" * 60)
     print("BUILD COMPLETE!")
