@@ -103,6 +103,9 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - **Mouse wheel** → zoom in/out (0.6x to 2.5x)
 - Colors: `#ffe8aa` (core), `#ff8c00` (wire), `#cc5500` (glow), `#7a3a08` (halo), `#0e0e12` (glass)
 - Window config: 360×140, frameless, always-on-top, transparent, resizable
+- `public/todo-calendar.html` — Glass-style todo calendar with real-time clock, drag, task toggle
+- Triggered alongside clock when main window closes; switchable via tray/clock context menu
+- Window config: 380×500, frameless, always-on-top, transparent, resizable
 
 ### Build Notes
 - `build_tauri.py` runs `npx tauri build` → Vite build + Rust compile + frontend embedding

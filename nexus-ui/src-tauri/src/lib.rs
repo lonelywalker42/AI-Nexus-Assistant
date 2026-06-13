@@ -11,6 +11,7 @@ struct BackendProcess(Mutex<Option<Child>>);
 
 const CLOCK_LABEL: &str = "clock";
 const INPUT_LABEL: &str = "countdown_input";
+const TODO_LABEL: &str = "todo_calendar";
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -22,6 +23,7 @@ fn show_main_window(app: tauri::AppHandle) {
     println!("[Nexus] show_main_window called");
     close_clock(&app);
     close_input(&app);
+    close_todo(&app);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.set_skip_taskbar(false);
         let _ = w.show();
@@ -38,6 +40,11 @@ fn close_clock_window(app: tauri::AppHandle) {
 #[tauri::command]
 fn close_input_window(app: tauri::AppHandle) {
     close_input(&app);
+}
+
+#[tauri::command]
+fn close_todo_window(app: tauri::AppHandle) {
+    close_todo(&app);
 }
 
 #[tauri::command]
@@ -111,6 +118,12 @@ fn close_input(app: &tauri::AppHandle) {
     }
 }
 
+fn close_todo(app: &tauri::AppHandle) {
+    if let Some(tw) = app.get_webview_window(TODO_LABEL) {
+        let _ = tw.close();
+    }
+}
+
 fn is_port_open(port: u16) -> bool {
     std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok()
 }
@@ -163,8 +176,9 @@ fn build_context_menu(app: &tauri::AppHandle, has_cd: bool, is_trans: bool) -> t
     let bg_text = if is_trans { "🎨 切换黑色背景" } else { "🎨 切换透明背景" };
     let mbg = MenuItem::with_id(app, "bg", bg_text, true, None::<&str>)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
+    let mtodo = MenuItem::with_id(app, "todo", "📋 显示待办日历", true, None::<&str>)?;
     let mback = MenuItem::with_id(app, "back", "↩ 返回主窗口", true, None::<&str>)?;
-    menu.append_items(&[&m15, &m30, &m45, &m60, &m90, &sep1, &mcustom, &sep2, &mcancel, &mbg, &sep3, &mback])?;
+    menu.append_items(&[&m15, &m30, &m45, &m60, &m90, &sep1, &mcustom, &sep2, &mcancel, &mbg, &sep3, &mtodo, &mback])?;
     Ok(menu)
 }
 
@@ -254,12 +268,58 @@ fn do_create_clock(app: &tauri::AppHandle) {
             "custom" => { create_input_window(app); }
             "cancel" => { cancel_countdown(app.clone()); }
             "bg" => { toggle_bg(app.clone()); }
+            "todo" => { create_todo_window(app); }
             "back" => { show_main_window(app.clone()); }
             _ => {}
         }
     });
 
     println!("[Nexus] Clock window created with native menu");
+}
+
+/// 创建待办日历窗口
+fn create_todo_window(app: &tauri::AppHandle) {
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        do_create_todo(&app_handle);
+    });
+}
+
+fn do_create_todo(app: &tauri::AppHandle) {
+    if let Some(tw) = app.get_webview_window(TODO_LABEL) {
+        let _ = tw.set_focus();
+        return;
+    }
+
+    let ipc_script = r#"
+        (function() {
+            function setup() {
+                if (window.__TAURI_INTERNALS__ && !window.__nexus_ipc) {
+                    window.__nexus_ipc = true;
+                    window.invoke = window.__TAURI_INTERNALS__.invoke;
+                }
+            }
+            setup();
+            if (!window.__nexus_ipc) {
+                var t = setInterval(function(){setup();if(window.__nexus_ipc)clearInterval(t);},50);
+                setTimeout(function(){clearInterval(t);},5000);
+            }
+        })();
+    "#;
+
+    let _ = tauri::WebviewWindowBuilder::new(
+        app, TODO_LABEL, WebviewUrl::App("todo-calendar.html".into()),
+    )
+    .title("Nexus Todo")
+    .inner_size(380.0, 500.0)
+    .resizable(true)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .initialization_script(ipc_script)
+    .build();
+
+    println!("[Nexus] Todo calendar window created");
 }
 
 /// 创建自定义倒计时输入窗口
@@ -340,7 +400,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(BackendProcess(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
-            greet, show_main_window, close_clock_window, close_input_window,
+            greet, show_main_window, close_clock_window, close_input_window, close_todo_window,
             set_countdown, cancel_countdown, toggle_bg,
             show_context_menu, resize_clock
         ])
@@ -348,8 +408,9 @@ pub fn run() {
             // 托盘
             let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
             let clock_item = MenuItem::with_id(app, "clock", "显示时钟", true, None::<&str>)?;
+            let todo_item = MenuItem::with_id(app, "todo", "显示待办日历", true, None::<&str>)?;
             let exit_item = MenuItem::with_id(app, "exit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &clock_item, &exit_item])?;
+            let menu = Menu::with_items(app, &[&show_item, &clock_item, &todo_item, &exit_item])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -359,6 +420,7 @@ pub fn run() {
                     match event.id().as_ref() {
                         "show" => { show_main_window(app.clone()); }
                         "clock" => { create_clock_window(app); }
+                        "todo" => { create_todo_window(app); }
                         "exit" => {
                             if let Some(s) = app.try_state::<BackendProcess>() {
                                 if let Ok(mut g) = s.0.lock() {
@@ -388,6 +450,7 @@ pub fn run() {
                             let _ = w.hide();
                         }
                         create_clock_window(&ah);
+                        create_todo_window(&ah);
                     }
                 });
             }
