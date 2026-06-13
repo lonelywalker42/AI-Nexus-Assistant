@@ -97,12 +97,46 @@ fn try_embedded_sidecar(port: u16, app: &tauri::App) -> bool {
 
 /// 创建时钟悬浮窗口
 fn create_clock_window(app: &tauri::AppHandle) {
-    // 如果已存在则显示
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
         let _ = cw.show();
         let _ = cw.set_focus();
         return;
     }
+
+    // IPC 桥接脚本 — 确保 window.invoke 在子窗口中可用
+    let ipc_script = r#"
+        if (!window.invoke) {
+            window.invoke = async function(cmd, args) {
+                // 优先使用 Tauri 注入的内部接口
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    return window.__TAURI_INTERNALS__.invoke(cmd, args || {});
+                }
+                // 降级：使用 custom protocol IPC
+                return new Promise((resolve, reject) => {
+                    const callback = '__cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+                    window[callback] = function(result) {
+                        delete window[callback];
+                        resolve(result);
+                    };
+                    window[callback].__error = function(err) {
+                        delete window[callback];
+                        reject(new Error(err));
+                    };
+                    const body = JSON.stringify({
+                        cmd: cmd,
+                        callback: callback,
+                        error: callback + '.__error',
+                        payload: args || {}
+                    });
+                    fetch('ipc://localhost/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: body
+                    }).catch(reject);
+                });
+            };
+        }
+    "#;
 
     let _ = tauri::WebviewWindowBuilder::new(
         app,
@@ -115,6 +149,7 @@ fn create_clock_window(app: &tauri::AppHandle) {
     .decorations(false)
     .content_protected(false)
     .always_on_top(true)
+    .initialization_script(ipc_script)
     .center()
     .build();
 }
