@@ -9,6 +9,7 @@ Phase 3: 仪表盘 + 时钟 + 命令面板 + 打包    [████████
 Phase 4: Bug修复 + UI优化 + 无边框窗口      [████████████████████] 100%  ✅ 完成
 Phase 5: Tauri 2 前端 + FastAPI 后端        [████████████████████] 100%  ✅ 完成
 Phase 6: Issue修复 + 知识库增强             [████████████████████] 100%  ✅ 完成
+Phase 7: Sidecar修复 + Tauri2窗口权限       [████████████████████] 100%  ✅ 完成
 ```
 
 ---
@@ -86,11 +87,31 @@ Phase 6: Issue修复 + 知识库增强             [█████████�
 | POST /api/knowledge/import/md | Markdown分割导入 |
 | POST /api/knowledge/generate | AI生成知识卡片 |
 
+## Phase 7: Sidecar修复 + Tauri2窗口权限 ✅ (2026-06-13)
+
+### Sidecar启动无响应修复
+
+| 修复 | 说明 |
+|------|------|
+| server.py 日志重定向 | 冻结模式下 stdout/stderr 重定向到 `data/server.log` |
+| server.py 错误捕获 | try/except 包裹所有导入和初始化，致命错误写入日志 |
+| build_server.py hidden imports | 补充 `search.scorer/citation/enricher/sources.base` + `httptools/h11` |
+| build_tauri.py 路径修复 | sidecar 查找路径从 `binaries/` 修正为 `release/`，自动复制 |
+
+### Tauri 2 窗口控制修复
+
+| 修复 | 说明 |
+|------|------|
+| 新建 `capabilities/default.json` | 声明窗口权限：minimize/maximize/close/drag/isMaximized 等 |
+
+**根因**: Tauri 2 采用 capability-based 权限模型，缺少 capabilities 文件导致所有窗口操作被默认拒绝。
+
 ---
 
 ## Git 历史
 
 ```
+78f41d4 fix: sidecar启动日志+补全hidden imports+Tauri2窗口权限
 34600b7 fix: 剩余issue修复 — 托盘图标/窗口控制/知识库导入
 979b1f2 fix: 多项修复 — 设置/对话/仪表盘/任务/后端API
 1b85db7 feat: Tauri便携版构建 — sidecar自动启动后端

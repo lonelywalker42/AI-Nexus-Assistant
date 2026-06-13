@@ -95,17 +95,20 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - `src/pages/` — 7 page components (Dashboard, Task, Literature, Experiment, Knowledge, Chat, Settings)
 - `src-tauri/src/lib.rs` — Rust setup: auto-starts Python backend (sidecar in release, `python server.py` in dev)
 - `src-tauri/tauri.conf.json` — Window config (frameless, 1360×860)
+- `src-tauri/capabilities/default.json` — Tauri 2 capability permissions (window controls, drag, shell)
 
 ### Build Notes
 - `externalBin` was removed from tauri.conf.json to avoid build-time dependency on sidecar
 - Rust `setup()` gracefully handles missing sidecar (dev mode)
 - Frontend waits for backend via polling `/api/dashboard` with retry
+- Tauri 2 requires `capabilities/` directory for window operations (minimize/maximize/close/drag)
 
 ## FastAPI Backend: `server.py`
 
 - 36+ REST routes serving the Tauri frontend
 - Auto-starts on port 8765, prints `NEXUS_SERVER_READY:8765`
 - Lazy-initializes search engine and AI router
+- Frozen mode (PyInstaller): stdout/stderr redirected to `data/server.log` for debugging startup failures
 - Key endpoints: `/api/dashboard`, `/api/tasks`, `/api/search`, `/api/experiments`, `/api/knowledge/cards`, `/api/chat/stream` (SSE), `/api/models`, `/api/backup`
 - Knowledge import: `/api/knowledge/import/json`, `/api/import/pdf`, `/api/import/md`
 

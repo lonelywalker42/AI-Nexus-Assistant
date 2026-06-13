@@ -164,6 +164,8 @@ python main.py
 - **最大化**: 点击标题栏 □ 按钮
 - **关闭**: 点击标题栏 × 按钮
 
+> 权限由 `src-tauri/capabilities/default.json` 声明，Tauri 2 必须有此文件才能使用窗口控制。
+
 ---
 
 ## 系统托盘（PySide6 版）
@@ -219,7 +221,7 @@ data/
 A: 确保安装了 VS Build Tools C++ 工作负载和 Windows SDK。
 
 **Q: 后端启动失败？**
-A: `pip install fastapi uvicorn`，然后 `python server.py`。
+A: `pip install fastapi uvicorn`，然后 `python server.py`。便携版可查看 `data/server.log` 排查启动错误。
 
 **Q: 搜索没有结果？**
 A: 检查网络连接。搜索使用空格连接关键词。

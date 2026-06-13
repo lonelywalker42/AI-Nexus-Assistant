@@ -128,6 +128,7 @@ AI-Nexus-Assistant/
 │   │   ├── components/         # 组件
 │   │   └── pages/              # 7 个页面
 │   └── src-tauri/              # Rust 壳
+│       └── capabilities/       # Tauri 2 权限声明 (窗口控制)
 │
 ├── release/                    # 便携版发布文件
 │   ├── AI-Nexus-Assistant.exe  # Tauri 壳 (11MB)
