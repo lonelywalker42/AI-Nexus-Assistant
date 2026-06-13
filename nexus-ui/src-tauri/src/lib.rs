@@ -10,20 +10,14 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! Welcome to AI Nexus Assistant.", name)
 }
 
-/// 轮询后端直到 /api/dashboard 响应 200
+/// TCP 探测后端端口是否就绪
 fn wait_for_backend(port: u16, timeout: Duration) -> bool {
-    let url = format!("http://127.0.0.1:{}/api/dashboard", port);
+    let addr = format!("127.0.0.1:{}", port);
     let start = Instant::now();
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .unwrap_or_default();
 
     while start.elapsed() < timeout {
-        if let Ok(resp) = client.get(&url).send() {
-            if resp.status().is_success() {
-                return true;
-            }
+        if std::net::TcpStream::connect(&addr).is_ok() {
+            return true;
         }
         std::thread::sleep(Duration::from_millis(500));
     }
@@ -40,45 +34,63 @@ pub fn run() {
             let mut backend_started = false;
             let port: u16 = 8765;
 
-            // 方式1: 查找 exe 同目录下的 sidecar
             if let Ok(exe_path) = std::env::current_exe() {
                 if let Some(exe_dir) = exe_path.parent() {
+                    // 方式1: 查找 sidecar exe
                     let sidecar = exe_dir.join("nexus-server-x86_64-pc-windows-msvc.exe");
                     if sidecar.exists() {
-                        match Command::new(&sidecar).args(["--port", &port.to_string()]).spawn() {
+                        println!("[Nexus] Found sidecar: {:?}", sidecar);
+                        match Command::new(&sidecar)
+                            .args(["--port", &port.to_string()])
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .spawn()
+                        {
                             Ok(child) => {
-                                println!("[Nexus] Sidecar spawned, waiting for backend...");
+                                println!("[Nexus] Sidecar spawned (PID {}), waiting for port {port}...", child.id());
                                 let state = app.state::<BackendProcess>();
                                 *state.0.lock().unwrap() = Some(child);
 
-                                // 等待后端就绪（最多 30 秒）
                                 if wait_for_backend(port, Duration::from_secs(30)) {
                                     println!("[Nexus] Backend ready on port {port}");
                                     backend_started = true;
                                 } else {
-                                    eprintln!("[Nexus] Backend timeout after 30s");
+                                    eprintln!("[Nexus] Backend timeout after 30s on port {port}");
                                 }
                             }
-                            Err(e) => eprintln!("[Nexus] Sidecar start failed: {e}"),
+                            Err(e) => eprintln!("[Nexus] Sidecar spawn failed: {e}"),
                         }
+                    } else {
+                        println!("[Nexus] Sidecar not found at {:?}", sidecar);
                     }
 
                     // 方式2: 查找 server.py (开发模式)
                     if !backend_started {
                         let server_py = exe_dir.join("server.py");
                         if server_py.exists() {
-                            match Command::new("python").arg(&server_py).args(["--port", &port.to_string()]).spawn() {
+                            println!("[Nexus] Found server.py, starting via python...");
+                            match Command::new("python")
+                                .arg(&server_py)
+                                .args(["--port", &port.to_string()])
+                                .spawn()
+                            {
                                 Ok(child) => {
-                                    println!("[Nexus] Backend started via python server.py");
+                                    println!("[Nexus] Python backend started (PID {})", child.id());
                                     let state = app.state::<BackendProcess>();
                                     *state.0.lock().unwrap() = Some(child);
-                                    backend_started = true;
+
+                                    if wait_for_backend(port, Duration::from_secs(15)) {
+                                        println!("[Nexus] Backend ready on port {port}");
+                                        backend_started = true;
+                                    }
                                 }
-                                Err(e) => eprintln!("[Nexus] Backend start failed: {e}"),
+                                Err(e) => eprintln!("[Nexus] Python start failed: {e}"),
                             }
                         }
                     }
                 }
+            } else {
+                eprintln!("[Nexus] Cannot determine exe path");
             }
 
             if !backend_started {
