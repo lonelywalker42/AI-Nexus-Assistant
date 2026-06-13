@@ -8,9 +8,22 @@ import sys
 import os
 import json
 import asyncio
+import logging
 from datetime import date, datetime
 from typing import Optional
 from pathlib import Path
+
+# 冻结模式（PyInstaller）下将 stderr 重定向到日志文件，方便排查启动问题
+if getattr(sys, 'frozen', False):
+    _log_dir = Path(sys.executable).parent / "data"
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    _log_path = _log_dir / "server.log"
+    _fh = open(_log_path, "a", encoding="utf-8")
+    sys.stderr = _fh
+    sys.stdout = _fh
+    logging.basicConfig(stream=_fh, level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(message)s")
+    print(f"[server] Starting frozen exe, log at {_log_path}", flush=True)
 
 # 确保 app 包可导入（兼容 PyInstaller frozen 模式）
 if getattr(sys, 'frozen', False):
@@ -24,22 +37,28 @@ else:
 data_dir = base_dir / "data"
 data_dir.mkdir(parents=True, exist_ok=True)
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+try:
+    from fastapi import FastAPI, HTTPException, Query
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import StreamingResponse
+    from pydantic import BaseModel
 
-from app.db import init_db, get_session
-from app.models import Task, WeeklyPlan, Paper, ModelConfig, SearchHistory
-from app.models import Experiment, ExperimentResult
-from app.models import KnowledgeCard, Tag, CardTag
-from app.models import ChatSession, ChatMessage
-from app.services import task_service, experiment_service, knowledge_service, chat_service
-from app.ai.router import AIRouter
+    from app.db import init_db, get_session
+    from app.models import Task, WeeklyPlan, Paper, ModelConfig, SearchHistory
+    from app.models import Experiment, ExperimentResult
+    from app.models import KnowledgeCard, Tag, CardTag
+    from app.models import ChatSession, ChatMessage
+    from app.services import task_service, experiment_service, knowledge_service, chat_service
+    from app.ai.router import AIRouter
 
-# 初始化
-init_db()
-app = FastAPI(title="AI Nexus Assistant API", version="0.1.0")
+    # 初始化数据库
+    init_db()
+    app = FastAPI(title="AI Nexus Assistant API", version="0.1.0")
+except Exception as e:
+    print(f"[server] FATAL import/init error: {e}", flush=True)
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
 # CORS（Tauri 前端需要）
 app.add_middleware(

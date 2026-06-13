@@ -54,11 +54,15 @@ def step1_build_sidecar():
         print("ERROR: Sidecar build failed")
         sys.exit(1)
 
-    # 验证 sidecar 文件
-    sidecar = BINARIES_DIR / "nexus-server-x86_64-pc-windows-msvc.exe"
+    # build_server.py 输出到 release/ 目录
+    sidecar = PROJECT_DIR / "release" / "nexus-server-x86_64-pc-windows-msvc.exe"
     if not sidecar.exists():
         print(f"ERROR: Sidecar not found at {sidecar}")
         sys.exit(1)
+
+    # 同时复制到 Tauri binaries 目录（供 Tauri bundler 使用）
+    BINARIES_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(sidecar, BINARIES_DIR / sidecar.name)
 
     print(f"Sidecar: {sidecar} ({sidecar.stat().st_size / 1024 / 1024:.1f} MB)")
     return sidecar
