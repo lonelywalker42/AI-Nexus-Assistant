@@ -619,6 +619,8 @@ def create_model(body: ModelCreate):
         model = ModelConfig(**body.dict(), is_active=True)
         db.add(model)
         db.commit()
+        # 重新加载 AI 路由器缓存
+        get_ai().reload()
         return {"id": model.id, "name": model.name}
     finally:
         db.close()
@@ -635,6 +637,7 @@ def update_model(model_id: str, body: dict):
             if key in body and body[key]:
                 setattr(model, key, body[key])
         db.commit()
+        get_ai().reload()
         return {"id": model.id}
     finally:
         db.close()
@@ -649,6 +652,7 @@ def delete_model(model_id: str):
             raise HTTPException(404)
         db.delete(model)
         db.commit()
+        get_ai().reload()
         return {"ok": True}
     finally:
         db.close()
@@ -765,28 +769,20 @@ def import_json(data: dict):
 
 
 @app.post("/api/knowledge/import/pdf")
-async def import_pdf(request: Request):
+async def import_pdf(body: dict):
     """导入 PDF 文件，提取文本生成知识卡片"""
+    import base64
     print("[pdf] import request received", flush=True)
     try:
-        content_type = request.headers.get("content-type", "")
-        print(f"[pdf] content-type: {content_type}", flush=True)
-        if "multipart/form-data" in content_type:
-            form = await request.form()
-            upload = form.get("file")
-            if not upload:
-                print("[pdf] no file in form", flush=True)
-                return {"error": "No file in form data"}
-            if hasattr(upload, 'read'):
-                file_bytes = await upload.read()
-            else:
-                file_bytes = bytes(upload) if upload else b''
-        else:
-            file_bytes = await request.body()
-        print(f"[pdf] received {len(file_bytes)} bytes", flush=True)
+        filename = body.get("filename", "document.pdf")
+        data_b64 = body.get("data", "")
+        if not data_b64:
+            return {"error": "No file data provided"}
+        file_bytes = base64.b64decode(data_b64)
+        print(f"[pdf] received {len(file_bytes)} bytes for {filename}", flush=True)
     except Exception as e:
-        print(f"[pdf] upload error: {e}", flush=True)
-        return {"error": f"Upload read failed: {type(e).__name__}: {e}"}
+        print(f"[pdf] decode error: {e}", flush=True)
+        return {"error": f"Failed to decode file: {type(e).__name__}: {e}"}
     if not file_bytes or len(file_bytes) < 100:
         return {"error": f"File too small or empty ({len(file_bytes) if file_bytes else 0} bytes)"}
 

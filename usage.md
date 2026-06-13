@@ -36,7 +36,7 @@ cd AI-Nexus-Assistant
 
 # 5. 安装 Python 依赖
 pip install -e .
-pip install fastapi uvicorn
+pip install fastapi uvicorn openai anthropic
 
 # 6. 安装前端依赖
 cd nexus-ui
@@ -53,7 +53,7 @@ pip install -e .
 
 ### 便携版
 
-将 `release/` 目录下的两个 exe 放在同一目录即可，无需安装。
+下载 `AI-Nexus-Assistant-v1.1.0.exe`，双击即可运行。单文件 (43MB)，无需额外依赖。
 
 ---
 
