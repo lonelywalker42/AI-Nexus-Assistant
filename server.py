@@ -138,6 +138,20 @@ def get_dashboard():
         db.close()
 
 
+@app.get("/api/system/info")
+def get_system_info():
+    """系统信息（数据库大小等）"""
+    db_path = Path(data_dir) / "nexus.db"
+    db_size = db_path.stat().st_size if db_path.exists() else 0
+    if db_size > 1024 * 1024:
+        size_str = f"{db_size / 1024 / 1024:.1f} MB"
+    elif db_size > 1024:
+        size_str = f"{db_size / 1024:.1f} KB"
+    else:
+        size_str = f"{db_size} B"
+    return {"db_size": db_size, "db_size_str": size_str, "db_path": str(db_path)}
+
+
 # ══════════════════════════════════════════════════════════════
 #  任务
 # ══════════════════════════════════════════════════════════════
@@ -289,14 +303,27 @@ def search_literature(body: SearchRequest):
         results = engine.search(body.query, sources=body.sources, max_results=body.max_results)
         papers = [p.to_dict() for p in results]
 
-        # 保存历史
+        # 保存历史（精简数据：只保留必要字段，避免截断）
+        slim_papers = []
+        for p in papers:
+            slim_papers.append({
+                "title": p.get("title", ""),
+                "authors": p.get("authors", [])[:3],
+                "year": p.get("year"),
+                "journal": p.get("journal", ""),
+                "source": p.get("source", ""),
+                "abstract": (p.get("abstract", "") or "")[:200],
+                "doi": p.get("doi", ""),
+                "url": p.get("url", ""),
+            })
+
         db = get_session()
         try:
             record = SearchHistory(
                 query=body.query[:200],
                 history_type="search",
                 result_count=len(papers),
-                data=json.dumps(papers, ensure_ascii=False)[:50000],
+                data=json.dumps(slim_papers, ensure_ascii=False),
             )
             db.add(record)
             db.commit()
@@ -671,7 +698,7 @@ def create_history(body: dict):
             query=body.get("query", "")[:200],
             history_type=body.get("type", "search"),
             result_count=body.get("result_count", 0),
-            data=body.get("data", "{}")[:50000],
+            data=body.get("data", "{}"),
         )
         db.add(record)
         db.commit()

@@ -36,6 +36,25 @@ export default function LiteraturePage() {
   // 历史记录
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
+  // 用于从历史加载内容的临时存储
+  const [pendingReview, setPendingReview] = useState<string | null>(null);
+  const [pendingTopic, setPendingTopic] = useState<{ content: string; topic: string } | null>(null);
+
+  // 当 tab 切换到 review/topic 且有待加载内容时，设置内容
+  useEffect(() => {
+    if (tab === "review" && pendingReview !== null) {
+      setReviewContent(pendingReview);
+      setPendingReview(null);
+    }
+  }, [tab, pendingReview]);
+
+  useEffect(() => {
+    if (tab === "topic" && pendingTopic !== null) {
+      setTopicContent(pendingTopic.content);
+      if (pendingTopic.topic) setTopicInput(pendingTopic.topic);
+      setPendingTopic(null);
+    }
+  }, [tab, pendingTopic]);
 
   // 模型
   const [models, setModels] = useState<ModelConfig[]>([]);
@@ -190,23 +209,36 @@ export default function LiteraturePage() {
     return [];
   };
 
+  // 解析历史数据中的内容
+  const parseRecordContent = (data: unknown): { content: string; topic?: string } => {
+    try {
+      const raw = data;
+      if (typeof raw === "string") {
+        try {
+          const parsed = JSON.parse(raw);
+          return { content: parsed.content || parsed.text || "", topic: parsed.topic };
+        } catch {
+          return { content: raw };
+        }
+      } else if (raw && typeof raw === "object") {
+        const obj = raw as any;
+        return { content: obj.content || obj.text || JSON.stringify(raw), topic: obj.topic };
+      }
+    } catch {}
+    return { content: String(data || "") };
+  };
+
   // 从历史记录加载
   const loadHistoryResults = (record: HistoryRecord) => {
+    const parsed = parseRecordContent(record.data);
+
     if (record.type === "review") {
-      // 加载综述内容
-      try {
-        const data = typeof record.data === "string" ? JSON.parse(record.data) : record.data;
-        setReviewContent(data.content || "");
-        setTab("review");
-      } catch { setReviewContent("无法解析历史综述数据"); setTab("review"); }
+      // 先设置 pending，再切 tab，useEffect 会在 tab 切换后设置内容
+      setPendingReview(parsed.content);
+      setTab("review");
     } else if (record.type === "topic") {
-      // 加载选题讨论
-      try {
-        const data = typeof record.data === "string" ? JSON.parse(record.data) : record.data;
-        setTopicContent(data.content || "");
-        setTopicInput(data.topic || "");
-        setTab("topic");
-      } catch { setTopicContent("无法解析历史选题数据"); setTab("topic"); }
+      setPendingTopic({ content: parsed.content, topic: parsed.topic || "" });
+      setTab("topic");
     } else {
       // 加载搜索结果
       const papers = parseHistoryData(record.data);
@@ -390,7 +422,21 @@ export default function LiteraturePage() {
               {reviewing ? "生成中..." : "生成综述"}
             </button>
           </div>
-          {reviewContent && renderStreamingContent(reviewContent, reviewEndRef)}
+          {reviewContent && (
+            <div className="space-y-2">
+              {renderStreamingContent(reviewContent, reviewEndRef)}
+              <div className="flex justify-end">
+                <button className="btn-ghost text-xs" onClick={() => {
+                  historyApi.create({
+                    query: `AI综述: ${reviewSource === "kb" ? "知识库文献" : reviewSource === "custom" ? "自定义数据" : "搜索结果"}`,
+                    type: "review",
+                    result_count: reviewSource === "kb" ? selectedKbCards.length : reviewSource === "search" ? results.length : 0,
+                    data: JSON.stringify({ content: reviewContent }),
+                  }).then(() => alert("已保存到历史记录")).catch(err => alert("保存失败: " + err));
+                }}>保存到历史</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -410,7 +456,21 @@ export default function LiteraturePage() {
               {discussing ? "讨论中..." : "开始讨论"}
             </button>
           </div>
-          {topicContent && renderStreamingContent(topicContent, topicEndRef)}
+          {topicContent && (
+            <div className="space-y-2">
+              {renderStreamingContent(topicContent, topicEndRef)}
+              <div className="flex justify-end">
+                <button className="btn-ghost text-xs" onClick={() => {
+                  historyApi.create({
+                    query: `选题讨论: ${topicInput.slice(0, 100)}`,
+                    type: "topic",
+                    result_count: 0,
+                    data: JSON.stringify({ content: topicContent, topic: topicInput }),
+                  }).then(() => alert("已保存到历史记录")).catch(err => alert("保存失败: " + err));
+                }}>保存到历史</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -431,11 +491,8 @@ export default function LiteraturePage() {
                   onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                   onClick={() => {
-                    if (expandedHistory === record.id) {
-                      setExpandedHistory(null);
-                    } else {
-                      setExpandedHistory(record.id);
-                    }
+                    // 单击直接加载内容
+                    loadHistoryResults(record);
                   }}
                 >
                   <span className="flex-shrink-0 transition-transform duration-200"
@@ -522,17 +579,65 @@ export default function LiteraturePage() {
 
 function renderSimpleMarkdown(md: string): string {
   if (!md) return "";
-  let result = md;
+
+  // 保护代码块
+  const codeBlocks: string[] = [];
+  let result = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre><code class="lang-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>`);
+    return `__CODEBLOCK_${idx}__`;
+  });
+
+  // 表格
+  result = result.replace(
+    /(?:^|\n)(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/g,
+    (_, header, _sep, body) => {
+      const ths = header.split("|").filter((c: string) => c.trim()).map((c: string) => `<th>${c.trim()}</th>`).join("");
+      const rows = body.trim().split("\n").map((row: string) => {
+        const tds = row.split("|").filter((c: string) => c.trim()).map((c: string) => `<td>${c.trim()}</td>`).join("");
+        return `<tr>${tds}</tr>`;
+      }).join("");
+      return `<table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`;
+    }
+  );
+
+  // 标题
+  result = result.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
   result = result.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   result = result.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   result = result.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+  // 粗体/斜体
   result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   result = result.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  // 行内代码
+  result = result.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // 列表
   result = result.replace(/^- (.+)$/gm, '<li>$1</li>');
   result = result.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
   result = result.replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`);
+
+  // 引用
   result = result.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
+
+  // 链接
+  result = result.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+  // 分割线
+  result = result.replace(/^---$/gm, '<hr>');
+
+  // 段落
   result = result.replace(/\n\n/g, '</p><p>');
   result = result.replace(/\n/g, '<br>');
+
+  // 恢复代码块
+  result = result.replace(/__CODEBLOCK_(\d+)__/g, (_, idx) => codeBlocks[parseInt(idx)]);
+
   return result;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

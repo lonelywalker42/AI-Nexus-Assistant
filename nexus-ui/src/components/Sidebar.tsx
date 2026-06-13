@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getPageIcon } from "../App";
+import { systemApi, type SystemInfo } from "../api/client";
 
 interface Page {
   id: string;
@@ -15,6 +16,13 @@ interface SidebarProps {
 
 export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps) {
   const [showAbout, setShowAbout] = useState(false);
+  const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
+
+  useEffect(() => {
+    if (showAbout && !sysInfo) {
+      systemApi.info().then(setSysInfo).catch(console.error);
+    }
+  }, [showAbout, sysInfo]);
 
   return (
     <>
@@ -49,7 +57,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
           onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
         >
-          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v1.1.0</span>
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v1.2.0</span>
         </div>
       </aside>
 
@@ -80,6 +88,11 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
                 <span>•</span>
                 <span>DeepSeek / OpenAI</span>
               </div>
+              {sysInfo && (
+                <div className="text-[10px] pt-1" style={{ color: "var(--text-muted)" }}>
+                  数据库: {sysInfo.db_size_str}
+                </div>
+              )}
               <button className="btn-ghost mt-2 text-xs" onClick={() => setShowAbout(false)}>关闭</button>
             </div>
           </div>

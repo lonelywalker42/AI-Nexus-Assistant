@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献检索、试验管理、知识库、AI对话的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v1.1.0-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v1.2.0-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -35,7 +35,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 - **全局仪表盘** — 统计聚合 + 近期活动 + 点击跳转对应模块
 - **任务与日程** — 日历视图 + 主线任务置顶 + 四级优先级 + 自动换行
 - **8源文献搜索** — OpenAlex/CrossRef/Semantic Scholar/arXiv/PubMed/Google Scholar/Scopus
-- **AI综述与选题** — 三种数据源(搜索/知识库/自定义) + 自动保存到历史 + 响应式显示
+- **AI综述与选题** — 三种数据源(搜索/知识库/自定义) + 自动保存到历史 + 响应式显示 + 历史回看
 - **试验管理** — 版本化结果 + 参数快照 + Markdown导出
 - **知识库** — 分类视图(文献/AI对话/手动) + 卡片详情 + JSON/MD/PDF导入
 - **AI对话** — 流式输出 + Markdown渲染 + thinking折叠 + OpenAI/Anthropic双协议(自动降级)

@@ -40,6 +40,18 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// ── System ────────────────────────────────────────────────
+
+export interface SystemInfo {
+  db_size: number;
+  db_size_str: string;
+  db_path: string;
+}
+
+export const systemApi = {
+  info: () => request<SystemInfo>("/api/system/info"),
+};
+
 // ── Dashboard ──────────────────────────────────────────────
 
 export interface DashboardData {
