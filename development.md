@@ -96,6 +96,8 @@ Phase 7: Sidecar修复 + Tauri2窗口权限       [█████████�
 | server.py 日志重定向 | 冻结模式下 stdout/stderr 重定向到 `data/server.log` |
 | server.py 错误捕获 | try/except 包裹所有导入和初始化，致命错误写入日志 |
 | build_server.py hidden imports | 补充 `search.scorer/citation/enricher/sources.base` + `httptools/h11` |
+| build_server.py 排除模块 | 排除 40+ 不需要的模块（torch/scipy/numpy/pandas/PySide6 等） |
+| build_server.py 体积优化 | sidecar 从 2.6GB 降至 31MB |
 | build_tauri.py 路径修复 | sidecar 查找路径从 `binaries/` 修正为 `release/`，自动复制 |
 
 ### Tauri 2 窗口控制修复
@@ -105,6 +107,15 @@ Phase 7: Sidecar修复 + Tauri2窗口权限       [█████████�
 | 新建 `capabilities/default.json` | 声明窗口权限：minimize/maximize/close/drag/isMaximized 等 |
 
 **根因**: Tauri 2 采用 capability-based 权限模型，缺少 capabilities 文件导致所有窗口操作被默认拒绝。
+
+### Tauri 2 启动等待修复
+
+| 修复 | 说明 |
+|------|------|
+| lib.rs wait_for_backend() | Rust 侧轮询 /api/dashboard，最多等 30 秒后才打开 webview |
+| Cargo.toml reqwest | 添加 reqwest(blocking) 用于健康检查 |
+
+**根因**: `--onefile` exe 解压需 5-8 秒，Rust 未等待后端就绪就打开 webview，导致首次连接失败。
 
 ---
 
