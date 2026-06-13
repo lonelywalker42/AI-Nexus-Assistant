@@ -40,6 +40,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 - **知识库** — 分类视图(文献/AI对话/手动) + 卡片详情 + JSON/MD/PDF导入
 - **AI对话** — 流式输出 + Markdown渲染 + thinking折叠 + OpenAI/Anthropic双协议(自动降级)
 - **辉光管时钟** — 关闭窗口后弹出 + 右键原生菜单倒计时 + 透明背景 + 滚轮缩放
+- **待办日历** — 关闭窗口后弹出 + 玻璃态UI + 拖拽移动 + 实时时钟 + 任务切换
 - **三套主题** — 浅色/暖色(#F5F0E1)/深色，CSS变量驱动
 - **系统托盘** — 关闭最小化到托盘 + 右键显示/退出
 - **单文件分发** — 43MB exe，内嵌Python后端，无需额外文件
@@ -52,7 +53,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 │          Tauri 2 桌面应用 (43MB 单文件)       │
 │  ┌───────────────────────────────────────┐  │
 │  │  React 19 + TypeScript + Tailwind     │  │
-│  │  三套主题 + SVG图标 + 辉光管时钟        │  │
+│  │  三套主题 + SVG图标 + 时钟 + 待办日历     │  │
 │  └──────────────┬────────────────────────┘  │
 │                 │ HTTP REST API              │
 │  ┌──────────────▼────────────────────────┐  │
@@ -128,6 +129,10 @@ AI-Nexus-Assistant/
 │   │   ├── App.tsx             # 主应用 (无边框窗口+拖拽)
 │   │   ├── components/         # 组件
 │   │   └── pages/              # 7 个页面
+│   ├── public/
+│   │   ├── clock.html          # 辉光管时钟
+│   │   ├── countdown-input.html# 倒计时输入
+│   │   └── todo-calendar.html  # 待办日历
 │   └── src-tauri/              # Rust 壳
 │       └── capabilities/       # Tauri 2 权限声明 (窗口控制)
 │
@@ -163,6 +168,7 @@ FastAPI 后端提供 36+ REST 路由：
 | 备份 | `/api/backup` | POST | 手动备份 |
 | 历史 | `/api/history` | GET/POST | 搜索历史列表/创建 |
 | 历史 | `/api/history/{id}` | DELETE | 删除历史记录 |
+| 系统 | `/api/system/info` | GET | 数据库大小等系统信息 |
 
 API 文档: `http://127.0.0.1:8765/docs`
 
