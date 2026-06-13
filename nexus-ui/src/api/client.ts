@@ -269,5 +269,7 @@ export interface HistoryRecord {
 
 export const historyApi = {
   list: (limit?: number) => request<HistoryRecord[]>(`/api/history?limit=${limit || 50}`),
+  create: (data: { query: string; type: string; result_count?: number; data?: string }) =>
+    request<{ id: string }>("/api/history", { method: "POST", body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/api/history/${id}`, { method: "DELETE" }),
 };

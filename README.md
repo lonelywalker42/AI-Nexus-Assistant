@@ -35,7 +35,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 - **全局仪表盘** — 统计聚合 + 近期活动 + 点击跳转对应模块
 - **任务与日程** — 日历视图 + 主线任务置顶 + 四级优先级 + 自动换行
 - **8源文献搜索** — OpenAlex/CrossRef/Semantic Scholar/arXiv/PubMed/Google Scholar/Scopus
-- **AI综述与选题** — 支持搜索结果/知识库/自定义JSON三种数据源 + 历史记录删除
+- **AI综述与选题** — 三种数据源(搜索/知识库/自定义) + 自动保存到历史 + 响应式显示
 - **试验管理** — 版本化结果 + 参数快照 + Markdown导出
 - **知识库** — 分类视图(文献/AI对话/手动) + 卡片详情 + JSON/MD/PDF导入
 - **AI对话** — 流式输出 + Markdown渲染 + thinking折叠 + OpenAI/Anthropic双协议(自动降级)
@@ -161,7 +161,7 @@ FastAPI 后端提供 36+ REST 路由：
 | 模型 | `/api/models` | GET/POST | 模型配置 |
 | 模型 | `/api/models/{id}` | PUT/DELETE | 更新/删除模型 |
 | 备份 | `/api/backup` | POST | 手动备份 |
-| 历史 | `/api/history` | GET | 搜索历史 |
+| 历史 | `/api/history` | GET/POST | 搜索历史列表/创建 |
 | 历史 | `/api/history/{id}` | DELETE | 删除历史记录 |
 
 API 文档: `http://127.0.0.1:8765/docs`

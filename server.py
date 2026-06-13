@@ -296,7 +296,7 @@ def search_literature(body: SearchRequest):
                 query=body.query[:200],
                 history_type="search",
                 result_count=len(papers),
-                data=json.dumps(papers, ensure_ascii=False)[:5000],
+                data=json.dumps(papers, ensure_ascii=False)[:50000],
             )
             db.add(record)
             db.commit()
@@ -662,6 +662,24 @@ def delete_model(model_id: str):
 #  搜索历史
 # ══════════════════════════════════════════════════════════════
 
+@app.post("/api/history")
+def create_history(body: dict):
+    """创建历史记录（综述/选题等）"""
+    db = get_session()
+    try:
+        record = SearchHistory(
+            query=body.get("query", "")[:200],
+            history_type=body.get("type", "search"),
+            result_count=body.get("result_count", 0),
+            data=body.get("data", "{}")[:50000],
+        )
+        db.add(record)
+        db.commit()
+        return {"id": record.id}
+    finally:
+        db.close()
+
+
 @app.get("/api/history")
 def list_history(limit: int = 50):
     db = get_session()
@@ -769,20 +787,18 @@ def import_json(data: dict):
 
 
 @app.post("/api/knowledge/import/pdf")
-async def import_pdf(body: dict):
+async def import_pdf(request: Request):
     """导入 PDF 文件，提取文本生成知识卡片"""
-    import base64
+    import urllib.parse
     print("[pdf] import request received", flush=True)
     try:
-        filename = body.get("filename", "document.pdf")
-        data_b64 = body.get("data", "")
-        if not data_b64:
-            return {"error": "No file data provided"}
-        file_bytes = base64.b64decode(data_b64)
+        filename_raw = request.headers.get("x-filename", "document.pdf")
+        filename = urllib.parse.unquote(filename_raw)
+        file_bytes = await request.body()
         print(f"[pdf] received {len(file_bytes)} bytes for {filename}", flush=True)
     except Exception as e:
-        print(f"[pdf] decode error: {e}", flush=True)
-        return {"error": f"Failed to decode file: {type(e).__name__}: {e}"}
+        print(f"[pdf] read error: {e}", flush=True)
+        return {"error": f"Failed to read request: {type(e).__name__}: {e}"}
     if not file_bytes or len(file_bytes) < 100:
         return {"error": f"File too small or empty ({len(file_bytes) if file_bytes else 0} bytes)"}
 

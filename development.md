@@ -135,8 +135,9 @@ Phase 8: v1.1.0 原生菜单 + 暖色 + AI修复   [█████████�
 - 时钟右键菜单改为 Rust 原生菜单（不受窗口边界限制）
 - 自定义倒计时使用独立输入窗口 + START/CANCEL 按钮
 - 暖色配色方案（#F5F0E1 背景, #E07A5F 主题色）
-- 文献历史记录删除功能
-- 知识库 PDF 导入改用 base64 + JSON 传输
+- 文献历史记录删除 + 综述/选题自动保存到历史
+- 知识库 PDF 导入改用原始字节流传输 (application/octet-stream)
+- 历史记录数据截断限制从 5000 → 50000 字符
 - 模型编辑保存改为 PUT 更新（不新建）
 - 滚轮缩放时钟窗口（0.6x-2.5x）
 
@@ -145,7 +146,7 @@ Phase 8: v1.1.0 原生菜单 + 暖色 + AI修复   [█████████�
 - AI 协议降级：anthropic 未安装时自动 fallback 到 openai
 - API Key 保存：模型 CRUD 后 AIRouter.reload() 刷新缓存
 - 时钟窗口死锁：异步线程创建避免阻塞菜单事件
-- PDF 导入：FormData → base64 JSON 传输
+- PDF 导入：FormData → base64 JSON → 原始字节流（最终方案）
 - 子窗口 IPC：capabilities windows: ["*"] 授权所有窗口
 
 ### 调试经验

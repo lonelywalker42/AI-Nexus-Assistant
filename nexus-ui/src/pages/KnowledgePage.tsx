@@ -145,7 +145,7 @@ export default function KnowledgePage() {
     input.click();
   };
 
-  // PDF 导入 - 使用 base64 + JSON（避免 FormData/CORS 问题）
+  // PDF 导入 - 发送原始字节 + 文件名头部
   const handleImportPDF = () => {
     const input = document.createElement("input");
     input.type = "file";
@@ -164,18 +164,15 @@ export default function KnowledgePage() {
         const file = files[i];
         setImportStatus(`[${i + 1}/${files.length}] 正在处理: ${file.name}\n读取文件 → 发送到后端 → AI 分析...`);
         try {
-          // 读取文件为 base64
           const arrayBuffer = await file.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          let binary = "";
-          for (let j = 0; j < bytes.length; j++) binary += String.fromCharCode(bytes[j]);
-          const base64 = btoa(binary);
 
-          // 通过 JSON 发送（避免 FormData/CORS 问题）
           const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/pdf", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: file.name, data: base64 }),
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "X-Filename": encodeURIComponent(file.name),
+            },
+            body: arrayBuffer,
           });
           const result = await res.json();
           if (result.error) {

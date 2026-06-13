@@ -116,8 +116,8 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - Auto-starts on port 8765, prints `NEXUS_SERVER_READY:8765`
 - Key endpoints:
   - Tasks: `/api/tasks`, `/api/tasks/main`, `/api/tasks/incomplete`, `/api/tasks/{id}/toggle`
-  - Search: `/api/search` (saves history automatically)
-  - History: `/api/history`, `/api/history/{id}` (GET list, DELETE)
+  - Search: `/api/search` (saves history automatically, 50000 char limit)
+  - History: `/api/history` (GET list, POST create), `/api/history/{id}` (DELETE)
   - Knowledge: `/api/knowledge/cards`, `/api/knowledge/cards/{id}`, `/api/knowledge/import/{json,pdf,md}`
   - Chat: `/api/chat/stream` (SSE), `/api/chat/sessions`, `/api/chat/sessions/{id}/messages`
   - Models: `/api/models`, `/api/models/{id}` (GET, POST, PUT, DELETE)
@@ -168,8 +168,9 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 
 ### FastAPI 文件上传
 - `UploadFile = File(...)` 在某些情况下解析 multipart 失败
-- 降级方案：`request.form()` + `request.body()` 双重解析
-- 前端 `FormData` 不要手动设置 `Content-Type`（浏览器自动加 boundary）
+- Tauri webview 中 `FormData + fetch` 有 CORS/协议限制
+- `base64 + JSON` 方案受 Starlette body 大小限制
+- **最终方案**：`Content-Type: application/octet-stream` + `X-Filename` 头部 + `request.body()` 接收原始字节
 
 ### Tauri 2 原生菜单
 - HTML 菜单受窗口边界限制，无法超出窗口

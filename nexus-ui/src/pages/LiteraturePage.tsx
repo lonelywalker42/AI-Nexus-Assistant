@@ -110,15 +110,24 @@ export default function LiteraturePage() {
       return;
     }
 
+    let fullContent = "";
     try {
       const session = await chatApi.createSession("文献综述");
       await chatApi.addMessage(session.id, prompt);
       const modelId = models[0]?.id;
       for await (const chunk of chatApi.stream(session.id, modelId)) {
         if (chunk.type === "content") {
-          setReviewContent(prev => prev + chunk.data);
+          fullContent += chunk.data;
+          setReviewContent(fullContent);
         }
       }
+      // 保存综述到历史
+      historyApi.create({
+        query: `AI综述: ${reviewSource === "kb" ? "知识库文献" : reviewSource === "custom" ? "自定义数据" : "搜索结果"}`,
+        type: "review",
+        result_count: reviewSource === "kb" ? selectedKbCards.length : reviewSource === "search" ? results.length : 0,
+        data: JSON.stringify({ content: fullContent }),
+      }).catch(console.error);
     } catch (err) {
       setReviewContent(`生成失败: ${err}`);
     }
@@ -133,15 +142,24 @@ export default function LiteraturePage() {
 
     const prompt = `你是一位资深的科研导师。请针对以下研究方向进行深入的选题讨论，提供：1) 3-5个具体选题建议；2) 每个选题的研究价值和创新点；3) 可能的研究方法；4) 预期难度和周期评估。\n\n研究方向：${topicInput}`;
 
+    let fullContent = "";
     try {
       const session = await chatApi.createSession("选题讨论");
       await chatApi.addMessage(session.id, prompt);
       const modelId = models[0]?.id;
       for await (const chunk of chatApi.stream(session.id, modelId)) {
         if (chunk.type === "content") {
-          setTopicContent(prev => prev + chunk.data);
+          fullContent += chunk.data;
+          setTopicContent(fullContent);
         }
       }
+      // 保存选题讨论到历史
+      historyApi.create({
+        query: `选题讨论: ${topicInput.slice(0, 100)}`,
+        type: "topic",
+        result_count: 0,
+        data: JSON.stringify({ content: fullContent, topic: topicInput }),
+      }).catch(console.error);
     } catch (err) {
       setTopicContent(`生成失败: ${err}`);
     }
@@ -172,13 +190,31 @@ export default function LiteraturePage() {
     return [];
   };
 
-  // 从历史记录加载到搜索
+  // 从历史记录加载
   const loadHistoryResults = (record: HistoryRecord) => {
-    const papers = parseHistoryData(record.data);
-    setResults(papers);
-    setKeywords(record.query.split(" OR ").map(s => s.trim()));
-    setStats(`已加载历史记录: "${record.query}" — ${papers.length} 篇文献 (${new Date(record.created_at).toLocaleDateString("zh-CN")})`);
-    setTab("search");
+    if (record.type === "review") {
+      // 加载综述内容
+      try {
+        const data = typeof record.data === "string" ? JSON.parse(record.data) : record.data;
+        setReviewContent(data.content || "");
+        setTab("review");
+      } catch { setReviewContent("无法解析历史综述数据"); setTab("review"); }
+    } else if (record.type === "topic") {
+      // 加载选题讨论
+      try {
+        const data = typeof record.data === "string" ? JSON.parse(record.data) : record.data;
+        setTopicContent(data.content || "");
+        setTopicInput(data.topic || "");
+        setTab("topic");
+      } catch { setTopicContent("无法解析历史选题数据"); setTab("topic"); }
+    } else {
+      // 加载搜索结果
+      const papers = parseHistoryData(record.data);
+      setResults(papers);
+      setKeywords(record.query.split(" OR ").map(s => s.trim()));
+      setStats(`已加载历史记录: "${record.query}" — ${papers.length} 篇文献 (${new Date(record.created_at).toLocaleDateString("zh-CN")})`);
+      setTab("search");
+    }
   };
 
   // 切换知识库卡片选择
@@ -187,7 +223,7 @@ export default function LiteraturePage() {
   };
 
   const renderStreamingContent = (content: string, endRef: React.RefObject<HTMLDivElement | null>) => (
-    <div className="glass-card p-5 max-h-96 overflow-y-auto">
+    <div className="glass-card p-5 overflow-y-auto" style={{ maxHeight: "calc(100vh - 320px)" }}>
       <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(content) }} />
       <div ref={endRef} />
     </div>
@@ -406,7 +442,9 @@ export default function LiteraturePage() {
                     style={{ color: "var(--text-muted)", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
                     <IconChevronRight size={14} />
                   </span>
-                  <span className="flex-shrink-0" style={{ color: "var(--text-muted)" }}><IconSearch size={14} /></span>
+                  <span className="flex-shrink-0" style={{ color: record.type === "review" ? "#8b5cf6" : record.type === "topic" ? "#10b981" : "var(--text-muted)" }}>
+                    {record.type === "review" ? "📊" : record.type === "topic" ? "💡" : <IconSearch size={14} />}
+                  </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{record.query}</p>
                     <p className="text-xs" style={{ color: "var(--text-muted)" }}>
