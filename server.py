@@ -213,6 +213,28 @@ def delete_task(task_id: str):
         db.close()
 
 
+@app.get("/api/tasks/main")
+def list_main_tasks():
+    """获取所有主线任务（不分日期）"""
+    db = get_session()
+    try:
+        tasks = task_service.get_main_tasks(db)
+        return [_task_to_dict(t) for t in tasks]
+    finally:
+        db.close()
+
+
+@app.get("/api/tasks/incomplete")
+def list_incomplete_tasks():
+    """获取所有未完成的非主线任务（不分日期）"""
+    db = get_session()
+    try:
+        tasks = task_service.get_all_incomplete_tasks(db)
+        return [_task_to_dict(t) for t in tasks]
+    finally:
+        db.close()
+
+
 @app.get("/api/tasks/dates")
 def get_task_dates(year: int, month: int):
     db = get_session()
@@ -402,6 +424,24 @@ def create_card(body: CardCreate):
             body.source_type, category_path=body.category_path, tags=body.tags
         )
         return {"id": card.id, "title": card.title}
+    finally:
+        db.close()
+
+
+@app.get("/api/knowledge/cards/{card_id}")
+def get_card(card_id: str):
+    db = get_session()
+    try:
+        card = knowledge_service.get_card(db, card_id)
+        if not card:
+            raise HTTPException(404, "Card not found")
+        return {
+            "id": card.id, "title": card.title, "summary": card.summary,
+            "key_points": json.loads(card.key_points) if card.key_points else [],
+            "source_type": card.source_type, "category_path": card.category_path,
+            "star_rating": card.star_rating, "user_notes": card.user_notes,
+            "created_at": card.created_at.isoformat(),
+        }
     finally:
         db.close()
 
@@ -646,13 +686,26 @@ def import_json(data: dict):
         for p in papers:
             existing = db.query(KnowledgeCard).filter(KnowledgeCard.title == p.get("title", "")).first()
             if not existing:
+                # 支持 ai-literature 完整字段
+                summary = p.get("detailSummary", p.get("summary", p.get("abstract", "")))[:1000]
+                key_points = p.get("key_points", p.get("keywords", []))
+                # 构建 user_notes（包含元数据）
+                notes_parts = []
+                if p.get("authors"): notes_parts.append(f"作者: {', '.join(p['authors'][:5])}")
+                if p.get("year"): notes_parts.append(f"年份: {p['year']}")
+                if p.get("journal"): notes_parts.append(f"期刊: {p['journal']}")
+                if p.get("doi"): notes_parts.append(f"DOI: {p['doi']}")
+                if p.get("citation"): notes_parts.append(f"引用: {p['citation']}")
+                user_notes = "\n".join(notes_parts)
+                if p.get("userNotes"): user_notes += f"\n笔记: {p['userNotes']}"
+
                 card = KnowledgeCard(
                     title=p.get("title", "")[:200],
-                    summary=p.get("summary", p.get("abstract", ""))[:1000],
-                    key_points=json.dumps(p.get("key_points", p.get("keywords", [])), ensure_ascii=False),
+                    summary=summary,
+                    key_points=json.dumps(key_points, ensure_ascii=False),
                     source_type="literature",
                     star_rating=p.get("starRating", 0),
-                    user_notes=p.get("userNotes", ""),
+                    user_notes=user_notes[:2000],
                 )
                 db.add(card)
                 imported += 1

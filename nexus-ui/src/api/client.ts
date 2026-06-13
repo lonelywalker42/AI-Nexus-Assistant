@@ -69,6 +69,8 @@ export interface Task {
 
 export const tasksApi = {
   list: (date: string) => request<Task[]>(`/api/tasks?date=${date}`),
+  listMain: () => request<Task[]>("/api/tasks/main"),
+  listIncomplete: () => request<Task[]>("/api/tasks/incomplete"),
   create: (data: { date: string; content: string; priority?: string; category?: string }) =>
     request<Task>("/api/tasks", { method: "POST", body: JSON.stringify(data) }),
   toggle: (id: string) => request<Task>(`/api/tasks/${id}/toggle`, { method: "POST" }),
@@ -164,6 +166,7 @@ export const knowledgeApi = {
     if (params?.source_type) p.set("source_type", params.source_type);
     return request<KnowledgeCard[]>(`/api/knowledge/cards?${p}`);
   },
+  getCard: (id: string) => request<KnowledgeCard>(`/api/knowledge/cards/${id}`),
   createCard: (data: { title: string; summary?: string; tags?: string[]; source_type?: string }) =>
     request<{ id: string }>("/api/knowledge/cards", { method: "POST", body: JSON.stringify(data) }),
   updateCard: (id: string, data: Partial<KnowledgeCard>) =>

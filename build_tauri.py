@@ -58,11 +58,14 @@ def step1_build_sidecar():
         print(f"ERROR: Sidecar not found at {sidecar}")
         sys.exit(1)
 
-    # 复制到 Tauri binaries 目录
+    # 复制到 Tauri binaries 目录（供 Rust include_bytes 嵌入）
     BINARIES_DIR.mkdir(parents=True, exist_ok=True)
     shutil.copy2(sidecar, BINARIES_DIR / sidecar.name)
 
-    print(f"Sidecar: {sidecar} ({sidecar.stat().st_size / 1024 / 1024:.1f} MB)")
+    # 删除 release 中的独立 sidecar（已嵌入主 exe）
+    sidecar.unlink()
+
+    print(f"Sidecar: {sidecar.name} ({BINARIES_DIR.joinpath(sidecar.name).stat().st_size / 1024 / 1024:.1f} MB) -> embedded in Tauri exe")
     return sidecar
 
 

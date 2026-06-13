@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { getPageIcon } from "../App";
+
 interface Page {
   id: string;
   label: string;
@@ -11,41 +14,78 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps) {
+  const [showAbout, setShowAbout] = useState(false);
+
   return (
-    <aside className="w-64 h-full flex flex-col border-r border-slate-200/60"
-           style={{ background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(12px)' }}>
-      {/* Logo */}
-      <div className="px-6 py-5 border-b border-slate-200/60">
-        <h1 className="text-xl font-bold tracking-wider text-primary-600">NEXUS</h1>
-        <p className="text-xs text-slate-400 mt-0.5">AI 科研助手</p>
-      </div>
+    <>
+      <aside className="w-56 h-full flex flex-col" style={{ background: 'var(--glass-bg)', backdropFilter: 'blur(12px)', borderRight: '1px solid var(--border-color)' }}>
+        {/* Logo */}
+        <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
+          <h1 className="text-lg font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>NEXUS</h1>
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>AI 科研助手</p>
+        </div>
 
-      {/* 导航 */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {/* 总览 */}
-        <p className="px-3 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">总览</p>
-        {pages.slice(0, 2).map((page) => (
-          <NavItem key={page.id} page={page} active={activePage === page.id} onClick={() => onNavigate(page.id)} />
-        ))}
+        {/* 导航 */}
+        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+          <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>总览</p>
+          {pages.slice(0, 2).map((page) => (
+            <NavItem key={page.id} page={page} active={activePage === page.id} onClick={() => onNavigate(page.id)} />
+          ))}
 
-        {/* 研究 */}
-        <p className="px-3 py-1 pt-4 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">研究</p>
-        {pages.slice(2, 5).map((page) => (
-          <NavItem key={page.id} page={page} active={activePage === page.id} onClick={() => onNavigate(page.id)} />
-        ))}
+          <p className="px-3 py-1 pt-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>研究</p>
+          {pages.slice(2, 5).map((page) => (
+            <NavItem key={page.id} page={page} active={activePage === page.id} onClick={() => onNavigate(page.id)} />
+          ))}
 
-        {/* 系统 */}
-        <p className="px-3 py-1 pt-4 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">系统</p>
-        {pages.slice(5).map((page) => (
-          <NavItem key={page.id} page={page} active={activePage === page.id} onClick={() => onNavigate(page.id)} />
-        ))}
-      </nav>
+          <p className="px-3 py-1 pt-3 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>系统</p>
+          {pages.slice(5).map((page) => (
+            <NavItem key={page.id} page={page} active={activePage === page.id} onClick={() => onNavigate(page.id)} />
+          ))}
+        </nav>
 
-      {/* 版本 */}
-      <div className="px-4 py-3 border-t border-slate-200/60 text-center">
-        <span className="text-[11px] text-slate-400">v0.3.0</span>
-      </div>
-    </aside>
+        {/* 版本 — 可点击 */}
+        <div className="px-4 py-2 text-center cursor-pointer" style={{ borderTop: '1px solid var(--border-color)' }}
+          onClick={() => setShowAbout(true)}
+          onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+        >
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v1.0.0</span>
+        </div>
+      </aside>
+
+      {/* About 弹窗 */}
+      {showAbout && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.4)" }}
+          onClick={() => setShowAbout(false)}
+        >
+          <div className="glass-card p-6 max-w-sm w-full mx-4 animate-fade-in"
+            style={{ background: "var(--glass-bg)", backdropFilter: "blur(20px)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-center space-y-3">
+              <div className="text-3xl font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>NEXUS</div>
+              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>AI Nexus Assistant</p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>v1.0.0</p>
+              <div className="h-px" style={{ background: "var(--border-color)" }} />
+              <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                面向航空航天/控制领域科研人员的个人研究助手桌面应用。
+                集成任务管理、文献检索、AI 综述、试验记录、知识库、AI 对话六大功能模块，
+                支持 8 源学术搜索、流式 AI 对话、本地文献管理。
+              </p>
+              <div className="flex justify-center gap-4 text-[10px] pt-1" style={{ color: "var(--text-muted)" }}>
+                <span>Tauri 2 + React</span>
+                <span>•</span>
+                <span>FastAPI + SQLite</span>
+                <span>•</span>
+                <span>DeepSeek / OpenAI</span>
+              </div>
+              <button className="btn-ghost mt-2 text-xs" onClick={() => setShowAbout(false)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -53,19 +93,18 @@ function NavItem({ page, active, onClick }: { page: Page; active: boolean; onCli
   return (
     <button
       onClick={onClick}
-      className={`
-        w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
-        transition-all duration-200 btn-click
-        ${active
-          ? 'bg-primary-50 text-primary-600 shadow-sm'
-          : 'text-slate-500 hover:bg-slate-100/60 hover:text-slate-700'
-        }
-      `}
+      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 btn-click cursor-pointer"
+      style={active
+        ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }
+        : { color: "var(--text-secondary)" }
+      }
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = "var(--hover-bg)"; }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
     >
-      <span className="text-base">{page.icon}</span>
+      <span className="flex-shrink-0">{getPageIcon(page.icon, 16)}</span>
       <span>{page.label}</span>
       {active && (
-        <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-500" />
+        <span className="ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "var(--accent-blue)" }} />
       )}
     </button>
   );

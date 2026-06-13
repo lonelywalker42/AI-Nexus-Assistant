@@ -215,3 +215,23 @@ def get_task_stats(db: Session, date_str: str) -> dict:
     total = len(tasks)
     done = sum(1 for t in tasks if t.completed)
     return {"total": total, "done": done, "pending": total - done}
+
+
+def get_main_tasks(db: Session) -> list[Task]:
+    """获取所有主线任务（不分日期）"""
+    return (
+        db.query(Task)
+        .filter(Task.category == "main")
+        .order_by(Task.completed.asc(), Task.date.asc(), Task.created_at.desc())
+        .all()
+    )
+
+
+def get_all_incomplete_tasks(db: Session) -> list[Task]:
+    """获取所有未完成任务（不分日期，排除主线）"""
+    return (
+        db.query(Task)
+        .filter(Task.completed == False, Task.category != "main")
+        .order_by(Task.date.asc(), Task.created_at.desc())
+        .all()
+    )

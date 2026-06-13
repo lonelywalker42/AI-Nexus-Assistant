@@ -4,7 +4,6 @@ import { chatApi, modelsApi, type ChatSession, type ChatMessage, type ModelConfi
 function renderMarkdown(md: string): string {
   if (!md) return "";
 
-  // 保护代码块不被后续规则影响
   const codeBlocks: string[] = [];
   let result = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const idx = codeBlocks.length;
@@ -12,7 +11,6 @@ function renderMarkdown(md: string): string {
     return `__CODEBLOCK_${idx}__`;
   });
 
-  // 表格
   result = result.replace(
     /(?:^|\n)(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/g,
     (_, header, _sep, body) => {
@@ -25,42 +23,23 @@ function renderMarkdown(md: string): string {
     }
   );
 
-  // 标题
   result = result.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
   result = result.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   result = result.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   result = result.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-  // 粗体/斜体
   result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   result = result.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  // 行内代码
   result = result.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // LaTeX 公式（行内 $...$ 和块 $$...$$）
-  result = result.replace(/\$\$([\s\S]*?)\$\$/g, '<div class="math-block">$$1$$</div>');
-  result = result.replace(/\$([^$\n]+?)\$/g, '<span class="math-inline">$$$1$$</span>');
-
-  // 列表
+  result = result.replace(/\$\$([\s\S]*?)\$\$/g, '<div class="math-block">$$$$1$$</div>');
+  result = result.replace(/\$([^$\n]+?)\$/g, '<span class="math-inline">$$$$1$$</span>');
   result = result.replace(/^- (.+)$/gm, '<li>$1</li>');
   result = result.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
   result = result.replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`);
-
-  // 引用
   result = result.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
-
-  // 链接
   result = result.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>');
-
-  // 分割线
   result = result.replace(/^---$/gm, '<hr>');
-
-  // 段落（双换行）
   result = result.replace(/\n\n/g, '</p><p>');
   result = result.replace(/\n/g, '<br>');
-
-  // 恢复代码块
   result = result.replace(/__CODEBLOCK_(\d+)__/g, (_, idx) => codeBlocks[parseInt(idx)]);
 
   return result;
@@ -124,16 +103,13 @@ export default function ChatPage() {
     const content = input.trim();
     setInput("");
 
-    // 保存用户消息
     const msg = await chatApi.addMessage(activeSession!, content);
     setMessages(prev => [...prev, msg]);
 
-    // 更新会话标题（首条消息）
     if (messages.length === 0) {
       setSessions(prev => prev.map(s => s.id === activeSession ? { ...s, title: content.slice(0, 30) } : s));
     }
 
-    // 流式 AI 回复
     setStreaming(true);
     setStreamContent("");
     setStreamThinking("");
@@ -151,7 +127,6 @@ export default function ChatPage() {
       setStreamContent(`错误: ${err}`);
     }
 
-    // 刷新消息列表
     const updated = await chatApi.getMessages(activeSession!);
     setMessages(updated);
     setStreaming(false);
@@ -164,9 +139,9 @@ export default function ChatPage() {
   return (
     <div className="flex gap-4 h-full">
       {/* 左侧 */}
-      <div className="w-64 flex-shrink-0 flex flex-col gap-3">
-        <div className="glass-card p-4 space-y-3">
-          <p className="text-xs text-slate-400 font-medium">模型</p>
+      <div className="w-56 flex-shrink-0 flex flex-col gap-2">
+        <div className="glass-card p-3 space-y-2">
+          <p className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>模型</p>
           <select className="input-glass text-sm">
             {models.length ? models.map(m => (
               <option key={m.id} value={m.id}>{m.name}</option>
@@ -174,39 +149,49 @@ export default function ChatPage() {
           </select>
         </div>
         <button className="btn-gradient btn-click" onClick={handleNewSession}>新建对话</button>
-        <div className="flex-1 space-y-2 overflow-y-auto">
+        <div className="flex-1 space-y-1 overflow-y-auto">
           {sessions.map(s => (
             <div
               key={s.id}
               onClick={() => setActiveSession(s.id)}
-              className={`p-3 rounded-xl text-sm cursor-pointer transition-all ${
-                activeSession === s.id ? "bg-primary-50 text-primary-600 font-medium" : "text-slate-500 hover:bg-slate-100/60"
-              }`}
+              className="px-3 py-2 rounded-xl text-sm cursor-pointer transition-all truncate"
+              style={activeSession === s.id
+                ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)", fontWeight: 500 }
+                : { color: "var(--text-secondary)" }
+              }
+              onMouseEnter={e => { if (activeSession !== s.id) e.currentTarget.style.background = "var(--hover-bg)"; }}
+              onMouseLeave={e => { if (activeSession !== s.id) e.currentTarget.style.background = "transparent"; }}
             >
               {s.title.slice(0, 20)}
             </div>
           ))}
         </div>
         {activeSession && (
-          <button className="text-sm text-red-400 hover:text-red-600 py-2" onClick={handleDeleteSession}>删除当前对话</button>
+          <button className="text-sm py-2 transition-colors" style={{ color: "var(--text-muted)" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+            onClick={handleDeleteSession}>删除当前对话</button>
         )}
       </div>
 
       {/* 右侧 */}
-      <div className="flex-1 flex flex-col gap-4">
-        <h2 className="text-lg font-bold text-slate-800">{currentSession?.title || "选择或新建对话"}</h2>
+      <div className="flex-1 flex flex-col gap-3 min-w-0">
+        <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>{currentSession?.title || "选择或新建对话"}</h2>
 
-        <div className="flex-1 space-y-4 overflow-y-auto">
+        <div className="flex-1 space-y-3 overflow-y-auto">
           {messages.map(msg => (
             <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] rounded-2xl px-5 py-3 ${
-                msg.role === "user" ? "bg-primary-500 text-white" : "glass-card"
-              }`}>
-                <p className="text-xs font-semibold mb-1 opacity-70">{msg.role === "user" ? "You" : "AI"}</p>
+              <div className="max-w-[80%] rounded-2xl px-4 py-3"
+                style={msg.role === "user"
+                  ? { background: "var(--accent-blue)", color: "#fff" }
+                  : { background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }
+                }
+              >
+                <p className="text-[10px] font-semibold mb-1 opacity-60">{msg.role === "user" ? "You" : "AI"}</p>
                 {msg.thinking_content && (
                   <details className="mb-2">
-                    <summary className="text-xs text-slate-400 cursor-pointer">Thinking...</summary>
-                    <p className="text-xs text-slate-500 italic mt-1 whitespace-pre-wrap">{msg.thinking_content}</p>
+                    <summary className="text-xs cursor-pointer" style={{ color: msg.role === "user" ? "rgba(255,255,255,0.6)" : "var(--text-muted)" }}>Thinking...</summary>
+                    <p className="text-xs italic mt-1 whitespace-pre-wrap" style={{ color: msg.role === "user" ? "rgba(255,255,255,0.7)" : "var(--text-secondary)" }}>{msg.thinking_content}</p>
                   </details>
                 )}
                 <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
@@ -214,15 +199,14 @@ export default function ChatPage() {
             </div>
           ))}
 
-          {/* 流式输出 */}
           {streaming && (
             <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-2xl px-5 py-3 glass-card">
-                <p className="text-xs font-semibold mb-1 opacity-70">AI</p>
+              <div className="max-w-[80%] rounded-2xl px-4 py-3" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>
+                <p className="text-[10px] font-semibold mb-1 opacity-60" style={{ color: "var(--text-secondary)" }}>AI</p>
                 {streamThinking && (
                   <details open className="mb-2">
-                    <summary className="text-xs text-slate-400 cursor-pointer">Thinking...</summary>
-                    <p className="text-xs text-slate-500 italic mt-1 whitespace-pre-wrap">{streamThinking}</p>
+                    <summary className="text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>Thinking...</summary>
+                    <p className="text-xs italic mt-1 whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>{streamThinking}</p>
                   </details>
                 )}
                 <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(streamContent || "...") }} />
@@ -236,25 +220,32 @@ export default function ChatPage() {
         {/* 快捷操作 */}
         <div className="flex gap-2 text-xs">
           {["润色", "翻译", "LaTeX", "摘要"].map(label => (
-            <button key={label} className="px-3 py-1 rounded-full text-slate-500 hover:bg-slate-100 transition-colors">
-              {label}
-            </button>
+            <button key={label} className="px-3 py-1 rounded-full transition-colors"
+              style={{ color: "var(--text-secondary)" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >{label}</button>
           ))}
           <span className="flex-1" />
-          <button className="px-3 py-1 rounded-full text-slate-500 hover:bg-slate-100 transition-colors">存为卡片</button>
+          <button className="px-3 py-1 rounded-full transition-colors"
+            style={{ color: "var(--text-secondary)" }}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+          >存为卡片</button>
         </div>
 
         {/* 输入区 */}
-        <div className="glass-card p-3 flex gap-3">
+        <div className="glass-card p-3 flex gap-3 items-end">
           <textarea
-            className="flex-1 bg-transparent border-none outline-none resize-none text-sm text-slate-700 placeholder-slate-400"
+            className="flex-1 bg-transparent border-none outline-none resize-none text-sm"
+            style={{ color: "var(--text-primary)" }}
             placeholder="输入消息... (Enter 发送)"
             rows={2}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }}}
           />
-          <button className="btn-gradient btn-click self-end" onClick={handleSend} disabled={streaming}>
+          <button className="btn-gradient btn-click flex-shrink-0" onClick={handleSend} disabled={streaming}>
             {streaming ? "..." : "发送"}
           </button>
         </div>

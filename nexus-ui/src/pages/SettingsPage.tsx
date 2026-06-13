@@ -38,48 +38,65 @@ export default function SettingsPage() {
     setTheme(t);
     localStorage.setItem("nexus-theme", t);
     document.documentElement.setAttribute("data-theme", t);
-    if (t === "dark") {
-      document.documentElement.style.setProperty("--bg-gradient", "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)");
-      document.documentElement.style.setProperty("--glass-bg", "rgba(30, 41, 59, 0.7)");
-      document.documentElement.style.setProperty("--text-primary", "#e2e8f0");
-    } else {
-      document.documentElement.style.setProperty("--bg-gradient", "linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)");
-      document.documentElement.style.setProperty("--glass-bg", "rgba(255, 255, 255, 0.7)");
-      document.documentElement.style.setProperty("--text-primary", "#1e293b");
-    }
   };
 
   return (
     <div className="max-w-3xl space-y-6">
-      <h2 className="text-2xl font-bold text-slate-800">设置</h2>
+      <h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>设置</h2>
 
       {/* AI 模型 */}
-      <div className="glass-card p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-slate-700">AI 模型配置</h3>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-slate-400 border-b border-slate-200">
-              <th className="py-2">名称</th><th>模型</th><th>协议</th><th>用途</th><th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {models.map(m => (
-              <tr key={m.id} className="border-b border-slate-100">
-                <td className="py-3 text-slate-700">{m.name}</td>
-                <td className="text-slate-500">{m.model_name}</td>
-                <td><span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs">{m.protocol}</span></td>
-                <td className="text-slate-500">{m.purpose}</td>
-                <td className="flex gap-2">
-                  <button onClick={() => handleEdit(m)} className="text-xs text-primary-500 hover:underline">编辑</button>
-                  <button onClick={() => handleDelete(m.id)} className="text-xs text-red-400 hover:text-red-600">删除</button>
-                </td>
+      <div className="glass-card p-5 space-y-4">
+        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>AI 模型配置</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left border-b" style={{ color: "var(--text-muted)", borderColor: "var(--border-color)" }}>
+                <th className="py-2 font-medium">名称</th>
+                <th className="font-medium">模型</th>
+                <th className="font-medium">协议</th>
+                <th className="font-medium">用途</th>
+                <th className="font-medium">操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {models.map(m => (
+                <tr key={m.id} className="border-b" style={{ borderColor: "var(--border-color)" }}>
+                  <td className="py-2.5" style={{ color: "var(--text-primary)" }}>{m.name}</td>
+                  <td style={{ color: "var(--text-secondary)" }}>{m.model_name}</td>
+                  <td>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium"
+                      style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>
+                      {m.protocol}
+                    </span>
+                  </td>
+                  <td style={{ color: "var(--text-secondary)" }}>{m.purpose}</td>
+                  <td>
+                    <div className="flex gap-2 items-center">
+                      <button onClick={() => handleEdit(m)}
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors"
+                        style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "rgba(59,130,246,0.2)")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "rgba(59,130,246,0.1)")}
+                      >编辑</button>
+                      <button onClick={() => handleDelete(m.id)}
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors"
+                        style={{ background: "rgba(239,68,68,0.08)", color: "#ef4444" }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "rgba(239,68,68,0.15)")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "rgba(239,68,68,0.08)")}
+                      >删除</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {models.length === 0 && (
+                <tr><td colSpan={5} className="py-4 text-center text-sm" style={{ color: "var(--text-muted)" }}>暂无模型配置</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
         {showForm && (
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+          <div className="p-4 rounded-xl space-y-3" style={{ background: "var(--hover-bg)", border: "1px solid var(--border-color)" }}>
             <div className="grid grid-cols-2 gap-3">
               <input className="input-glass" placeholder="名称" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
               <input className="input-glass" placeholder="模型名 (如 deepseek-reasoner)" value={form.model_name} onChange={e => setForm({ ...form, model_name: e.target.value })} />
@@ -98,7 +115,7 @@ export default function SettingsPage() {
             </div>
             <div className="flex gap-2">
               <button className="btn-gradient btn-click" onClick={handleSaveModel}>{editingId ? "保存修改" : "添加"}</button>
-              <button className="px-4 py-2 rounded-xl text-sm text-slate-500 hover:bg-slate-100" onClick={() => { setShowForm(false); setEditingId(null); }}>取消</button>
+              <button className="btn-ghost" onClick={() => { setShowForm(false); setEditingId(null); }}>取消</button>
             </div>
           </div>
         )}
@@ -111,25 +128,27 @@ export default function SettingsPage() {
       </div>
 
       {/* 主题 */}
-      <div className="glass-card p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-slate-700">主题</h3>
+      <div className="glass-card p-5 space-y-4">
+        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>主题</h3>
         <div className="flex gap-3">
           <button
             onClick={() => handleThemeChange("light")}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "light" ? "bg-primary-500 text-white" : "bg-slate-100 text-slate-600"}`}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "light" ? "bg-primary-500 text-white" : ""}`}
+            style={theme !== "light" ? { background: "var(--hover-bg)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" } : {}}
           >浅色</button>
           <button
             onClick={() => handleThemeChange("dark")}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "dark" ? "bg-primary-500 text-white" : "bg-slate-100 text-slate-600"}`}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "dark" ? "bg-primary-500 text-white" : ""}`}
+            style={theme !== "dark" ? { background: "var(--hover-bg)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" } : {}}
           >深色</button>
         </div>
       </div>
 
       {/* 数据管理 */}
-      <div className="glass-card p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-slate-700">数据管理</h3>
+      <div className="glass-card p-5 space-y-4">
+        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>数据管理</h3>
         <div className="flex gap-3 flex-wrap">
-          <button className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+          <button className="btn-ghost"
             onClick={() => {
               const input = document.createElement("input");
               input.type = "file";
@@ -154,7 +173,7 @@ export default function SettingsPage() {
               input.click();
             }}
           >导入 JSON</button>
-          <button className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+          <button className="btn-ghost"
             onClick={async () => {
               try {
                 const res = await fetch("http://127.0.0.1:8765/api/backup", { method: "POST" });

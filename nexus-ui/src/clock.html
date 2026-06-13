@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #010102;
+  overflow: hidden;
+  -webkit-app-region: drag;
+  user-select: none;
+  font-family: 'Consolas', 'Courier New', monospace;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+
+/* ── 辉光管容器 ── */
+.clock-container {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 16px 20px 10px;
+  position: relative;
+}
+
+/* ── 单个数字管 ── */
+.tube {
+  width: 38px;
+  height: 72px;
+  background: #0e0e12;
+  border: 1px solid #22222a;
+  border-radius: 8px 8px 4px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow:
+    inset 0 0 15px rgba(0,0,0,0.8),
+    0 1px 0 #3a3a44;
+}
+
+/* 管体内部网格线 */
+.tube::before {
+  content: '';
+  position: absolute;
+  top: 8px; bottom: 8px; left: 3px; right: 3px;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 8px,
+    rgba(26,26,32,0.3) 8px,
+    rgba(26,26,32,0.3) 9px
+  );
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* 底座 */
+.tube::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 4px; right: 4px;
+  height: 6px;
+  background: #1a1a20;
+  border: 1px solid #303038;
+  border-radius: 0 0 3px 3px;
+}
+
+/* ── 辉光数字 ── */
+.digit {
+  font-size: 48px;
+  font-weight: 700;
+  font-family: 'Consolas', monospace;
+  line-height: 1;
+  z-index: 2;
+  /* 辉光效果 — 5 层 */
+  color: #ffe8aa;
+  text-shadow:
+    0 0 3px #ffcc66,
+    0 0 6px #ff8c00,
+    0 0 12px #cc5500,
+    0 0 20px #cc5500,
+    0 0 30px #7a3a08;
+}
+
+/* 关闭状态的数字 */
+.digit.off {
+  color: #18181e;
+  text-shadow:
+    0 0 2px #222228;
+}
+
+/* 闪烁动画 */
+.digit.flash {
+  animation: glow-flash 0.6s ease-in-out infinite;
+}
+
+@keyframes glow-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+/* ── 冒号 ── */
+.colon {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  padding: 0 4px;
+  z-index: 2;
+}
+
+.colon-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff8c00;
+  box-shadow:
+    0 0 4px #ffcc66,
+    0 0 8px #ff8c00,
+    0 0 14px #cc5500,
+    0 0 20px #7a3a08;
+}
+
+.colon-dot.off {
+  background: #18181e;
+  box-shadow: 0 0 2px #222228;
+}
+
+/* ── 底部信息栏 ── */
+.info-bar {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 10px;
+  color: #cc6600;
+  text-shadow: 0 0 6px rgba(204,102,0,0.4);
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+/* ── 倒计时显示 ── */
+.countdown-label {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: #cc5500;
+  text-shadow: 0 0 4px rgba(204,85,0,0.5);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* ── 右键菜单 ── */
+.context-menu {
+  display: none;
+  position: fixed;
+  background: #1a1a2e;
+  border: 1px solid #333346;
+  border-radius: 8px;
+  padding: 4px 0;
+  z-index: 1000;
+  -webkit-app-region: no-drag;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  min-width: 160px;
+}
+
+.context-menu.show { display: block; }
+
+.menu-item {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: #e0e6ed;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+
+.menu-item:hover {
+  background: #ff8c00;
+  color: #fff;
+}
+
+.menu-sep {
+  height: 1px;
+  background: #333346;
+  margin: 4px 0;
+}
+
+/* ── 自定义时间输入 ── */
+.custom-input-wrap {
+  display: none;
+  position: fixed;
+  background: #1a1a2e;
+  border: 1px solid #333346;
+  border-radius: 8px;
+  padding: 12px;
+  z-index: 1001;
+  -webkit-app-region: no-drag;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+
+.custom-input-wrap.show { display: flex; gap: 8px; align-items: center; }
+
+.custom-input-wrap input {
+  width: 60px;
+  background: #0e0e12;
+  border: 1px solid #333346;
+  border-radius: 4px;
+  color: #ffe8aa;
+  padding: 4px 8px;
+  font-size: 13px;
+  text-align: center;
+  outline: none;
+}
+
+.custom-input-wrap input:focus { border-color: #ff8c00; }
+
+.custom-input-wrap button {
+  background: #ff8c00;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ── 拖拽提示 ── */
+.drag-hint {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 8px;
+  color: #3a3a44;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+
+<div class="clock-container" id="clockContainer">
+  <div class="countdown-label" id="countdownLabel" style="display:none">COUNTDOWN</div>
+
+  <!-- H -->
+  <div class="tube"><span class="digit" id="h1">0</span></div>
+  <div class="tube"><span class="digit" id="h2">0</span></div>
+
+  <!-- : -->
+  <div class="colon">
+    <div class="colon-dot" id="colon1"></div>
+    <div class="colon-dot" id="colon2"></div>
+  </div>
+
+  <!-- M -->
+  <div class="tube"><span class="digit" id="m1">0</span></div>
+  <div class="tube"><span class="digit" id="m2">0</span></div>
+
+  <!-- : -->
+  <div class="colon">
+    <div class="colon-dot" id="colon3"></div>
+    <div class="colon-dot" id="colon4"></div>
+  </div>
+
+  <!-- S -->
+  <div class="tube"><span class="digit" id="s1">0</span></div>
+  <div class="tube"><span class="digit" id="s2">0</span></div>
+
+  <div class="info-bar" id="infoBar"></div>
+  <div class="drag-hint" id="dragHint">✕</div>
+</div>
+
+<!-- 右键菜单 -->
+<div class="context-menu" id="contextMenu">
+  <div class="menu-item" data-min="15">⏱ 15 分钟</div>
+  <div class="menu-item" data-min="30">⏱ 30 分钟</div>
+  <div class="menu-item" data-min="45">⏱ 45 分钟</div>
+  <div class="menu-item" data-min="60">⏱ 60 分钟</div>
+  <div class="menu-item" data-min="90">⏱ 90 分钟</div>
+  <div class="menu-sep"></div>
+  <div class="menu-item" id="customMin">✏️ 自定义...</div>
+  <div class="menu-sep"></div>
+  <div class="menu-item" id="cancelCountdown" style="display:none">⏹ 取消倒计时</div>
+  <div class="menu-item" id="backToMain">↩ 返回主窗口</div>
+</div>
+
+<!-- 自定义时间输入 -->
+<div class="custom-input-wrap" id="customWrap">
+  <input type="number" id="customInput" min="1" max="999" value="45" placeholder="分钟">
+  <button id="customOk">确定</button>
+</div>
+
+<script>
+// ── Tauri IPC ──
+let invoke = null;
+async function initTauri() {
+  try {
+    const { invoke: fn } = await import('@tauri-apps/api/core');
+    invoke = fn;
+  } catch (e) {
+    console.warn('Tauri API not available:', e);
+  }
+}
+initTauri();
+
+// ── 状态 ──
+let isCountdown = false;
+let countdownSeconds = 0;
+let countdownTarget = 0;
+let blinkOn = true;
+
+// ── DOM ──
+const digits = {
+  h1: document.getElementById('h1'),
+  h2: document.getElementById('h2'),
+  m1: document.getElementById('m1'),
+  m2: document.getElementById('m2'),
+  s1: document.getElementById('s1'),
+  s2: document.getElementById('s2'),
+};
+const colons = [
+  document.getElementById('colon1'),
+  document.getElementById('colon2'),
+  document.getElementById('colon3'),
+  document.getElementById('colon4'),
+];
+const infoBar = document.getElementById('infoBar');
+const countdownLabel = document.getElementById('countdownLabel');
+const contextMenu = document.getElementById('contextMenu');
+const customWrap = document.getElementById('customWrap');
+const customInput = document.getElementById('customInput');
+const dragHint = document.getElementById('dragHint');
+
+// ── 更新显示 ──
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function updateDisplay(h, m, s, flash) {
+  const str = pad2(h) + pad2(m) + pad2(s);
+  const keys = ['h1','h2','m1','m2','s1','s2'];
+  for (let i = 0; i < 6; i++) {
+    const el = digits[keys[i]];
+    el.textContent = str[i];
+    if (flash) {
+      el.classList.add('flash');
+    } else {
+      el.classList.remove('flash');
+    }
+  }
+}
+
+function updateDate() {
+  const now = new Date();
+  const weekdays = ['日','一','二','三','四','五','六'];
+  const y = now.getFullYear();
+  const m = pad2(now.getMonth() + 1);
+  const d = pad2(now.getDate());
+  const w = weekdays[now.getDay()];
+  const ampm = now.getHours() < 12 ? 'AM' : 'PM';
+  infoBar.textContent = `${y}.${m}.${d}  周${w}  ${ampm}`;
+}
+
+// ── 时钟循环 ──
+function tick() {
+  // 冒号闪烁
+  blinkOn = !blinkOn;
+  colons.forEach(c => {
+    c.classList.toggle('off', !blinkOn);
+  });
+
+  if (isCountdown) {
+    const remaining = Math.max(0, Math.ceil((countdownTarget - Date.now()) / 1000));
+    if (remaining <= 0) {
+      // 倒计时结束 — 闪烁
+      updateDisplay(0, 0, 0, true);
+      countdownLabel.textContent = 'TIME UP!';
+      countdownLabel.style.color = '#ef4444';
+      return;
+    }
+    const h = Math.floor(remaining / 3600);
+    const m = Math.floor((remaining % 3600) / 60);
+    const s = remaining % 60;
+    updateDisplay(h, m, s, remaining <= 10);
+    if (remaining <= 10) {
+      countdownLabel.style.color = '#ef4444';
+    } else {
+      countdownLabel.style.color = '#cc5500';
+    }
+  } else {
+    const now = new Date();
+    updateDisplay(now.getHours(), now.getMinutes(), now.getSeconds(), false);
+    updateDate();
+  }
+}
+
+setInterval(tick, 500);
+tick();
+
+// ── 右键菜单 ──
+document.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  customWrap.classList.remove('show');
+
+  // 更新取消按钮可见性
+  document.getElementById('cancelCountdown').style.display = isCountdown ? 'flex' : 'none';
+
+  contextMenu.style.left = e.clientX + 'px';
+  contextMenu.style.top = e.clientY + 'px';
+  contextMenu.classList.add('show');
+});
+
+document.addEventListener('click', (e) => {
+  if (!contextMenu.contains(e.target)) {
+    contextMenu.classList.remove('show');
+  }
+  if (!customWrap.contains(e.target) && e.target.id !== 'customMin') {
+    customWrap.classList.remove('show');
+  }
+});
+
+// 菜单项点击
+document.querySelectorAll('.menu-item[data-min]').forEach(item => {
+  item.addEventListener('click', () => {
+    const min = parseInt(item.dataset.min);
+    startCountdown(min);
+    contextMenu.classList.remove('show');
+  });
+});
+
+document.getElementById('customMin').addEventListener('click', () => {
+  contextMenu.classList.remove('show');
+  customWrap.style.left = (parseInt(contextMenu.style.left) - 30) + 'px';
+  customWrap.style.top = contextMenu.style.top;
+  customWrap.classList.add('show');
+  customInput.focus();
+  customInput.select();
+});
+
+document.getElementById('customOk').addEventListener('click', () => {
+  const min = parseInt(customInput.value);
+  if (min > 0) {
+    startCountdown(min);
+    customWrap.classList.remove('show');
+  }
+});
+
+customInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('customOk').click();
+  if (e.key === 'Escape') customWrap.classList.remove('show');
+});
+
+document.getElementById('cancelCountdown').addEventListener('click', () => {
+  isCountdown = false;
+  countdownLabel.style.display = 'none';
+  contextMenu.classList.remove('show');
+});
+
+document.getElementById('backToMain').addEventListener('click', async () => {
+  contextMenu.classList.remove('show');
+  if (invoke) {
+    try { await invoke('show_main_window'); } catch (e) { console.error(e); }
+  }
+});
+
+// ── 倒计时 ──
+function startCountdown(minutes) {
+  isCountdown = true;
+  countdownSeconds = minutes * 60;
+  countdownTarget = Date.now() + countdownSeconds * 1000;
+  countdownLabel.style.display = 'block';
+  countdownLabel.textContent = 'COUNTDOWN';
+  countdownLabel.style.color = '#cc5500';
+}
+
+// ── 双击返回主窗口 ──
+document.addEventListener('dblclick', async () => {
+  if (invoke) {
+    try { await invoke('show_main_window'); } catch (e) { console.error(e); }
+  }
+});
+
+// ── 关闭按钮 ──
+dragHint.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  if (invoke) {
+    try { await invoke('close_clock_window'); } catch (e) { console.error(e); }
+  }
+});
+</script>
+</body>
+</html>

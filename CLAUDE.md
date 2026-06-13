@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers.
+AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v1.0.0**.
 
 ## Dual Frontend Architecture
 
 The project has **two independent frontends** sharing the same Python backend services:
 
 1. **PySide6 version** (`main.py` + `app/ui/`) — Python desktop app, ~235MB packaged
-2. **Tauri 2 version** (`nexus-ui/` + `server.py`) — Rust shell + React/TypeScript frontend + FastAPI API, ~11MB shell + ~31MB sidecar
+2. **Tauri 2 version** (`nexus-ui/` + `server.py`) — Rust shell + React/TypeScript frontend + FastAPI API, ~42MB single exe (sidecar embedded)
 
 Both share:
 - `app/models/` — SQLAlchemy ORM models (8 tables in `data/nexus.db`)
@@ -64,7 +64,7 @@ cd nexus-ui && npx tsc --noEmit
 
 ### Services (`app/services/`)
 Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each service file handles one domain:
-- `task_service.py` — CRUD + weekly plans + calendar marks + stats
+- `task_service.py` — CRUD + weekly plans + calendar marks + stats + main/incomplete task queries
 - `experiment_service.py` — CRUD + version management + Markdown export
 - `knowledge_service.py` — CRUD + tag management + card generation from paper
 - `chat_service.py` — Session management + message persistence + AI message building
@@ -87,7 +87,8 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 
 ### Stack
 - Tauri 2 (Rust shell) + React 19 + TypeScript + Tailwind CSS v4
-- Open Sans font, glassmorphism UI style
+- Open Sans font, clean glassmorphism UI style (simplified, 16px radius)
+- CSS-variable-driven dark mode via `[data-theme="dark"]` selector on `<html>`
 - `src/api/client.ts` — Typed HTTP client connecting to FastAPI backend
 
 ### Key Files
@@ -103,6 +104,16 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - `build_server.py` uses `--exclude-module` to keep sidecar at ~31MB (excludes torch/scipy/numpy etc.)
 - Rust `setup()` checks port 8765 first — if backend already running, skips sidecar spawn
 - Tauri 2 requires `capabilities/` directory for window operations (minimize/maximize/close/drag)
+- Sidecar is embedded into the main exe via `include_bytes!()` — single-file distribution (~42MB)
+
+### Clock Window (辉光管时钟)
+- `public/clock.html` — Standalone Nixie tube clock with CSS glow effects
+- Triggered when main window is closed (minimized to tray)
+- **Double-click** clock → returns to main window
+- **Right-click** clock → countdown menu (15/30/45/60/90 min or custom)
+- Colors: `#ffe8aa` (core), `#ff8c00` (wire), `#cc5500` (glow), `#7a3a08` (halo), `#0e0e12` (glass)
+- Rust commands: `show_main_window`, `close_clock_window`
+- Window config: 340×105, frameless, always-on-top, resizable
 
 ## FastAPI Backend: `server.py`
 
@@ -110,7 +121,7 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - Auto-starts on port 8765, prints `NEXUS_SERVER_READY:8765`
 - Lazy-initializes search engine and AI router
 - Frozen mode (PyInstaller): stdout/stderr redirected to `data/server.log` for debugging startup failures
-- Key endpoints: `/api/dashboard`, `/api/tasks`, `/api/search`, `/api/experiments`, `/api/knowledge/cards`, `/api/chat/stream` (SSE), `/api/models`, `/api/backup`
+- Key endpoints: `/api/dashboard`, `/api/tasks`, `/api/tasks/main`, `/api/tasks/incomplete`, `/api/search`, `/api/experiments`, `/api/knowledge/cards`, `/api/knowledge/cards/{id}`, `/api/chat/stream` (SSE), `/api/models`, `/api/backup`
 - Knowledge import: `/api/knowledge/import/json`, `/api/import/pdf`, `/api/import/md`
 
 ## Theme System (`app/ui/theme.py`)

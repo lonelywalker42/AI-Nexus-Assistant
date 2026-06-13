@@ -8,16 +8,27 @@ import KnowledgePage from "./pages/KnowledgePage";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import { dashboardApi } from "./api/client";
+import { IconChart, IconClipboard, IconBook, IconFlask, IconBrain, IconChat, IconGear, IconX, IconMinus, IconMaximize } from "./components/Icons";
 
 const PAGES = [
-  { id: "dashboard", label: "仪表盘", icon: "📊" },
-  { id: "tasks", label: "任务与日程", icon: "📋" },
-  { id: "literature", label: "文献管理", icon: "📚" },
-  { id: "experiments", label: "试验管理", icon: "🧪" },
-  { id: "knowledge", label: "知识库", icon: "🧠" },
-  { id: "chat", label: "AI 对话", icon: "💬" },
-  { id: "settings", label: "设置", icon: "⚙️" },
+  { id: "dashboard", label: "仪表盘", icon: "chart" },
+  { id: "tasks", label: "任务与日程", icon: "clipboard" },
+  { id: "literature", label: "文献管理", icon: "book" },
+  { id: "experiments", label: "试验管理", icon: "flask" },
+  { id: "knowledge", label: "知识库", icon: "brain" },
+  { id: "chat", label: "AI 对话", icon: "chat" },
+  { id: "settings", label: "设置", icon: "gear" },
 ];
+
+const ICON_MAP: Record<string, React.FC<{ size?: number }>> = {
+  chart: IconChart, clipboard: IconClipboard, book: IconBook,
+  flask: IconFlask, brain: IconBrain, chat: IconChat, gear: IconGear,
+};
+
+export function getPageIcon(iconKey: string, size = 18) {
+  const Icon = ICON_MAP[iconKey];
+  return Icon ? <Icon size={size} /> : null;
+}
 
 // Tauri 窗口控制
 async function windowMinimize() {
@@ -50,6 +61,12 @@ function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [loading, setLoading] = useState(true);
 
+  // 初始化主题
+  useEffect(() => {
+    const saved = localStorage.getItem("nexus-theme") || "light";
+    document.documentElement.setAttribute("data-theme", saved);
+  }, []);
+
   useEffect(() => {
     dashboardApi.get()
       .then(() => setLoading(false))
@@ -67,11 +84,11 @@ function App() {
     return (
       <div className="flex items-center justify-center h-screen" style={{ background: 'var(--bg-gradient)' }}>
         <div className="glass-card p-8 text-center space-y-4">
-          <div className="text-4xl">🧠</div>
-          <h1 className="text-xl font-bold text-slate-700">AI Nexus Assistant</h1>
-          <p className="text-sm text-slate-500">正在启动后端服务...</p>
-          <div className="w-48 h-1.5 bg-slate-200 rounded-full overflow-hidden mx-auto">
-            <div className="h-full bg-primary-500 rounded-full animate-pulse" style={{ width: "60%" }} />
+          <div className="flex justify-center" style={{ color: "var(--accent-blue)" }}><IconBrain size={40} /></div>
+          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>AI Nexus Assistant</h1>
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>正在启动后端服务...</p>
+          <div className="w-48 h-1.5 rounded-full overflow-hidden mx-auto" style={{ background: "var(--border-color)" }}>
+            <div className="h-full rounded-full animate-pulse" style={{ width: "60%", background: "var(--accent-blue)" }} />
           </div>
         </div>
       </div>
@@ -93,29 +110,38 @@ function App() {
 
   return (
     <div className="flex h-screen overflow-hidden select-none" style={{ background: 'var(--bg-gradient)' }}>
-      {/* 标题栏 — data-tauri-drag-region 使整个区域可拖拽 */}
+      {/* 标题栏 */}
       <div
         className="fixed top-0 left-0 right-0 h-9 z-50 flex items-center justify-between px-4"
-        style={{ background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #e2e8f0' }}
+        style={{ background: 'var(--glass-bg)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-color)' }}
         data-tauri-drag-region
       >
-        <span className="text-xs text-slate-400 pointer-events-none">AI Nexus Assistant</span>
+        <span className="text-xs pointer-events-none" style={{ color: "var(--text-muted)" }}>AI Nexus Assistant</span>
         <div className="flex gap-0.5" data-tauri-drag-region="false">
           <button
             onClick={windowMinimize}
-            className="w-9 h-7 rounded hover:bg-slate-200 text-slate-500 text-sm flex items-center justify-center"
+            className="w-9 h-7 rounded flex items-center justify-center transition-colors cursor-pointer"
+            style={{ color: "var(--text-secondary)" }}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
             data-tauri-drag-region="false"
-          >—</button>
+          ><IconMinus size={14} /></button>
           <button
             onClick={windowToggleMaximize}
-            className="w-9 h-7 rounded hover:bg-slate-200 text-slate-500 text-sm flex items-center justify-center"
+            className="w-9 h-7 rounded flex items-center justify-center transition-colors cursor-pointer"
+            style={{ color: "var(--text-secondary)" }}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
             data-tauri-drag-region="false"
-          >□</button>
+          ><IconMaximize size={14} /></button>
           <button
             onClick={windowClose}
-            className="w-9 h-7 rounded hover:bg-red-500 hover:text-white text-slate-500 text-sm flex items-center justify-center"
+            className="w-9 h-7 rounded flex items-center justify-center transition-colors cursor-pointer"
+            style={{ color: "var(--text-secondary)" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "#ef4444"; e.currentTarget.style.color = "#fff"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}
             data-tauri-drag-region="false"
-          >×</button>
+          ><IconX size={14} /></button>
         </div>
       </div>
 
@@ -134,7 +160,7 @@ function App() {
       {/* 右下角缩放提示 */}
       <div
         className="fixed bottom-0 right-0 w-4 h-4 pointer-events-none z-50"
-        style={{ background: 'linear-gradient(135deg, transparent 50%, #94a3b8 50%)', opacity: 0.3 }}
+        style={{ background: 'linear-gradient(135deg, transparent 50%, var(--text-muted) 50%)', opacity: 0.2 }}
       />
     </div>
   );
