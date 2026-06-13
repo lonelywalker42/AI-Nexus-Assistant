@@ -26,16 +26,27 @@ if getattr(sys, 'frozen', False):
     print(f"[server] Starting frozen exe, log at {_log_path}", flush=True)
 
 # 确保 app 包可导入（兼容 PyInstaller frozen 模式）
-if getattr(sys, 'frozen', False):
-    base_dir = Path(sys.executable).parent
-    sys.path.insert(0, str(Path(sys._MEIPASS)))
-else:
-    base_dir = Path(__file__).parent
-    sys.path.insert(0, str(base_dir))
+try:
+    if getattr(sys, 'frozen', False):
+        base_dir = Path(sys.executable).parent
+        meipass = getattr(sys, '_MEIPASS', None)
+        print(f"[server] base_dir={base_dir}, _MEIPASS={meipass}", flush=True)
+        if meipass:
+            sys.path.insert(0, str(Path(meipass)))
+        else:
+            print("[server] WARNING: _MEIPASS not set!", flush=True)
+    else:
+        base_dir = Path(__file__).parent
+        sys.path.insert(0, str(base_dir))
+except Exception as e:
+    print(f"[server] ERROR in path setup: {e}", flush=True)
+    import traceback; traceback.print_exc()
+    sys.exit(1)
 
 # 确保 data 目录存在（exe 旁边，不在临时目录）
 data_dir = base_dir / "data"
 data_dir.mkdir(parents=True, exist_ok=True)
+print(f"[server] data_dir={data_dir}", flush=True)
 
 try:
     from fastapi import FastAPI, HTTPException, Query

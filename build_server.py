@@ -1,6 +1,5 @@
 """构建 Python FastAPI 后端为独立 exe
 
-使用专用最小 venv 构建，避免 PyInstaller 从共享 venv 拉入无关依赖。
 输出: D:/ai_coding_research/release/nexus-server-x86_64-pc-windows-msvc.exe
 """
 
@@ -13,39 +12,33 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).parent
 BINARY_NAME = "nexus-server-x86_64-pc-windows-msvc"
 RELEASE_DIR = PROJECT_DIR / "release"
-BUILD_VENV = PROJECT_DIR / ".build-venv"
 
-# server.py 运行时需要的最小依赖集
-SERVER_DEPS = [
-    "fastapi",
-    "uvicorn[standard]",   # 包含 httptools/h11 等
-    "sqlalchemy",
-    "pydantic",
-    "requests",
+# server 不需要的重量级模块 — 从 venv 中排除
+EXCLUDE_MODULES = [
+    # GUI
+    "PyQt5", "PyQt6", "PySide6", "tkinter",
+    # AI/ML (torch 4.4GB 等)
+    "torch", "transformers", "onnxruntime", "onnx",
+    "chromadb", "chromadb_rust_bindings",
+    # 科学计算
+    "scipy", "numpy", "pandas", "sklearn", "sympy",
+    "numba", "llvmlite", "scs",
+    # 可视化
+    "matplotlib", "vtk", "vtkmodules", "pyarrow", "PIL",
+    # PDF
+    "fitz", "pymupdf", "pdfminer",
+    # 网络/云
+    "kubernetes", "selenium", "httpx", "httpcore",
+    # 其他大型包
+    "casadi", "pymavlink", "streamlit", "pydeck",
+    "nuitka", "babel", "tqdm", "rich", "typer",
+    # 标准库
+    "unittest", "doctest", "test", "xmlrpc",
+    "cgi", "cgitb", "dbm",
 ]
 
 
-def create_build_venv():
-    """创建专用最小 venv"""
-    print("Creating minimal build venv...")
-    if BUILD_VENV.exists():
-        shutil.rmtree(BUILD_VENV)
-
-    subprocess.run(
-        [sys.executable, "-m", "venv", str(BUILD_VENV)],
-        check=True,
-    )
-
-    pip = BUILD_VENV / ("Scripts/pip.exe" if sys.platform == "win32" else "bin/pip")
-    subprocess.run(
-        [str(pip), "install", "--no-cache-dir", *SERVER_DEPS],
-        check=True,
-    )
-    print(f"Build venv ready: {BUILD_VENV}")
-
-
 def build():
-    """在专用 venv 中构建 exe"""
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
 
     # 清理旧构建产物
@@ -53,14 +46,8 @@ def build():
         if d.exists():
             shutil.rmtree(d)
 
-    # 确保 build venv 存在
-    if not (BUILD_VENV / "Scripts/python.exe").exists():
-        create_build_venv()
-
-    venv_python = str(BUILD_VENV / "Scripts/python.exe")
-
     args = [
-        venv_python, "-m", "PyInstaller",
+        sys.executable, "-m", "PyInstaller",
         "--name", BINARY_NAME,
         "--onefile",
         "--console",
@@ -119,16 +106,8 @@ def build():
         "--hidden-import", "pydantic",
         "--hidden-import", "fastapi",
         "--hidden-import", "starlette",
-        # 排除标准库中不需要的
-        "--exclude-module", "tkinter",
-        "--exclude-module", "unittest",
-        "--exclude-module", "doctest",
-        "--exclude-module", "test",
-        "--exclude-module", "xmlrpc",
-        "--exclude-module", "cgi",
-        "--exclude-module", "cgitb",
-        "--exclude-module", "dbm",
-        "--exclude-module", "distutils",
+        # 排除不需要的模块
+        *[item for m in EXCLUDE_MODULES for item in ("--exclude-module", m)],
         # 入口
         "server.py",
     ]
@@ -155,8 +134,9 @@ def build():
 
 
 def clean():
-    """清理构建产物和临时 venv"""
-    for d in [PROJECT_DIR / "build", PROJECT_DIR / "dist", BUILD_VENV]:
+    """清理构建产物"""
+    for d in [PROJECT_DIR / "build", PROJECT_DIR / "dist",
+              PROJECT_DIR / ".build-venv"]:
         if d.exists():
             shutil.rmtree(d)
             print(f"Removed: {d}")
