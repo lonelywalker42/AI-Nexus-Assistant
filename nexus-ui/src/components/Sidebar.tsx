@@ -49,7 +49,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
           onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
         >
-          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v1.0.0</span>
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v1.1.0</span>
         </div>
       </aside>
 

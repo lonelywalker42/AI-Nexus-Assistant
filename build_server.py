@@ -28,7 +28,7 @@ EXCLUDE_MODULES = [
     # PDF
     "fitz", "pymupdf", "pdfminer",
     # 网络/云
-    "kubernetes", "selenium", "httpx", "httpcore",
+    "kubernetes", "selenium",
     # 其他大型包
     "casadi", "pymavlink", "streamlit", "pydeck",
     "nuitka", "babel", "tqdm", "rich", "typer",
@@ -106,6 +106,8 @@ def build():
         "--hidden-import", "pydantic",
         "--hidden-import", "fastapi",
         "--hidden-import", "starlette",
+        "--hidden-import", "openai",
+        "--hidden-import", "anthropic",
         # 排除不需要的模块
         *[item for m in EXCLUDE_MODULES for item in ("--exclude-module", m)],
         # 入口

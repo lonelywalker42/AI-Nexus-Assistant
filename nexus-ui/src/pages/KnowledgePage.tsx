@@ -156,6 +156,16 @@ export default function KnowledgePage() {
       if (files.length === 0) return;
       setImporting(true);
 
+      // 先检查服务器是否可达
+      try {
+        const healthCheck = await fetch("http://127.0.0.1:8765/api/dashboard", { signal: AbortSignal.timeout(3000) });
+        if (!healthCheck.ok) throw new Error("server not ok");
+      } catch {
+        setImportStatus("❌ 无法连接后端服务 (127.0.0.1:8765)，请确认服务已启动");
+        setImporting(false);
+        return;
+      }
+
       let successCount = 0;
       let failCount = 0;
       const results: string[] = [];
@@ -165,11 +175,15 @@ export default function KnowledgePage() {
         setImportStatus(`[${i + 1}/${files.length}] 正在处理: ${file.name}\n提取文本 → AI 分析 → 生成卡片...`);
         try {
           const formData = new FormData();
-          formData.append("file", file);
+          formData.append("file", file, file.name);
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 120000);
           const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/pdf", {
             method: "POST",
             body: formData,
+            signal: controller.signal,
           });
+          clearTimeout(timeout);
           const result = await res.json();
           if (result.error) {
             failCount++;

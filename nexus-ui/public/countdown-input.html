@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;font-family:Consolas,'Courier New',monospace;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;height:100vh;user-select:none}
+label{color:#cc6600;font-size:11px;margin-bottom:8px;letter-spacing:1.5px;text-transform:uppercase}
+.row{display:flex;gap:8px;align-items:center}
+input{width:70px;background:#0e0e12;border:1px solid #333346;border-radius:6px;
+  color:#ffe8aa;padding:8px;font-size:18px;text-align:center;outline:none;font-family:Consolas,monospace}
+input:focus{border-color:#ff8c00;box-shadow:0 0 8px rgba(255,140,0,0.3)}
+button{border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;font-family:Consolas,monospace}
+.btn-ok{background:#ff8c00;color:#fff}
+.btn-ok:hover{background:#ffaa33}
+.btn-cancel{background:#333346;color:#94a3b8}
+.btn-cancel:hover{background:#44445a;color:#e0e6ed}
+</style></head><body>
+<label>Set Countdown (min)</label>
+<div class="row">
+  <input type="number" id="min" min="1" max="999" value="45" autofocus>
+  <button class="btn-ok" id="ok">START</button>
+  <button class="btn-cancel" id="cancel">CANCEL</button>
+</div>
+<script>
+function callRust(cmd, args) {
+  if (typeof window.invoke === 'function') return window.invoke(cmd, args || {});
+  if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke)
+    return window.__TAURI_INTERNALS__.invoke(cmd, args || {});
+  return Promise.reject('no IPC');
+}
+document.getElementById('ok').addEventListener('click', function() {
+  var v = parseInt(document.getElementById('min').value);
+  if (v > 0) callRust('set_countdown', {minutes: v}).catch(function(){});
+});
+document.getElementById('cancel').addEventListener('click', function() {
+  callRust('close_input_window', {}).catch(function(){});
+});
+document.getElementById('min').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') document.getElementById('ok').click();
+});
+document.getElementById('min').select();
+</script>
+</body></html>

@@ -16,8 +16,22 @@ export default function SettingsPage() {
 
   const handleSaveModel = async () => {
     if (!form.name || !form.base_url || !form.model_name) return;
-    await modelsApi.create(form);
+    if (editingId) {
+      // 编辑模式：不发送空 api_key（避免覆盖已有密钥）
+      const updateData: Record<string, string> = {
+        name: form.name,
+        base_url: form.base_url,
+        model_name: form.model_name,
+        protocol: form.protocol,
+        purpose: form.purpose,
+      };
+      if (form.api_key) updateData.api_key = form.api_key;
+      await modelsApi.update(editingId, updateData);
+    } else {
+      await modelsApi.create(form);
+    }
     setShowForm(false);
+    setEditingId(null);
     setForm({ name: "", base_url: "", api_key: "", model_name: "", protocol: "openai", purpose: "all" });
     loadModels();
   };
@@ -101,7 +115,7 @@ export default function SettingsPage() {
               <input className="input-glass" placeholder="名称" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
               <input className="input-glass" placeholder="模型名 (如 deepseek-reasoner)" value={form.model_name} onChange={e => setForm({ ...form, model_name: e.target.value })} />
               <input className="input-glass col-span-2" placeholder="Base URL (如 https://api.deepseek.com/v1)" value={form.base_url} onChange={e => setForm({ ...form, base_url: e.target.value })} />
-              <input className="input-glass col-span-2" type="password" placeholder="API Key" value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} />
+              <input className="input-glass col-span-2" type="password" placeholder={editingId ? "留空表示保留原密钥" : "API Key"} value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} />
               <select className="input-glass" value={form.protocol} onChange={e => setForm({ ...form, protocol: e.target.value })}>
                 <option value="openai">OpenAI</option>
                 <option value="anthropic">Anthropic</option>
@@ -136,6 +150,11 @@ export default function SettingsPage() {
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "light" ? "bg-primary-500 text-white" : ""}`}
             style={theme !== "light" ? { background: "var(--hover-bg)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" } : {}}
           >浅色</button>
+          <button
+            onClick={() => handleThemeChange("warm")}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "warm" ? "text-white" : ""}`}
+            style={theme === "warm" ? { background: "#E07A5F" } : { background: "var(--hover-bg)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" }}
+          >暖色</button>
           <button
             onClick={() => handleThemeChange("dark")}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "dark" ? "bg-primary-500 text-white" : ""}`}

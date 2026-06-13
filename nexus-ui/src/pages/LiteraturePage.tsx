@@ -417,6 +417,19 @@ export default function LiteraturePage() {
                     style={{ background: "var(--accent-blue)", color: "#fff" }}
                     onClick={e => { e.stopPropagation(); loadHistoryResults(record); }}
                   >加载到检索</button>
+                  <button className="text-xs px-2 py-1.5 rounded-lg cursor-pointer transition-colors flex-shrink-0"
+                    style={{ color: "var(--text-muted)" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (!window.confirm('确定删除此历史记录？')) return;
+                      historyApi.delete(record.id).then(() => {
+                        setHistory(prev => prev.filter(h => h.id !== record.id));
+                        if (expandedHistory === record.id) setExpandedHistory(null);
+                      }).catch(err => { alert('删除失败: ' + err.message); });
+                    }}
+                  >删除</button>
                 </div>
 
                 {/* 展开的文献列表 */}

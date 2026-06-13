@@ -49,7 +49,7 @@ data_dir.mkdir(parents=True, exist_ok=True)
 print(f"[server] data_dir={data_dir}", flush=True)
 
 try:
-    from fastapi import FastAPI, HTTPException, Query
+    from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
@@ -624,6 +624,22 @@ def create_model(body: ModelCreate):
         db.close()
 
 
+@app.put("/api/models/{model_id}")
+def update_model(model_id: str, body: dict):
+    db = get_session()
+    try:
+        model = db.get(ModelConfig, model_id)
+        if not model:
+            raise HTTPException(404)
+        for key in ["name", "base_url", "api_key", "model_name", "protocol", "purpose"]:
+            if key in body and body[key]:
+                setattr(model, key, body[key])
+        db.commit()
+        return {"id": model.id}
+    finally:
+        db.close()
+
+
 @app.delete("/api/models/{model_id}")
 def delete_model(model_id: str):
     db = get_session()
@@ -652,6 +668,20 @@ def list_history(limit: int = 50):
         return [{"id": r.id, "query": r.query, "type": r.history_type,
                  "result_count": r.result_count, "data": r.data,
                  "created_at": r.created_at.isoformat()} for r in records]
+    finally:
+        db.close()
+
+
+@app.delete("/api/history/{record_id}")
+def delete_history(record_id: str):
+    db = get_session()
+    try:
+        record = db.get(SearchHistory, record_id)
+        if not record:
+            raise HTTPException(404)
+        db.delete(record)
+        db.commit()
+        return {"ok": True}
     finally:
         db.close()
 
@@ -735,16 +765,36 @@ def import_json(data: dict):
 
 
 @app.post("/api/knowledge/import/pdf")
-async def import_pdf(file: bytes = None):
+async def import_pdf(request: Request):
     """导入 PDF 文件，提取文本生成知识卡片"""
-    if not file:
-        return {"error": "No file provided"}
+    print("[pdf] import request received", flush=True)
+    try:
+        content_type = request.headers.get("content-type", "")
+        print(f"[pdf] content-type: {content_type}", flush=True)
+        if "multipart/form-data" in content_type:
+            form = await request.form()
+            upload = form.get("file")
+            if not upload:
+                print("[pdf] no file in form", flush=True)
+                return {"error": "No file in form data"}
+            if hasattr(upload, 'read'):
+                file_bytes = await upload.read()
+            else:
+                file_bytes = bytes(upload) if upload else b''
+        else:
+            file_bytes = await request.body()
+        print(f"[pdf] received {len(file_bytes)} bytes", flush=True)
+    except Exception as e:
+        print(f"[pdf] upload error: {e}", flush=True)
+        return {"error": f"Upload read failed: {type(e).__name__}: {e}"}
+    if not file_bytes or len(file_bytes) < 100:
+        return {"error": f"File too small or empty ({len(file_bytes) if file_bytes else 0} bytes)"}
 
     import tempfile
     import fitz  # PyMuPDF
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        tmp.write(file)
+        tmp.write(file_bytes)
         tmp_path = tmp.name
 
     try:

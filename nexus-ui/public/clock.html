@@ -3,381 +3,179 @@
 <head>
 <meta charset="UTF-8">
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#010102;--tube:#0e0e12;--tube-b:#22222a;--base:#1a1a20;--metal:#303038;
+  --core:#ffe8aa;--hot:#ffcc66;--wire:#ff8c00;--glow:#cc5500;--halo:#7a3a08;
+  --off:#18181e;--off-l:#222228;--led:#cc6600;
+}
+body{
+  background:var(--bg);overflow:hidden;user-select:none;
+  font-family:Consolas,'Courier New',monospace;
+  display:flex;align-items:center;justify-content:center;height:100vh;
+}
+body.transparent{background:transparent}
+body.transparent .tube{
+  background:rgba(14,14,18,0.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-color:rgba(34,34,42,0.3);box-shadow:inset 0 0 20px rgba(0,0,0,0.4),0 0 20px rgba(122,58,8,0.12);
+}
+body.transparent .led{
+  background:rgba(6,6,8,0.45);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-color:rgba(18,18,26,0.2);
+}
+body.transparent .col .cd{box-shadow:0 0 8px var(--hot),0 0 16px var(--wire),0 0 24px var(--glow)}
+body.transparent .tube::after{background:rgba(26,26,32,0.4);border-color:rgba(48,48,56,0.3)}
 
-:root {
-  --bg: #010102;
-  --tube: #0e0e12;
-  --tube-border: #22222a;
-  --base: #1a1a20;
-  --metal: #303038;
-  --core: #ffe8aa;
-  --hot: #ffcc66;
-  --wire: #ff8c00;
-  --glow: #cc5500;
-  --halo: #7a3a08;
-  --off: #18181e;
-  --off-l: #222228;
-  --led: #cc6600;
-  --menu-bg: #1a1a2e;
-  --menu-border: #333346;
+.wrap{display:flex;flex-direction:column;align-items:center;gap:6px}
+.row{display:flex;align-items:center;gap:2px;position:relative;cursor:move}
+.tube{
+  width:38px;height:72px;background:var(--tube);border:1px solid var(--tube-b);
+  border-radius:8px 8px 4px 4px;display:flex;align-items:center;justify-content:center;
+  position:relative;box-shadow:inset 0 0 15px rgba(0,0,0,.8),0 1px 0 #3a3a44;
+  transition:background .3s,box-shadow .3s;
 }
-
-body {
-  background: var(--bg);
-  overflow: hidden;
-  -webkit-app-region: drag;
-  user-select: none;
-  font-family: 'Consolas', 'Courier New', monospace;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
+.tube::before{
+  content:'';position:absolute;top:8px;bottom:8px;left:3px;right:3px;
+  background:repeating-linear-gradient(0deg,transparent,transparent 8px,rgba(26,26,32,.3) 8px,rgba(26,26,32,.3) 9px);
+  border-radius:4px;pointer-events:none;
 }
-body.transparent { background: transparent; }
-
-/* ── 主容器 ── */
-.clock-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
+.tube::after{
+  content:'';position:absolute;bottom:-4px;left:4px;right:4px;height:6px;
+  background:var(--base);border:1px solid var(--metal);border-radius:0 0 3px 3px;transition:background .3s;
 }
-
-.clock-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  position: relative;
+.dg{
+  font-size:48px;font-weight:700;font-family:Consolas,monospace;line-height:1;z-index:2;
+  color:var(--core);text-shadow:0 0 3px var(--hot),0 0 6px var(--wire),0 0 12px var(--glow),0 0 20px var(--glow),0 0 30px var(--halo);
 }
-
-/* ── 辉光管 ── */
-.tube {
-  width: 38px; height: 72px;
-  background: var(--tube);
-  border: 1px solid var(--tube-border);
-  border-radius: 8px 8px 4px 4px;
-  display: flex; align-items: center; justify-content: center;
-  position: relative;
-  box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 1px 0 #3a3a44;
+.dg.off{color:var(--off);text-shadow:0 0 2px var(--off-l)}
+.dg.flash{animation:gf .5s ease-in-out infinite}
+.dg.expire{color:#ef4444;text-shadow:0 0 3px #f87171,0 0 8px #ef4444,0 0 15px #dc2626,0 0 25px #b91c1c;animation:gf .4s infinite}
+@keyframes gf{0%,100%{opacity:1}50%{opacity:.15}}
+.col{display:flex;flex-direction:column;gap:16px;align-items:center;padding:0 4px;z-index:2}
+.cd{
+  width:8px;height:8px;border-radius:50%;background:var(--wire);
+  box-shadow:0 0 4px var(--hot),0 0 8px var(--wire),0 0 14px var(--glow),0 0 20px var(--halo);
+  transition:all .3s;
 }
-.tube::before {
-  content: ''; position: absolute; top: 8px; bottom: 8px; left: 3px; right: 3px;
-  background: repeating-linear-gradient(0deg, transparent, transparent 8px, rgba(26,26,32,0.3) 8px, rgba(26,26,32,0.3) 9px);
-  border-radius: 4px; pointer-events: none;
+.cd.off{background:var(--off);box-shadow:0 0 2px var(--off-l)}
+.led{
+  width:100%;background:#060608;border:1px solid #12121a;border-radius:4px;padding:5px 8px;
+  box-shadow:inset 0 0 8px rgba(0,0,0,.9);transition:background .3s;
 }
-.tube::after {
-  content: ''; position: absolute; bottom: -4px; left: 4px; right: 4px; height: 6px;
-  background: var(--base); border: 1px solid var(--metal); border-radius: 0 0 3px 3px;
+.led-t{
+  font-family:Consolas,monospace;font-size:14px;font-weight:600;letter-spacing:2px;
+  color:var(--led);text-shadow:0 0 8px rgba(204,102,0,.6);white-space:nowrap;text-align:center;
 }
-
-.digit {
-  font-size: 48px; font-weight: 700; font-family: 'Consolas', monospace;
-  line-height: 1; z-index: 2;
-  color: var(--core);
-  text-shadow: 0 0 3px var(--hot), 0 0 6px var(--wire), 0 0 12px var(--glow), 0 0 20px var(--glow), 0 0 30px var(--halo);
+.cd-lbl{
+  font-size:9px;color:var(--glow);text-shadow:0 0 4px rgba(204,85,0,.5);
+  letter-spacing:2px;text-transform:uppercase;height:12px;text-align:center;
 }
-.digit.off { color: var(--off); text-shadow: 0 0 2px var(--off-l); }
-.digit.flash { animation: gf 0.5s ease-in-out infinite; }
-.digit.expire {
-  color: #ef4444;
-  text-shadow: 0 0 3px #f87171, 0 0 8px #ef4444, 0 0 15px #dc2626, 0 0 25px #b91c1c;
-  animation: gf 0.4s ease-in-out infinite;
-}
-@keyframes gf { 0%,100%{opacity:1} 50%{opacity:0.15} }
-
-.colon {
-  display: flex; flex-direction: column; gap: 16px;
-  align-items: center; padding: 0 4px; z-index: 2;
-}
-.colon-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--wire);
-  box-shadow: 0 0 4px var(--hot), 0 0 8px var(--wire), 0 0 14px var(--glow), 0 0 20px var(--halo);
-  transition: all 0.2s;
-}
-.colon-dot.off { background: var(--off); box-shadow: 0 0 2px var(--off-l); }
-
-/* ── LED 日期屏（与管体等宽） ── */
-.led-panel {
-  width: 100%;
-  background: #060608;
-  border: 1px solid #12121a;
-  border-radius: 4px;
-  padding: 4px 8px;
-  box-shadow: inset 0 0 8px rgba(0,0,0,0.9);
-  position: relative;
-}
-.led-panel::before {
-  content: ''; position: absolute; inset: -3px;
-  border: 1px solid #22222a; border-radius: 6px;
-  background: #0e0e12; z-index: -1;
-}
-.led-text {
-  font-family: 'Consolas', monospace;
-  font-size: 14px; letter-spacing: 2px; font-weight: 600;
-  color: var(--led);
-  text-shadow: 0 0 8px rgba(204,102,0,0.6);
-  white-space: nowrap; text-align: center;
-}
-
-/* ── 标签 ── */
-.countdown-label {
-  font-size: 9px; color: var(--glow);
-  text-shadow: 0 0 4px rgba(204,85,0,0.5);
-  letter-spacing: 2px; text-transform: uppercase;
-  height: 12px; text-align: center;
-}
-.countdown-label.expire {
-  color: #ef4444;
-  text-shadow: 0 0 4px rgba(239,68,68,0.5);
-  animation: gf 0.5s ease-in-out infinite;
-}
-
-/* ── 右键菜单 ── */
-.ctx {
-  display: none; position: fixed;
-  background: var(--menu-bg); border: 1px solid var(--menu-border);
-  border-radius: 8px; padding: 4px 0; z-index: 1000;
-  -webkit-app-region: no-drag;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.6); min-width: 170px;
-}
-.ctx.show { display: block; }
-.mi {
-  padding: 7px 14px; font-size: 12px; color: #e0e6ed;
-  cursor: pointer; display: flex; align-items: center; gap: 8px;
-  transition: background 0.12s;
-}
-.mi:hover { background: var(--wire); color: #fff; }
-.sep { height: 1px; background: var(--menu-border); margin: 3px 0; }
-
-/* ── 自定义输入 ── */
-.cust {
-  display: none; position: fixed;
-  background: var(--menu-bg); border: 1px solid var(--menu-border);
-  border-radius: 8px; padding: 10px; z-index: 1001;
-  -webkit-app-region: no-drag;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-}
-.cust.show { display: flex; gap: 6px; align-items: center; }
-.cust input {
-  width: 56px; background: var(--tube); border: 1px solid var(--menu-border);
-  border-radius: 4px; color: var(--core); padding: 4px 6px;
-  font-size: 13px; text-align: center; outline: none;
-}
-.cust input:focus { border-color: var(--wire); }
-.cust button {
-  background: var(--wire); border: none; border-radius: 4px;
-  color: #fff; padding: 4px 10px; font-size: 12px; cursor: pointer;
-}
-
-.close-btn {
-  position: absolute; top: 6px; right: 10px;
-  font-size: 10px; color: #3a3a44;
-  -webkit-app-region: no-drag; cursor: pointer; z-index: 10;
-}
-.close-btn:hover { color: #ef4444; }
+.cd-lbl.exp{color:#ef4444;text-shadow:0 0 4px rgba(239,68,68,.5);animation:gf .5s infinite}
+.xbtn{position:absolute;top:6px;right:10px;font-size:10px;color:#3a3a44;cursor:pointer;z-index:10}
+.xbtn:hover{color:#ef4444}
 </style>
 </head>
 <body>
 
-<div class="clock-wrap">
-  <div class="countdown-label" id="cdLabel">&nbsp;</div>
-  <div class="clock-row" id="clockRow">
-    <div class="tube"><span class="digit" id="h1">0</span></div>
-    <div class="tube"><span class="digit" id="h2">0</span></div>
-    <div class="colon"><div class="colon-dot" id="c1"></div><div class="colon-dot" id="c2"></div></div>
-    <div class="tube"><span class="digit" id="m1">0</span></div>
-    <div class="tube"><span class="digit" id="m2">0</span></div>
-    <div class="colon"><div class="colon-dot" id="c3"></div><div class="colon-dot" id="c4"></div></div>
-    <div class="tube"><span class="digit" id="s1">0</span></div>
-    <div class="tube"><span class="digit" id="s2">0</span></div>
-    <span class="close-btn" id="closeBtn">✕</span>
+<div class="wrap">
+  <div class="cd-lbl" id="cdL">&nbsp;</div>
+  <div class="row" id="dragZone">
+    <div class="tube"><span class="dg" id="h1">0</span></div>
+    <div class="tube"><span class="dg" id="h2">0</span></div>
+    <div class="col"><div class="cd" id="c1"></div><div class="cd" id="c2"></div></div>
+    <div class="tube"><span class="dg" id="m1">0</span></div>
+    <div class="tube"><span class="dg" id="m2">0</span></div>
+    <div class="col"><div class="cd" id="c3"></div><div class="cd" id="c4"></div></div>
+    <div class="tube"><span class="dg" id="s1">0</span></div>
+    <div class="tube"><span class="dg" id="s2">0</span></div>
+    <span class="xbtn" id="xB">✕</span>
   </div>
-  <div class="led-panel" id="ledPanel">
-    <div class="led-text" id="ledDate"></div>
-  </div>
-</div>
-
-<!-- 右键菜单 -->
-<div class="ctx" id="menu">
-  <div class="mi" data-m="15">⏱ 15 分钟</div>
-  <div class="mi" data-m="30">⏱ 30 分钟</div>
-  <div class="mi" data-m="45">⏱ 45 分钟</div>
-  <div class="mi" data-m="60">⏱ 60 分钟</div>
-  <div class="mi" data-m="90">⏱ 90 分钟</div>
-  <div class="sep"></div>
-  <div class="mi" id="custBtn">✏️ 自定义...</div>
-  <div class="sep"></div>
-  <div class="mi" id="cancelBtn" style="display:none">⏹ 取消倒计时</div>
-  <div class="mi" id="bgBtn">🎨 切换透明背景</div>
-  <div class="sep"></div>
-  <div class="mi" id="backBtn">↩ 返回主窗口</div>
-</div>
-
-<div class="cust" id="custBox">
-  <input type="number" id="custIn" min="1" max="999" value="45">
-  <button id="custOk">确定</button>
+  <div class="led"><div class="led-t" id="ld"></div></div>
 </div>
 
 <script>
-// ── invoke 由 Rust initialization_script 注入，或从 Tauri API 获取 ──
-let invoke = null;
+// ── 状态（由 Rust eval 注入到 window._xxx） ──
+window._isCD = false;
+window._cdTarget = 0;
+window._cdDone = false;
+window._trans = false;
 
-async function initTauri() {
-  // 方式1: Rust 注入的 window.invoke
-  if (typeof window.invoke === 'function') {
-    invoke = window.invoke;
-    console.log('[clock] invoke via Rust injection');
-    return;
-  }
-  // 方式2: Tauri 内部接口
-  if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
-    invoke = window.__TAURI_INTERNALS__.invoke;
-    console.log('[clock] invoke via __TAURI_INTERNALS__');
-    return;
-  }
-  // 方式3: ES module import
-  try {
-    const { invoke: fn } = await import('@tauri-apps/api/core');
-    if (typeof fn === 'function') { invoke = fn; console.log('[clock] invoke via import'); return; }
-  } catch {}
-  console.warn('[clock] No invoke available');
+function $(id){return document.getElementById(id)}
+var D={h1:$('h1'),h2:$('h2'),m1:$('m1'),m2:$('m2'),s1:$('s1'),s2:$('s2')};
+var C=[$('c1'),$('c2'),$('c3'),$('c4')];
+var blink=true;
+
+function p2(n){return String(n).padStart(2,'0')}
+function show(h,m,s,cls){
+  var t=p2(h)+p2(m)+p2(s),k=['h1','h2','m1','m2','s1','s2'];
+  for(var i=0;i<6;i++){D[k[i]].textContent=t[i];D[k[i]].className='dg'+(cls?' '+cls:'')}
+}
+function showDate(){
+  var n=new Date(),w=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  $('ld').textContent=n.getFullYear()+'.'+p2(n.getMonth()+1)+'.'+p2(n.getDate())+'  '+w[n.getDay()]+'  '+(n.getHours()<12?'AM':'PM');
 }
 
-// ── 状态 ──
-let isCD = false, cdTarget = 0, blink = true, transparent = false, cdDone = false;
-
-// ── DOM ──
-const el = id => document.getElementById(id);
-const digs = { h1:el('h1'), h2:el('h2'), m1:el('m1'), m2:el('m2'), s1:el('s1'), s2:el('s2') };
-const cdots = [el('c1'),el('c2'),el('c3'),el('c4')];
-
-function pad2(n) { return String(n).padStart(2,'0'); }
-
-function show(h, m, s, cls) {
-  const t = pad2(h)+pad2(m)+pad2(s);
-  ['h1','h2','m1','m2','s1','s2'].forEach((k,i) => {
-    digs[k].textContent = t[i];
-    digs[k].className = 'digit' + (cls ? ' '+cls : '');
-  });
-}
-
-function showDate() {
-  const n = new Date();
-  const w = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-  el('ledDate').textContent = `${n.getFullYear()}.${pad2(n.getMonth()+1)}.${pad2(n.getDate())}  ${w[n.getDay()]}  ${n.getHours()<12?'AM':'PM'}`;
-}
-
-function tick() {
-  blink = !blink;
-  cdots.forEach(c => c.classList.toggle('off', !blink));
-
-  if (isCD) {
-    const rem = Math.max(0, Math.ceil((cdTarget - Date.now()) / 1000));
-    if (rem <= 0) {
-      if (!cdDone) { cdDone = true; el('cdLabel').textContent = 'TIME UP!'; el('cdLabel').className = 'countdown-label expire'; }
-      show(99, 99, 99, 'expire');
-      return;
+function tick(){
+  blink=!blink;
+  for(var i=0;i<C.length;i++)C[i].classList.toggle('off',!blink);
+  if(window._isCD){
+    var r=Math.max(0,Math.ceil((window._cdTarget-Date.now())/1000));
+    if(r<=0){
+      if(!window._cdDone){window._cdDone=true;$('cdL').textContent='TIME UP!';$('cdL').className='cd-lbl exp'}
+      show(99,99,99,'expire');return;
     }
-    show(Math.floor(rem/3600), Math.floor((rem%3600)/60), rem%60, rem<=10?'flash':'');
-    el('cdLabel').textContent = 'COUNTDOWN';
-    el('cdLabel').className = 'countdown-label' + (rem<=10?' expire':'');
-  } else {
-    const n = new Date();
-    show(n.getHours(), n.getMinutes(), n.getSeconds(), '');
-    showDate();
-    el('cdLabel').innerHTML = '&nbsp;';
-    el('cdLabel').className = 'countdown-label';
+    show(Math.floor(r/3600),Math.floor((r%3600)/60),r%60,r<=10?'flash':'');
+    $('cdL').textContent='COUNTDOWN';$('cdL').className='cd-lbl'+(r<=10?' exp':'');
+  }else{
+    var n=new Date();show(n.getHours(),n.getMinutes(),n.getSeconds(),'');
+    showDate();$('cdL').innerHTML='&nbsp;';$('cdL').className='cd-lbl';
   }
 }
+setInterval(tick,500);tick();
 
-setInterval(tick, 500);
-tick();
+// 右键 → 调用 Rust 原生菜单
+document.addEventListener('contextmenu',function(e){
+  e.preventDefault();
+  if(window.invoke) window.invoke('show_context_menu',{hasCd:!!window._isCD,isTrans:!!window._trans}).catch(function(){});
+});
 
-// ── 事件绑定 ──
-function bindEvents() {
-  const menu = el('menu');
-  const custBox = el('custBox');
-  const custIn = el('custIn');
+// 双击返回主窗口
+document.addEventListener('dblclick',function(e){
+  if(e.target.closest('.xbtn'))return;
+  if(window.invoke) window.invoke('show_main_window',{}).catch(function(){});
+});
 
-  function closeAll() { menu.classList.remove('show'); custBox.classList.remove('show'); }
+// 关闭按钮
+$('xB').addEventListener('click',function(e){
+  e.stopPropagation();
+  if(window.invoke) window.invoke('close_clock_window',{}).catch(function(){});
+});
 
-  // 右键菜单
-  document.addEventListener('contextmenu', e => {
-    e.preventDefault();
-    closeAll();
-    el('cancelBtn').style.display = isCD ? 'flex' : 'none';
-    el('bgBtn').textContent = transparent ? '🎨 切换黑色背景' : '🎨 切换透明背景';
-    const x = Math.min(e.clientX, window.innerWidth - 180);
-    const y = Math.min(e.clientY, window.innerHeight - 300);
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
-    menu.classList.add('show');
-  });
+// 拖拽
+$('dragZone').addEventListener('mousedown',function(e){
+  if(e.button!==0||e.target.closest('.xbtn'))return;
+  if(typeof window.startDrag==='function') window.startDrag();
+});
 
-  // 点击空白关闭
-  document.addEventListener('click', e => {
-    if (!menu.contains(e.target)) menu.classList.remove('show');
-    if (!custBox.contains(e.target)) custBox.classList.remove('show');
-  });
+// ── 滚轮缩放 ──
+var CW=360, CH=140, SCALE=1;
+document.addEventListener('wheel',function(e){
+  e.preventDefault();
+  var step = e.deltaY < 0 ? 0.1 : -0.1;
+  SCALE = Math.max(0.6, Math.min(2.5, SCALE + step));
+  CW = Math.round(360 * SCALE);
+  CH = Math.round(140 * SCALE);
+  // 缩放所有元素
+  var s = SCALE;
+  document.querySelectorAll('.tube').forEach(function(t){t.style.width=(38*s)+'px';t.style.height=(72*s)+'px'});
+  document.querySelectorAll('.dg').forEach(function(d){d.style.fontSize=(48*s)+'px'});
+  document.querySelectorAll('.cd').forEach(function(c){c.style.width=(8*s)+'px';c.style.height=(8*s)+'px'});
+  document.querySelectorAll('.col').forEach(function(c){c.style.gap=(16*s)+'px'});
+  document.querySelector('.led-t').style.fontSize=(14*s)+'px';
+  // 调整窗口大小
+  if(window.invoke)window.invoke('resize_clock',{width:CW,height:CH}).catch(function(){});
+},{passive:false});
 
-  // 倒计时选项
-  menu.querySelectorAll('[data-m]').forEach(el => {
-    el.addEventListener('click', () => { startCD(parseInt(el.dataset.m)); closeAll(); });
-  });
-
-  // 自定义
-  el('custBtn').addEventListener('click', () => {
-    menu.classList.remove('show');
-    custBox.style.left = (parseInt(menu.style.left)||100) + 'px';
-    custBox.style.top = menu.style.top;
-    custBox.classList.add('show');
-    custIn.focus(); custIn.select();
-  });
-  el('custOk').addEventListener('click', () => {
-    const v = parseInt(custIn.value);
-    if (v > 0) { startCD(v); closeAll(); }
-  });
-  custIn.addEventListener('keydown', e => {
-    if (e.key==='Enter') el('custOk').click();
-    if (e.key==='Escape') closeAll();
-  });
-
-  // 取消倒计时
-  el('cancelBtn').addEventListener('click', () => { isCD = false; cdDone = false; closeAll(); });
-
-  // 透明背景
-  el('bgBtn').addEventListener('click', () => {
-    transparent = !transparent;
-    document.body.classList.toggle('transparent', transparent);
-    closeAll();
-  });
-
-  // 返回主窗口
-  el('backBtn').addEventListener('click', async () => {
-    closeAll();
-    if (invoke) try { await invoke('show_main_window'); } catch(e) { console.error(e); }
-  });
-
-  // 双击返回主窗口
-  document.addEventListener('dblclick', async () => {
-    if (invoke) try { await invoke('show_main_window'); } catch(e) { console.error(e); }
-  });
-
-  // 关闭按钮
-  el('closeBtn').addEventListener('click', async e => {
-    e.stopPropagation();
-    if (invoke) try { await invoke('close_clock_window'); } catch(e) { console.error(e); }
-  });
-}
-
-function startCD(min) {
-  isCD = true; cdDone = false;
-  cdTarget = Date.now() + min * 60 * 1000;
-}
-
-initTauri().then(() => bindEvents());
 </script>
 </body>
 </html>

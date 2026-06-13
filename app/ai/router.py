@@ -54,15 +54,21 @@ class AIRouter:
             return {"thinking": "", "content": "❌ 未配置 AI 模型，请在设置中添加。"}
 
         if model.protocol == "anthropic":
-            return self._call_anthropic(model, messages, **kwargs)
+            try:
+                import anthropic
+                return self._call_anthropic(model, messages, **kwargs)
+            except ImportError:
+                return self._call_openai(model, messages, **kwargs)
         return self._call_openai(model, messages, **kwargs)
 
     def _call_openai(self, model: ModelConfig, messages: list[dict], **kwargs) -> dict:
         """OpenAI 协议调用"""
         try:
             import openai
-        except ImportError:
-            return {"thinking": "", "content": "❌ 未安装 openai 库"}
+        except ImportError as e:
+            return {"thinking": "", "content": f"❌ 未安装 openai 库: {e}"}
+        except Exception as e:
+            return {"thinking": "", "content": f"❌ openai 导入异常: {type(e).__name__}: {e}"}
 
         client = openai.OpenAI(base_url=model.base_url, api_key=model.api_key)
         try:
@@ -132,15 +138,22 @@ class AIRouter:
             return
 
         if model.protocol == "anthropic":
-            yield from self._stream_anthropic(model, messages, **kwargs)
+            try:
+                import anthropic
+                yield from self._stream_anthropic(model, messages, **kwargs)
+            except ImportError:
+                yield from self._stream_openai(model, messages, **kwargs)
         else:
             yield from self._stream_openai(model, messages, **kwargs)
 
     def _stream_openai(self, model: ModelConfig, messages: list[dict], **kwargs):
         try:
             import openai
-        except ImportError:
-            yield {"type": "content", "data": "❌ 未安装 openai 库"}
+        except ImportError as e:
+            yield {"type": "content", "data": f"❌ 未安装 openai 库: {e}"}
+            return
+        except Exception as e:
+            yield {"type": "content", "data": f"❌ openai 导入异常: {type(e).__name__}: {e}"}
             return
 
         client = openai.OpenAI(base_url=model.base_url, api_key=model.api_key)

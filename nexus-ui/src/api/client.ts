@@ -251,6 +251,8 @@ export const modelsApi = {
   list: () => request<ModelConfig[]>("/api/models"),
   create: (data: Omit<ModelConfig, "id" | "is_active">) =>
     request<{ id: string }>("/api/models", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<ModelConfig>) =>
+    request<{ id: string }>(`/api/models/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/api/models/${id}`, { method: "DELETE" }),
 };
 
@@ -267,4 +269,5 @@ export interface HistoryRecord {
 
 export const historyApi = {
   list: (limit?: number) => request<HistoryRecord[]>(`/api/history?limit=${limit || 50}`),
+  delete: (id: string) => request<{ ok: boolean }>(`/api/history/${id}`, { method: "DELETE" }),
 };
