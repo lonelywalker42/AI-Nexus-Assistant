@@ -1,5 +1,6 @@
 use std::process::{Command, Child};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use std::io::Write;
 use tauri::Manager;
@@ -13,6 +14,9 @@ const CLOCK_LABEL: &str = "clock";
 const INPUT_LABEL: &str = "countdown_input";
 const TODO_LABEL: &str = "todo_calendar";
 
+/// 防止并发创建日历窗口的锁
+static TODO_CREATING: AtomicBool = AtomicBool::new(false);
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! Welcome to AI Nexus Assistant.", name)
@@ -20,7 +24,6 @@ fn greet(name: &str) -> String {
 
 #[tauri::command]
 fn show_main_window(app: tauri::AppHandle) {
-    println!("[Nexus] show_main_window called");
     close_clock(&app);
     close_input(&app);
     close_todo(&app);
@@ -33,7 +36,6 @@ fn show_main_window(app: tauri::AppHandle) {
 
 #[tauri::command]
 fn close_clock_window(app: tauri::AppHandle) {
-    println!("[Nexus] close_clock_window called");
     close_clock(&app);
 }
 
@@ -90,19 +92,13 @@ fn resize_clock(app: tauri::AppHandle, width: f64, height: f64) {
 
 #[tauri::command]
 fn show_context_menu(app: tauri::AppHandle, has_cd: bool, is_trans: bool) {
-    println!("[Nexus] show_context_menu called: has_cd={}, is_trans={}", has_cd, is_trans);
     match build_context_menu(&app, has_cd, is_trans) {
         Ok(menu) => {
             if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
-                match cw.popup_menu(&menu) {
-                    Ok(_) => println!("[Nexus] popup_menu OK"),
-                    Err(e) => eprintln!("[Nexus] popup_menu failed: {e}"),
-                }
-            } else {
-                eprintln!("[Nexus] clock window not found");
+                let _ = cw.popup_menu(&menu);
             }
         }
-        Err(e) => eprintln!("[Nexus] build_context_menu failed: {e}"),
+        Err(_) => {},
     }
 }
 
@@ -120,7 +116,7 @@ fn close_input(app: &tauri::AppHandle) {
 
 fn close_todo(app: &tauri::AppHandle) {
     if let Some(tw) = app.get_webview_window(TODO_LABEL) {
-        let _ = tw.close();
+        let _ = tw.destroy();
     }
 }
 
@@ -232,7 +228,7 @@ fn do_create_clock(app: &tauri::AppHandle) {
     .build()
     {
         Ok(w) => w,
-        Err(e) => { eprintln!("[Nexus] Clock window failed: {e}"); return; }
+        Err(_) => return,
     };
 
     // 注入全局函数供 HTML 调用
@@ -253,50 +249,36 @@ fn do_create_clock(app: &tauri::AppHandle) {
         };
     "#);
 
-    // 右键菜单由 JS contextmenu 事件触发 show_context_menu 命令
-
-    // 注册菜单事件处理
-    let app_handle = app.clone();
-    app.on_menu_event(move |app, event| {
-        let id = event.id().as_ref();
-        match id {
-            "cd15" => { set_countdown(app.clone(), 15); }
-            "cd30" => { set_countdown(app.clone(), 30); }
-            "cd45" => { set_countdown(app.clone(), 45); }
-            "cd60" => { set_countdown(app.clone(), 60); }
-            "cd90" => { set_countdown(app.clone(), 90); }
-            "custom" => { create_input_window(app); }
-            "cancel" => { cancel_countdown(app.clone()); }
-            "bg" => { toggle_bg(app.clone()); }
-            "todo" => { create_todo_window(app); }
-            "back" => { show_main_window(app.clone()); }
-            _ => {}
-        }
-    });
-
-    println!("[Nexus] Clock window created with native menu");
+    // 右键菜单事件处理已移至 setup 中的全局 on_menu_event，避免重复注册
 }
 
-/// 创建待办日历窗口
+/// 创建待办日历窗口（带创建锁，防止并发重复创建）
 fn create_todo_window(app: &tauri::AppHandle) {
-    let app_handle = app.clone();
-    std::thread::spawn(move || {
-        do_create_todo(&app_handle);
-    });
-}
+    // 自旋锁：确保同一时刻只有一个线程在创建窗口
+    while TODO_CREATING.compare_exchange_weak(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
 
-fn do_create_todo(app: &tauri::AppHandle) {
-    if let Some(tw) = app.get_webview_window(TODO_LABEL) {
+    let app_handle = app.clone();
+    // 检查是否已有窗口，有则聚焦
+    if let Some(tw) = app_handle.get_webview_window(TODO_LABEL) {
         let _ = tw.set_focus();
+        TODO_CREATING.store(false, Ordering::SeqCst);
         return;
     }
 
+    do_create_todo(&app_handle);
+    TODO_CREATING.store(false, Ordering::SeqCst);
+}
+
+fn do_create_todo(app: &tauri::AppHandle) {
     let ipc_script = r#"
         (function() {
             function setup() {
                 if (window.__TAURI_INTERNALS__ && !window.__nexus_ipc) {
                     window.__nexus_ipc = true;
                     window.invoke = window.__TAURI_INTERNALS__.invoke;
+                    console.log('[nexus-todo] IPC ready');
                 }
             }
             setup();
@@ -311,15 +293,13 @@ fn do_create_todo(app: &tauri::AppHandle) {
         app, TODO_LABEL, WebviewUrl::App("todo-calendar.html".into()),
     )
     .title("Nexus Todo")
-    .inner_size(380.0, 500.0)
+    .inner_size(480.0, 320.0)
     .resizable(true)
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
     .initialization_script(ipc_script)
     .build();
-
-    println!("[Nexus] Todo calendar window created");
 }
 
 /// 创建自定义倒计时输入窗口
@@ -416,28 +396,43 @@ pub fn run() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("AI Nexus Assistant")
                 .menu(&menu)
-                .on_menu_event(move |app, event| {
-                    match event.id().as_ref() {
-                        "show" => { show_main_window(app.clone()); }
-                        "clock" => { create_clock_window(app); }
-                        "todo" => { create_todo_window(app); }
-                        "exit" => {
-                            if let Some(s) = app.try_state::<BackendProcess>() {
-                                if let Ok(mut g) = s.0.lock() {
-                                    if let Some(ref mut c) = *g { let _ = c.kill(); }
-                                }
-                            }
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = event {
                         show_main_window(tray.app_handle().clone());
                     }
                 })
                 .build(app)?;
+
+            // 全局菜单事件处理（时钟右键菜单 + 托盘菜单，统一注册一次）
+            app.on_menu_event(move |app, event| {
+                let id = event.id().as_ref();
+                match id {
+                    // 时钟右键菜单
+                    "cd15" => { set_countdown(app.clone(), 15); }
+                    "cd30" => { set_countdown(app.clone(), 30); }
+                    "cd45" => { set_countdown(app.clone(), 45); }
+                    "cd60" => { set_countdown(app.clone(), 60); }
+                    "cd90" => { set_countdown(app.clone(), 90); }
+                    "custom" => { create_input_window(app); }
+                    "cancel" => { cancel_countdown(app.clone()); }
+                    "bg" => { toggle_bg(app.clone()); }
+                    // 共享菜单项
+                    "todo" => { create_todo_window(app); }
+                    "back" => { show_main_window(app.clone()); }
+                    // 托盘菜单
+                    "show" => { show_main_window(app.clone()); }
+                    "clock" => { create_clock_window(app); }
+                    "exit" => {
+                        if let Some(s) = app.try_state::<BackendProcess>() {
+                            if let Ok(mut g) = s.0.lock() {
+                                if let Some(ref mut c) = *g { let _ = c.kill(); }
+                            }
+                        }
+                        app.exit(0);
+                    }
+                    _ => {}
+                }
+            });
 
             // 主窗口关闭 → 时钟
             let ah = app.handle().clone();

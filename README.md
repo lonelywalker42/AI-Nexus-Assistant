@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献检索、试验管理、知识库、AI对话的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v1.2.0-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v1.3.0-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,7 +16,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS + FastAPI | **~43MB 单文件** | ✅ v1.1.0 |
+| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS + FastAPI | **~43MB 单文件** | ✅ v1.3.0 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ### 整合的源项目
@@ -40,7 +40,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 - **知识库** — 分类视图(文献/AI对话/手动) + 卡片详情 + JSON/MD/PDF导入
 - **AI对话** — 流式输出 + Markdown渲染 + thinking折叠 + OpenAI/Anthropic双协议(自动降级)
 - **辉光管时钟** — 关闭窗口后弹出 + 右键原生菜单倒计时 + 透明背景 + 滚轮缩放
-- **待办日历** — 关闭窗口后弹出 + 玻璃态UI + 拖拽移动 + 实时时钟 + 任务切换
+- **待办日历** — 关闭窗口后弹出 + 无色透明玻璃UI + 3:2宽屏比例 + 深色字体 + Inter字体 + 拖拽移动 + 实时时钟 + 任务切换
 - **三套主题** — 浅色/暖色(#F5F0E1)/深色，CSS变量驱动
 - **系统托盘** — 关闭最小化到托盘 + 右键显示/退出
 - **单文件分发** — 43MB exe，内嵌Python后端，无需额外文件
@@ -184,6 +184,8 @@ API 文档: `http://127.0.0.1:8765/docs`
 | Phase 6 | Issue修复 + 知识库增强 + 窗口控制 | ✅ 完成 |
 | Phase 7 | Sidecar优化 + 前端嵌入 + 端口冲突检测 | ✅ 完成 |
 | Phase 8 | v1.1.0: 原生菜单 + 暖色主题 + AI修复 + 单文件分发 | ✅ 完成 |
+| Phase 9 | v1.2.0: 历史增强 + Markdown渲染 + 数据库信息 | ✅ 完成 |
+| Phase 10 | v1.3.0: 待办日历UI重构 + 窗口重复创建修复 + 无色透明玻璃 | ✅ 完成 |
 
 详细进展见 [development.md](development.md)
 
