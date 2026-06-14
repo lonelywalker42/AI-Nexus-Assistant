@@ -3,7 +3,13 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use std::io::Write;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use tauri::Manager;
+
+/// Windows CREATE_NO_WINDOW — 不弹出控制台窗口
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 use tauri::tray::{TrayIconBuilder, MouseButton, TrayIconEvent};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::WebviewUrl;
@@ -147,7 +153,11 @@ fn try_embedded_sidecar(port: u16, app: &tauri::App) -> bool {
     if need_extract {
         if let Ok(mut f) = std::fs::File::create(&sidecar_path) { let _ = f.write_all(sidecar_bytes); }
     }
-    match Command::new(&sidecar_path).args(["--port", &port.to_string()]).spawn() {
+    let mut cmd = Command::new(&sidecar_path);
+    cmd.args(["--port", &port.to_string()]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    match cmd.spawn() {
         Ok(child) => {
             let state = app.state::<BackendProcess>();
             *state.0.lock().unwrap() = Some(child);
@@ -457,13 +467,21 @@ pub fn run() {
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(dir) = exe.parent() {
                     if !started {
-                        if let Ok(c) = Command::new(dir.join("nexus-server-x86_64-pc-windows-msvc.exe")).args(["--port",&port.to_string()]).spawn() {
+                        let mut cmd = Command::new(dir.join("nexus-server-x86_64-pc-windows-msvc.exe"));
+                        cmd.args(["--port",&port.to_string()]);
+                        #[cfg(target_os = "windows")]
+                        cmd.creation_flags(CREATE_NO_WINDOW);
+                        if let Ok(c) = cmd.spawn() {
                             *app.state::<BackendProcess>().0.lock().unwrap() = Some(c);
                             started = wait_for_backend(port, Duration::from_secs(30));
                         }
                     }
                     if !started {
-                        if let Ok(c) = Command::new("python").arg(dir.join("server.py")).args(["--port",&port.to_string()]).spawn() {
+                        let mut cmd = Command::new("python");
+                        cmd.arg(dir.join("server.py")).args(["--port",&port.to_string()]);
+                        #[cfg(target_os = "windows")]
+                        cmd.creation_flags(CREATE_NO_WINDOW);
+                        if let Ok(c) = cmd.spawn() {
                             *app.state::<BackendProcess>().0.lock().unwrap() = Some(c);
                             started = wait_for_backend(port, Duration::from_secs(15));
                         }

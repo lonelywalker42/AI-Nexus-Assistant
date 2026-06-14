@@ -53,7 +53,7 @@ pip install -e .
 
 ### 便携版
 
-下载 `AI-Nexus-Assistant-v1.3.0.exe`，双击即可运行。单文件 (43MB)，无需额外依赖。
+下载 `AI-Nexus-Assistant-v1.4.0.exe`，双击即可运行。单文件 (51MB)，无需额外依赖。
 
 ---
 

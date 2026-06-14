@@ -13,6 +13,7 @@ Phase 7: Sidecar修复 + Tauri2窗口权限       [█████████�
 Phase 8: v1.1.0 原生菜单 + 暖色 + AI修复   [████████████████████] 100%  ✅ 完成
 Phase 9: v1.2.0 历史增强 + Markdown渲染    [████████████████████] 100%  ✅ 完成
 Phase 10: v1.3.0 日历UI重构 + 窗口修复     [████████████████████] 100%  ✅ 完成
+Phase 11: v1.4.0 深色日历 + 无cmd + 滚动隔离 + Web Search [████████████████████] 100%  ✅ 完成
 ```
 
 ---
@@ -176,6 +177,30 @@ Phase 10: v1.3.0 日历UI重构 + 窗口修复     [█████████�
 - 新增待办日历页面 (玻璃态UI + 拖拽 + 实时时钟 + 任务切换)
 - 时钟/托盘右键菜单增加「显示待办日历」选项
 - 关闭主窗口同时弹出时钟和待办日历
+
+---
+
+## Phase 11: v1.4.0 ✅ (2026-06-14)
+
+### 待办日历深色主题
+- `todo-calendar.html` 添加 `[data-theme="dark"]` CSS 变量块
+- 所有硬编码颜色提取为 CSS 变量，支持深色/浅色切换
+- 右上角主题切换按钮（☀️/🌙），偏好 localStorage 持久化
+
+### 后端启动无命令行窗口
+- `lib.rs` 三处 `Command::new()` 添加 Windows `CREATE_NO_WINDOW` (0x08000000) 标志
+- `#[cfg(target_os = "windows")]` 条件编译，跨平台兼容
+
+### AI对话页面滚动隔离
+- `App.tsx` 的 `<main>` 在 chat 页面使用 `overflow-hidden flex flex-col`
+- `animate-fade-in` 容器添加 `flex-1 flex flex-col min-h-0` 高度约束
+- 左侧会话列表和右侧消息区域各自独立滚动
+
+### AI对话 Web Search 功能
+- 新增 `app/ai/web_search.py`：DuckDuckGo HTML 搜索（免 API Key）
+- `router.py` 添加 OpenAI function calling + Anthropic tool use 工具调用循环
+- SSE 新增 `tool_call` / `tool_result` chunk 类型
+- 前端搜索卡片动画（🔍 查询 + "搜索中..." 脉冲）
 
 ---
 

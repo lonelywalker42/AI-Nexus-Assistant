@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献检索、试验管理、知识库、AI对话的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v1.3.0-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v1.4.0-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,7 +16,7 @@ AI Nexus Assistant 将六个独立的科研工具整合为统一的桌面应用�
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS + FastAPI | **~43MB 单文件** | ✅ v1.3.0 |
+| **Tauri 2 版** | Rust + React + TypeScript + Tailwind CSS + FastAPI | **~51MB 单文件** | ✅ v1.4.0 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ### 整合的源项目
@@ -186,6 +186,7 @@ API 文档: `http://127.0.0.1:8765/docs`
 | Phase 8 | v1.1.0: 原生菜单 + 暖色主题 + AI修复 + 单文件分发 | ✅ 完成 |
 | Phase 9 | v1.2.0: 历史增强 + Markdown渲染 + 数据库信息 | ✅ 完成 |
 | Phase 10 | v1.3.0: 待办日历UI重构 + 窗口重复创建修复 + 无色透明玻璃 | ✅ 完成 |
+| Phase 11 | v1.4.0: 深色日历 + 无cmd + 滚动隔离 + Web Search | ✅ 完成 |
 
 详细进展见 [development.md](development.md)
 

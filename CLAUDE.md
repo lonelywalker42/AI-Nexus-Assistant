@@ -4,20 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v1.3.0**.
+AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v1.4.0**.
 
 ## Dual Frontend Architecture
 
 The project has **two independent frontends** sharing the same Python backend services:
 
 1. **PySide6 version** (`main.py` + `app/ui/`) — Python desktop app, ~235MB packaged
-2. **Tauri 2 version** (`nexus-ui/` + `server.py`) — Rust shell + React/TypeScript frontend + FastAPI API, ~43MB single exe (sidecar embedded)
+2. **Tauri 2 version** (`nexus-ui/` + `server.py`) — Rust shell + React/TypeScript frontend + FastAPI API, ~51MB single exe (sidecar embedded)
 
 Both share:
 - `app/models/` — SQLAlchemy ORM models (8 tables in `data/nexus.db`)
 - `app/services/` — Business logic layer
 - `app/search/` — 8-source literature search engine
 - `app/ai/router.py` — Unified AI service (OpenAI + Anthropic protocols, with fallback)
+- `app/ai/web_search.py` — Web search tool (DuckDuckGo, used by AI tool calling)
 
 ## Common Commands
 
@@ -89,7 +90,7 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - `src/App.tsx` — Main app with title bar, sidebar, page routing, loading state
 - `src/pages/` — 7 page components (Dashboard, Task, Literature, Experiment, Knowledge, Chat, Settings)
 - `src/components/Icons.tsx` — 20+ SVG icon components (replacing emoji icons)
-- `src/components/Sidebar.tsx` — Navigation sidebar with About dialog (v1.0.0 clickable)
+- `src/components/Sidebar.tsx` — Navigation sidebar with About dialog (v1.4.0 clickable)
 - `src-tauri/src/lib.rs` — Rust: sidecar spawn, clock window, native menus, IPC bridge
 - `src-tauri/tauri.conf.json` — Window config (frameless, 1360×860)
 - `src-tauri/capabilities/default.json` — Tauri 2 permissions for all windows (`"windows": ["*"]`)
@@ -141,6 +142,8 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - **Session management**: Every UI action calls `get_session()`, does work in `try/finally`, closes session
 - **Auto-save**: Task/experiment pages save on cell/text edit (no explicit save button)
 - **Streaming AI**: Uses `QThread` (PySide6) or `ReadableStream` (Tauri) for real-time output
+- **AI Tool Calling**: `router.py` supports OpenAI function calling + Anthropic tool use with agentic loop (max 3 rounds). SSE chunk types: `thinking`, `content`, `tool_call`, `tool_result`
+- **Web Search**: `app/ai/web_search.py` — DuckDuckGo HTML search, no API key needed. Tool definition in both OpenAI and Anthropic formats
 - **Backup**: Runs on startup, keeps 1 monthly + 1 weekly + 6 daily backups in `data/backups/`
 
 ## Debugging Lessons Learned
@@ -169,6 +172,11 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - 必须添加 `--hidden-import openai` 和 `--hidden-import anthropic`
 - `openai` 依赖 `httpx`，不能在 `--exclude-module` 中排除 `httpx`
 
+### Windows Sidecar 无窗口启动
+- `std::process::Command::new().spawn()` 在 Windows 上会弹出控制台窗口
+- 解决：使用 `std::os::windows::process::CommandExt::creation_flags(0x08000000)`（CREATE_NO_WINDOW）
+- 用 `#[cfg(target_os = "windows")]` 条件编译保持跨平台兼容
+
 ### FastAPI 文件上传
 - `UploadFile = File(...)` 在某些情况下解析 multipart 失败
 - Tauri webview 中 `FormData + fetch` 有 CORS/协议限制
@@ -184,3 +192,8 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - 所有颜色使用 `var(--xxx)` 而非硬编码 Tailwind 类
 - `[data-theme="warm"]` 选择器定义暖色主题变量
 - `select.input-glass` 需要自定义下拉箭头 SVG（深色模式需切换颜色）
+
+### Chat 页面滚动隔离
+- `<main>` 在 chat 页面切换为 `overflow-hidden flex flex-col`（非 chat 用 `overflow-auto`）
+- `animate-fade-in` 容器需添加 `flex-1 flex flex-col min-h-0` 才能让子组件 `h-full` 生效
+- 高度链：`h-screen` → `main.flex-1` → `wrapper.flex-1` → `ChatPage.h-full` → 消息区 `flex-1.overflow-y-auto`

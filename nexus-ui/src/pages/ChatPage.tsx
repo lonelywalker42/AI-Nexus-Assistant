@@ -62,6 +62,7 @@ export default function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState("");
   const [streamThinking, setStreamThinking] = useState("");
+  const [streamToolCalls, setStreamToolCalls] = useState<{name: string; query: string; result?: string}[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamContent]);
+  }, [messages, streamContent, streamToolCalls]);
 
   const handleNewSession = async () => {
     const res = await chatApi.createSession();
@@ -113,6 +114,7 @@ export default function ChatPage() {
     setStreaming(true);
     setStreamContent("");
     setStreamThinking("");
+    setStreamToolCalls([]);
 
     try {
       const modelId = models[0]?.id;
@@ -121,6 +123,16 @@ export default function ChatPage() {
           setStreamThinking(prev => prev + chunk.data);
         } else if (chunk.type === "content") {
           setStreamContent(prev => prev + chunk.data);
+        } else if (chunk.type === "tool_call") {
+          const info = JSON.parse(chunk.data);
+          setStreamToolCalls(prev => [...prev, { name: info.name, query: info.query }]);
+        } else if (chunk.type === "tool_result") {
+          const info = JSON.parse(chunk.data);
+          setStreamToolCalls(prev => prev.map((tc, i) =>
+            i === prev.length - 1 && tc.name === info.name && tc.query === info.query
+              ? { ...tc, result: info.result }
+              : tc
+          ));
         }
       }
     } catch (err) {
@@ -132,6 +144,7 @@ export default function ChatPage() {
     setStreaming(false);
     setStreamContent("");
     setStreamThinking("");
+    setStreamToolCalls([]);
   };
 
   const currentSession = sessions.find(s => s.id === activeSession);
@@ -203,13 +216,26 @@ export default function ChatPage() {
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-2xl px-4 py-3" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>
                 <p className="text-[10px] font-semibold mb-1 opacity-60" style={{ color: "var(--text-secondary)" }}>AI</p>
+                {streamToolCalls.length > 0 && (
+                  <div className="mb-2 space-y-1">
+                    {streamToolCalls.map((tc, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs px-2 py-1 rounded-lg"
+                        style={{ background: "rgba(59,130,246,0.08)", color: "var(--accent-blue)" }}>
+                        <span>🔍</span>
+                        <span className="font-medium">{tc.query}</span>
+                        {!tc.result && <span className="animate-pulse ml-auto">搜索中...</span>}
+                        {tc.result && <span className="ml-auto" style={{ color: "var(--text-muted)" }}>✓</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {streamThinking && (
                   <details open className="mb-2">
                     <summary className="text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>Thinking...</summary>
                     <p className="text-xs italic mt-1 whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>{streamThinking}</p>
                   </details>
                 )}
-                <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(streamContent || "...") }} />
+                <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(streamContent || (streamToolCalls.length ? "" : "...")) }} />
               </div>
             </div>
           )}
