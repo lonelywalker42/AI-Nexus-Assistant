@@ -1,6 +1,18 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { chatApi, modelsApi, papersApi, type ChatSession, type ChatMessage, type ModelConfig, type PaperDetail } from "../api/client";
 
+// 复制状态 hook
+function useCopyable() {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copy = useCallback((id: string, text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    });
+  }, []);
+  return { copiedId, copy };
+}
+
 function renderMarkdown(md: string): string {
   if (!md) return "";
 
@@ -268,6 +280,7 @@ export default function ChatPage() {
     setStreamToolCalls([]);
   };
 
+  const { copiedId, copy } = useCopyable();
   const currentSession = sessions.find(s => s.id === activeSession);
 
   return (
@@ -318,12 +331,23 @@ export default function ChatPage() {
         <div className="flex-1 space-y-3 overflow-y-auto">
           {messages.map(msg => (
             <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className="max-w-[80%] rounded-2xl px-4 py-3"
+              <div className="max-w-[80%] rounded-2xl px-4 py-3 group relative"
                 style={msg.role === "user"
                   ? { background: "var(--accent-blue)", color: "#fff" }
                   : { background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }
                 }
               >
+                {/* 复制按钮 */}
+                <button
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-[10px] cursor-pointer"
+                  style={{
+                    background: msg.role === "user" ? "rgba(255,255,255,0.2)" : "var(--hover-bg)",
+                    color: msg.role === "user" ? "rgba(255,255,255,0.8)" : "var(--text-muted)",
+                  }}
+                  onClick={() => copy(msg.id, msg.thinking_content ? `[Thinking]\n${msg.thinking_content}\n\n${msg.content}` : msg.content)}
+                >
+                  {copiedId === msg.id ? "已复制 ✓" : "复制"}
+                </button>
                 <p className="text-[10px] font-semibold mb-1 opacity-60">{msg.role === "user" ? "You" : "AI"}</p>
                 {msg.thinking_content && (
                   <details className="mb-2">
@@ -338,7 +362,7 @@ export default function ChatPage() {
 
           {streaming && (
             <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-2xl px-4 py-3" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>
+              <div className="max-w-[80%] rounded-2xl px-4 py-3 group relative" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>
                 <p className="text-[10px] font-semibold mb-1 opacity-60" style={{ color: "var(--text-secondary)" }}>AI</p>
                 {streamToolCalls.length > 0 && (
                   <div className="mb-2 space-y-1">
