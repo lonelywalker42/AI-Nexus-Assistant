@@ -163,7 +163,7 @@ def get_system_info():
         size_str = f"{db_size / 1024:.1f} KB"
     else:
         size_str = f"{db_size} B"
-    return {"db_size": db_size, "db_size_str": size_str, "db_path": str(db_path)}
+    return {"db_size": db_size, "db_size_str": size_str, "db_path": str(db_path), "data_dir": str(data_dir)}
 
 
 # ══════════════════════════════════════════════════════════════

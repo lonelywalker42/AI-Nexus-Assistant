@@ -89,8 +89,9 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
                 <span>DeepSeek / OpenAI</span>
               </div>
               {sysInfo && (
-                <div className="text-[10px] pt-1" style={{ color: "var(--text-muted)" }}>
-                  数据库: {sysInfo.db_size_str}
+                <div className="text-[10px] pt-1 space-y-0.5" style={{ color: "var(--text-muted)" }}>
+                  <div>数据库: {sysInfo.db_size_str}</div>
+                  <div>数据目录: {sysInfo.data_dir}</div>
                 </div>
               )}
               <button className="btn-ghost mt-2 text-xs" onClick={() => setShowAbout(false)}>关闭</button>

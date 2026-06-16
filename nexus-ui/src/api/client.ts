@@ -46,6 +46,7 @@ export interface SystemInfo {
   db_size: number;
   db_size_str: string;
   db_path: string;
+  data_dir: string;
 }
 
 export const systemApi = {
