@@ -97,7 +97,7 @@ def start_search_service(port: int = DEFAULT_PORT) -> bool:
 
     node = _find_node()
     if not node:
-        logger.warning("未找到 Node.js，搜索服务无法启动，将回退到 DuckDuckGo 直接搜索")
+        logger.warning("未找到 Node.js，搜索服务无法启动")
         return False
 
     ows_dir = _find_open_websearch_dir()
@@ -107,7 +107,7 @@ def start_search_service(port: int = DEFAULT_PORT) -> bool:
 
     entry = ows_dir / "build" / "index.js"
     if not entry.exists():
-        logger.warning(f"open-webSearch 未构建（{entry} 不存在），请先运行 npm run build")
+        logger.warning(f"open-webSearch 未构建（{entry} 不存在）")
         return False
 
     env = os.environ.copy()
@@ -136,12 +136,12 @@ def start_search_service(port: int = DEFAULT_PORT) -> bool:
             atexit.register(stop_search_service)
             return True
         else:
-            logger.warning("搜索服务启动超时，将回退到 DuckDuckGo 直接搜索")
+            logger.warning("搜索服务启动超时")
             stop_search_service()
             return False
 
     except Exception as e:
-        logger.warning(f"启动搜索服务失败: {e}，将回退到 DuckDuckGo 直接搜索")
+        logger.warning(f"启动搜索服务失败: {e}")
         return False
 
 

@@ -63,11 +63,15 @@ export default function ChatPage() {
   const [streamContent, setStreamContent] = useState("");
   const [streamThinking, setStreamThinking] = useState("");
   const [streamToolCalls, setStreamToolCalls] = useState<{name: string; query: string; result?: string}[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     chatApi.listSessions().then(setSessions).catch(console.error);
-    modelsApi.list().then(setModels).catch(console.error);
+    modelsApi.list().then(ms => {
+      setModels(ms);
+      if (ms.length && !selectedModelId) setSelectedModelId(ms[0].id);
+    }).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -117,7 +121,7 @@ export default function ChatPage() {
     setStreamToolCalls([]);
 
     try {
-      const modelId = models[0]?.id;
+      const modelId = selectedModelId || models[0]?.id;
       for await (const chunk of chatApi.stream(activeSession!, modelId)) {
         if (chunk.type === "thinking") {
           setStreamThinking(prev => prev + chunk.data);
@@ -155,7 +159,10 @@ export default function ChatPage() {
       <div className="w-56 flex-shrink-0 flex flex-col gap-2">
         <div className="glass-card p-3 space-y-2">
           <p className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>模型</p>
-          <select className="input-glass text-sm">
+          <select className="input-glass text-sm"
+            value={selectedModelId}
+            onChange={e => setSelectedModelId(e.target.value)}
+          >
             {models.length ? models.map(m => (
               <option key={m.id} value={m.id}>{m.name}</option>
             )) : <option>未配置模型</option>}

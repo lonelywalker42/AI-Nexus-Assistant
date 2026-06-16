@@ -72,9 +72,9 @@ try:
         if _search_ok:
             print("[server] open-webSearch 聚合搜索服务已启动", flush=True)
         else:
-            print("[server] 搜索服务未启动，将使用 DuckDuckGo 直接搜索", flush=True)
+            print("[server] 搜索服务未启动，请确保 Node.js 已安装", flush=True)
     except Exception as _e:
-        print(f"[server] 搜索服务启动异常: {_e}，将使用 DuckDuckGo 直接搜索", flush=True)
+        print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
     app = FastAPI(title="AI Nexus Assistant API", version="0.1.0")
 except Exception as e:
@@ -643,7 +643,7 @@ class ModelCreate(BaseModel):
 def list_models():
     db = get_session()
     try:
-        models = db.query(ModelConfig).all()
+        models = db.query(ModelConfig).filter(ModelConfig.is_active == True).all()
         return [{"id": m.id, "name": m.name, "base_url": m.base_url,
                  "model_name": m.model_name, "protocol": m.protocol,
                  "purpose": m.purpose, "is_active": m.is_active} for m in models]
@@ -760,6 +760,25 @@ def manual_backup():
     from app.services.backup_service import create_backup
     result = create_backup("manual")
     return {"path": str(result) if result else None, "ok": bool(result)}
+
+
+@app.get("/api/backups")
+def list_backups():
+    from app.services.backup_service import list_backups as _list
+    return _list()
+
+
+@app.post("/api/backups/restore")
+def restore_backup(body: dict):
+    path = body.get("path", "")
+    if not path:
+        raise HTTPException(status_code=400, detail="path is required")
+    from app.services.backup_service import restore_backup as _restore
+    result = _restore(path)
+    if result:
+        # 恢复后重新加载 AI 路由器（模型配置可能已变）
+        get_ai().reload()
+    return {"ok": bool(result)}
 
 
 # ══════════════════════════════════════════════════════════════
