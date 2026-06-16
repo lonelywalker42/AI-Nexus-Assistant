@@ -25,8 +25,8 @@ EXCLUDE_MODULES = [
     "numba", "llvmlite", "scs",
     # 可视化
     "matplotlib", "vtk", "vtkmodules", "pyarrow", "PIL",
-    # PDF
-    "fitz", "pymupdf", "pdfminer",
+    # PDF (fitz/pymupdf 需要保留 — PDF 导入功能依赖)
+    "pdfminer",
     # 网络/云
     "kubernetes", "selenium",
     # 其他大型包
@@ -64,11 +64,13 @@ def build():
         "--hidden-import", "app.models.experiment",
         "--hidden-import", "app.models.knowledge",
         "--hidden-import", "app.models.chat",
+        "--hidden-import", "app.models.review",
         "--hidden-import", "app.services",
         "--hidden-import", "app.services.task_service",
         "--hidden-import", "app.services.experiment_service",
         "--hidden-import", "app.services.knowledge_service",
         "--hidden-import", "app.services.chat_service",
+        "--hidden-import", "app.services.paper_service",
         "--hidden-import", "app.services.backup_service",
         "--hidden-import", "app.search",
         "--hidden-import", "app.search.engine",
@@ -88,6 +90,11 @@ def build():
         "--hidden-import", "app.ai.router",
         "--hidden-import", "app.ai.web_search",
         "--hidden-import", "app.ai.search_service",
+        "--hidden-import", "app.ai.tools",
+        "--hidden-import", "app.ai.tools.paper_tool",
+        "--hidden-import", "app.ai.tools.knowledge_tool",
+        "--hidden-import", "app.ai.tools.experiment_tool",
+        "--hidden-import", "app.ai.tools.academic_tool",
         "--hidden-import", "app.utils",
         "--hidden-import", "app.utils.paths",
         "--hidden-import", "app.db",

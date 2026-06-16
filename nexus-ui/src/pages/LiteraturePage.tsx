@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { searchApi, historyApi, chatApi, modelsApi, knowledgeApi, type Paper, type HistoryRecord, type ModelConfig, type KnowledgeCard } from "../api/client";
+import { searchApi, historyApi, chatApi, modelsApi, knowledgeApi, papersApi, type Paper, type HistoryRecord, type ModelConfig, type KnowledgeCard } from "../api/client";
 import { IconSearch, IconChevronRight } from "../components/Icons";
 
 const SOURCES = [
@@ -353,6 +353,14 @@ export default function LiteraturePage() {
                     style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>{p.source}</span>
                 </div>
                 {p.abstract && <p className="text-xs line-clamp-2" style={{ color: "var(--text-secondary)" }}>{p.abstract.slice(0, 200)}</p>}
+                <div className="flex gap-2 mt-2">
+                  <button className="btn-ghost text-xs" onClick={async () => {
+                    try {
+                      await papersApi.fromSearch(p as unknown as Record<string, unknown>);
+                      alert("已入库");
+                    } catch { alert("入库失败"); }
+                  }}>入库</button>
+                </div>
               </div>
             ))}
           </div>

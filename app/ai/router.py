@@ -8,6 +8,10 @@ from app.ai.web_search import (
     TOOL_DEFINITION_OPENAI, TOOL_DEFINITION_ANTHROPIC,
     execute_tool_call,
 )
+from app.ai.tools import (
+    init_tools, get_all_openai_tools, get_all_anthropic_tools,
+    execute_tool as execute_registered_tool,
+)
 
 
 class AIRouter:
@@ -19,6 +23,14 @@ class AIRouter:
     def __init__(self):
         self._models: dict[str, ModelConfig] = {}
         self._load_models()
+        # 初始化工具注册
+        try:
+            init_tools()
+        except Exception as e:
+            print(f"[AIRouter] Tool init warning: {e}", flush=True)
+        # 构建工具定义列表（web_search + 所有注册工具）
+        self._openai_tools = [TOOL_DEFINITION_OPENAI] + get_all_openai_tools()
+        self._anthropic_tools = [TOOL_DEFINITION_ANTHROPIC] + get_all_anthropic_tools()
 
     def _load_models(self):
         """从数据库加载模型配置"""
@@ -169,7 +181,7 @@ class AIRouter:
                     messages=current_messages,
                     temperature=kwargs.get("temperature", 0.7),
                     max_tokens=kwargs.get("max_tokens", 4096),
-                    tools=[TOOL_DEFINITION_OPENAI],
+                    tools=self._openai_tools,
                     tool_choice="auto",
                     stream=True,
                 )
@@ -213,42 +225,47 @@ class AIRouter:
                 # 执行工具调用
                 for idx in sorted(tool_calls.keys()):
                     tc = tool_calls[idx]
-                    if tc["name"] == "web_search":
-                        # 解析参数获取查询词
-                        try:
-                            args = json.loads(tc["arguments"])
-                            query = args.get("query", "")
-                        except (json.JSONDecodeError, KeyError):
-                            query = ""
+                    tool_name = tc["name"]
 
-                        yield {"type": "tool_call", "data": json.dumps({
-                            "name": "web_search", "query": query
-                        }, ensure_ascii=False)}
+                    # 解析参数
+                    try:
+                        args = json.loads(tc["arguments"])
+                        query = args.get("query", args.get("q", ""))
+                    except (json.JSONDecodeError, KeyError):
+                        query = ""
 
+                    yield {"type": "tool_call", "data": json.dumps({
+                        "name": tool_name, "query": query
+                    }, ensure_ascii=False)}
+
+                    # 分发到对应工具
+                    if tool_name == "web_search":
                         result = execute_tool_call(tc["arguments"])
+                    else:
+                        result = execute_registered_tool(tool_name, tc["arguments"])
 
-                        yield {"type": "tool_result", "data": json.dumps({
-                            "name": "web_search", "query": query, "result": result
-                        }, ensure_ascii=False)}
+                    yield {"type": "tool_result", "data": json.dumps({
+                        "name": tool_name, "query": query, "result": result[:2000]
+                    }, ensure_ascii=False)}
 
-                        # 将工具调用和结果添加到消息历史
-                        current_messages.append({
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [{
-                                "id": tc["id"],
-                                "type": "function",
-                                "function": {
-                                    "name": tc["name"],
-                                    "arguments": tc["arguments"],
-                                }
-                            }]
-                        })
-                        current_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc["id"],
-                            "content": result,
-                        })
+                    # 将工具调用和结果添加到消息历史
+                    current_messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": tc["arguments"],
+                            }
+                        }]
+                    })
+                    current_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": result,
+                    })
 
             except Exception as e:
                 yield {"type": "content", "data": f"\n\n❌ 流式调用失败: {e}"}
@@ -282,7 +299,7 @@ class AIRouter:
                     max_tokens=kwargs.get("max_tokens", 4096),
                     system=system_msg if system_msg else anthropic.NOT_GIVEN,
                     messages=current_messages,
-                    tools=[TOOL_DEFINITION_ANTHROPIC],
+                    tools=self._anthropic_tools,
                 ) as stream:
                     # 收集本轮的工具调用
                     tool_use_blocks = []  # {id, name, input_json}
@@ -322,28 +339,33 @@ class AIRouter:
                 # 执行工具调用
                 tool_results = []
                 for tu in tool_use_blocks:
-                    if tu["name"] == "web_search":
-                        try:
-                            args = json.loads(tu["input_json"])
-                            query = args.get("query", "")
-                        except (json.JSONDecodeError, KeyError):
-                            query = ""
+                    tool_name = tu["name"]
 
-                        yield {"type": "tool_call", "data": json.dumps({
-                            "name": "web_search", "query": query
-                        }, ensure_ascii=False)}
+                    try:
+                        args = json.loads(tu["input_json"])
+                        query = args.get("query", args.get("q", ""))
+                    except (json.JSONDecodeError, KeyError):
+                        query = ""
 
+                    yield {"type": "tool_call", "data": json.dumps({
+                        "name": tool_name, "query": query
+                    }, ensure_ascii=False)}
+
+                    # 分发到对应工具
+                    if tool_name == "web_search":
                         result = execute_tool_call(tu["input_json"])
+                    else:
+                        result = execute_registered_tool(tool_name, tu["input_json"])
 
-                        yield {"type": "tool_result", "data": json.dumps({
-                            "name": "web_search", "query": query, "result": result
-                        }, ensure_ascii=False)}
+                    yield {"type": "tool_result", "data": json.dumps({
+                        "name": tool_name, "query": query, "result": result[:2000]
+                    }, ensure_ascii=False)}
 
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tu["id"],
-                            "content": result,
-                        })
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tu["id"],
+                        "content": result,
+                    })
 
                 # 将助手的工具调用和工具结果添加到消息历史
                 assistant_content = []

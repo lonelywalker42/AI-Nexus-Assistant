@@ -3,17 +3,19 @@ import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import TaskPage from "./pages/TaskPage";
 import LiteraturePage from "./pages/LiteraturePage";
+import PaperLibraryPage from "./pages/PaperLibraryPage";
 import ExperimentPage from "./pages/ExperimentPage";
 import KnowledgePage from "./pages/KnowledgePage";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import { dashboardApi } from "./api/client";
-import { IconChart, IconClipboard, IconBook, IconFlask, IconBrain, IconChat, IconGear, IconX, IconMinus, IconMaximize } from "./components/Icons";
+import { IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat, IconGear, IconX, IconMinus, IconMaximize } from "./components/Icons";
 
 const PAGES = [
   { id: "dashboard", label: "仪表盘", icon: "chart" },
   { id: "tasks", label: "任务与日程", icon: "clipboard" },
-  { id: "literature", label: "文献管理", icon: "book" },
+  { id: "literature", label: "文献检索", icon: "search" },
+  { id: "paper-library", label: "文献库", icon: "book" },
   { id: "experiments", label: "试验管理", icon: "flask" },
   { id: "knowledge", label: "知识库", icon: "brain" },
   { id: "chat", label: "AI 对话", icon: "chat" },
@@ -21,7 +23,7 @@ const PAGES = [
 ];
 
 const ICON_MAP: Record<string, React.FC<{ size?: number }>> = {
-  chart: IconChart, clipboard: IconClipboard, book: IconBook,
+  chart: IconChart, clipboard: IconClipboard, book: IconBook, search: IconSearch,
   flask: IconFlask, brain: IconBrain, chat: IconChat, gear: IconGear,
 };
 
@@ -100,6 +102,7 @@ function App() {
       case "dashboard": return <Dashboard onNavigate={setActivePage} />;
       case "tasks": return <TaskPage />;
       case "literature": return <LiteraturePage />;
+      case "paper-library": return <PaperLibraryPage />;
       case "experiments": return <ExperimentPage />;
       case "knowledge": return <KnowledgePage />;
       case "chat": return <ChatPage />;

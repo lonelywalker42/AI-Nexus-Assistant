@@ -61,7 +61,7 @@ try:
     from app.models import Experiment, ExperimentResult
     from app.models import KnowledgeCard, Tag, CardTag
     from app.models import ChatSession, ChatMessage
-    from app.services import task_service, experiment_service, knowledge_service, chat_service
+    from app.services import task_service, experiment_service, knowledge_service, chat_service, paper_service
     from app.ai.router import AIRouter
     from app.ai.search_service import start_search_service
 
@@ -360,12 +360,31 @@ class ExperimentCreate(BaseModel):
     setup: str = ""
 
 
+class ExperimentUpdate(BaseModel):
+    title: Optional[str] = None
+    background: Optional[str] = None
+    objective: Optional[str] = None
+    setup: Optional[str] = None
+    status: Optional[str] = None
+    local_path: Optional[str] = None
+    repo_url: Optional[str] = None
+    readme_content: Optional[str] = None
+
+
 class ResultCreate(BaseModel):
     description: str = ""
     parameters: dict = {}
     code_snippets: list = []
     result_data: str = ""
     conclusion: str = ""
+
+
+class ResultUpdate(BaseModel):
+    description: Optional[str] = None
+    parameters: Optional[dict] = None
+    code_snippets: Optional[list] = None
+    result_data: Optional[str] = None
+    conclusion: Optional[str] = None
 
 
 @app.get("/api/experiments")
@@ -376,6 +395,10 @@ def list_experiments(search: str = "", status: str = ""):
         return [{
             "id": e.id, "title": e.title, "status": e.status,
             "background": e.background, "objective": e.objective, "setup": e.setup,
+            "local_path": e.local_path, "repo_url": e.repo_url,
+            "readme_content": e.readme_content,
+            "related_paper_ids": json.loads(e.related_paper_ids) if e.related_paper_ids else [],
+            "ai_analysis": e.ai_analysis,
             "created_at": e.created_at.isoformat(),
             "updated_at": e.updated_at.isoformat(),
             "results": [{
@@ -423,6 +446,128 @@ def delete_experiment(exp_id: str):
         if not ok:
             raise HTTPException(404)
         return {"ok": True}
+    finally:
+        db.close()
+
+
+@app.patch("/api/experiments/{exp_id}")
+def update_experiment(exp_id: str, body: ExperimentUpdate):
+    db = get_session()
+    try:
+        exp = db.get(Experiment, exp_id)
+        if not exp:
+            raise HTTPException(404)
+        for key, value in body.dict().items():
+            if value is not None and hasattr(exp, key):
+                setattr(exp, key, value)
+        exp.updated_at = datetime.now()
+        db.commit()
+        db.refresh(exp)
+        return {"id": exp.id, "title": exp.title, "status": exp.status}
+    finally:
+        db.close()
+
+
+@app.put("/api/experiments/results/{result_id}")
+def update_result(result_id: str, body: ResultUpdate):
+    db = get_session()
+    try:
+        result = db.get(ExperimentResult, result_id)
+        if not result:
+            raise HTTPException(404)
+        for key, value in body.dict().items():
+            if value is not None:
+                if key in ("parameters", "code_snippets") and isinstance(value, (dict, list)):
+                    value = json.dumps(value, ensure_ascii=False)
+                if hasattr(result, key):
+                    setattr(result, key, value)
+        db.commit()
+        db.refresh(result)
+        return {"id": result.id, "version": result.version}
+    finally:
+        db.close()
+
+
+@app.delete("/api/experiments/results/{result_id}")
+def delete_result(result_id: str):
+    db = get_session()
+    try:
+        result = db.get(ExperimentResult, result_id)
+        if not result:
+            raise HTTPException(404)
+        db.delete(result)
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@app.get("/api/experiments/{exp_id}/params-table")
+def get_params_table(exp_id: str):
+    """获取参数对比表格数据"""
+    db = get_session()
+    try:
+        exp = db.get(Experiment, exp_id)
+        if not exp:
+            raise HTTPException(404)
+        results = experiment_service.get_results(db, exp_id)
+        rows = []
+        all_param_keys = set()
+        for r in results:
+            params = json.loads(r.parameters) if r.parameters else {}
+            all_param_keys.update(params.keys())
+            rows.append({
+                "result_id": r.id,
+                "version": r.version,
+                "description": r.description,
+                "params": params,
+                "result_data": r.result_data,
+                "conclusion": r.conclusion,
+                "created_at": r.created_at.isoformat(),
+            })
+        return {
+            "experiment_id": exp_id,
+            "param_keys": sorted(all_param_keys),
+            "rows": rows,
+        }
+    finally:
+        db.close()
+
+
+@app.post("/api/experiments/{exp_id}/ai-analysis")
+def generate_experiment_analysis(exp_id: str):
+    """AI 分析试验结果"""
+    db = get_session()
+    try:
+        exp = db.get(Experiment, exp_id)
+        if not exp:
+            raise HTTPException(404)
+        results = experiment_service.get_results(db, exp_id)
+
+        # 构建分析上下文
+        context = f"试验: {exp.title}\n背景: {exp.background}\n目标: {exp.objective}\n\n结果:\n"
+        for r in results:
+            params = json.loads(r.parameters) if r.parameters else {}
+            context += f"v{r.version}: {r.description}\n"
+            if params:
+                context += f"  参数: {json.dumps(params, ensure_ascii=False)}\n"
+            if r.result_data:
+                context += f"  数据: {r.result_data[:500]}\n"
+            if r.conclusion:
+                context += f"  结论: {r.conclusion}\n"
+            context += "\n"
+
+        ai = get_ai()
+        result = ai.chat([
+            {"role": "system", "content": "你是科研试验分析助手。请分析以下试验数据，提供：1) 趋势分析 2) 异常检测 3) 优化建议。使用中文，Markdown格式。"},
+            {"role": "user", "content": context[:6000]}
+        ])
+
+        analysis = result.get("content", "")
+        exp.ai_analysis = analysis
+        exp.updated_at = datetime.now()
+        db.commit()
+        return {"analysis": analysis}
     finally:
         db.close()
 
@@ -522,11 +667,452 @@ def list_tags():
 
 
 # ══════════════════════════════════════════════════════════════
+#  文献库
+# ══════════════════════════════════════════════════════════════
+
+class PaperCreate(BaseModel):
+    title: str
+    authors: list[str] = []
+    year: int = 0
+    doi: str = ""
+    abstract: str = ""
+    journal: str = ""
+    source: str = ""
+    url: str = ""
+    paper_type: str = "未知"
+    star_rating: int = 0
+    user_notes: str = ""
+    tags: list[str] = []
+
+
+class PaperUpdate(BaseModel):
+    title: Optional[str] = None
+    authors: Optional[list[str]] = None
+    year: Optional[int] = None
+    doi: Optional[str] = None
+    abstract: Optional[str] = None
+    journal: Optional[str] = None
+    star_rating: Optional[int] = None
+    user_notes: Optional[str] = None
+    tags: Optional[list[str]] = None
+
+
+@app.get("/api/papers")
+def list_papers(search: str = "", sort_by: str = "created_at",
+                sort_order: str = "desc", year_from: int = 0,
+                year_to: int = 0, star_min: int = 0):
+    db = get_session()
+    try:
+        papers = paper_service.get_papers(db, search, sort_by, sort_order, year_from, year_to, star_min)
+        return [_paper_to_dict(p) for p in papers]
+    finally:
+        db.close()
+
+
+@app.post("/api/papers")
+def create_paper(body: PaperCreate):
+    db = get_session()
+    try:
+        from app.search.citation import format_gb
+        citation = format_gb({
+            "title": body.title, "authors": body.authors,
+            "year": body.year, "doi": body.doi, "journal": body.journal,
+            "paper_type": body.paper_type,
+        }, 1)
+        paper = paper_service.create_paper(
+            db,
+            title=body.title,
+            authors=json.dumps(body.authors, ensure_ascii=False),
+            year=body.year, doi=body.doi, abstract=body.abstract,
+            journal=body.journal, source=body.source, url=body.url,
+            paper_type=body.paper_type, star_rating=body.star_rating,
+            user_notes=body.user_notes, citation=citation,
+            tags=json.dumps(body.tags, ensure_ascii=False),
+        )
+        return _paper_to_dict(paper)
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/{paper_id}")
+def get_paper(paper_id: str):
+    db = get_session()
+    try:
+        paper = paper_service.get_paper(db, paper_id)
+        if not paper:
+            raise HTTPException(404, "Paper not found")
+        return _paper_to_dict(paper)
+    finally:
+        db.close()
+
+
+@app.patch("/api/papers/{paper_id}")
+def update_paper(paper_id: str, body: PaperUpdate):
+    db = get_session()
+    try:
+        kwargs = {k: v for k, v in body.dict().items() if v is not None}
+        paper = paper_service.update_paper(db, paper_id, **kwargs)
+        if not paper:
+            raise HTTPException(404, "Paper not found")
+        return _paper_to_dict(paper)
+    finally:
+        db.close()
+
+
+@app.delete("/api/papers/{paper_id}")
+def delete_paper(paper_id: str):
+    db = get_session()
+    try:
+        ok = paper_service.delete_paper(db, paper_id)
+        if not ok:
+            raise HTTPException(404)
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/batch-delete")
+def batch_delete_papers(body: dict):
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(400, "No IDs provided")
+    db = get_session()
+    try:
+        count = paper_service.delete_papers_batch(db, ids)
+        return {"deleted": count}
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/from-search")
+def save_paper_from_search(body: dict):
+    """从搜索结果入库"""
+    db = get_session()
+    try:
+        paper = paper_service.save_from_search(db, body)
+        return _paper_to_dict(paper)
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/{paper_id}/citation")
+def get_paper_citation(paper_id: str, format: str = "gb7714", index: int = 1):
+    """获取引用格式"""
+    db = get_session()
+    try:
+        citation = paper_service.get_citation(db, paper_id, format, index)
+        if not citation:
+            raise HTTPException(404, "Paper not found")
+        return {"citation": citation, "format": format}
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/{paper_id}/ai-summary")
+def generate_paper_summary(paper_id: str):
+    """生成 AI 摘要"""
+    db = get_session()
+    try:
+        paper = paper_service.generate_ai_summary(db, paper_id, get_ai())
+        if not paper:
+            raise HTTPException(404, "Paper not found")
+        return {"ai_summary": paper.ai_summary}
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/import-pdf")
+async def import_paper_pdf(request: Request):
+    """导入 PDF 到文献库"""
+    import urllib.parse
+    import tempfile
+    import fitz
+
+    filename_raw = request.headers.get("x-filename", "paper.pdf")
+    filename = urllib.parse.unquote(filename_raw)
+    file_bytes = await request.body()
+
+    if not file_bytes or len(file_bytes) < 100:
+        return {"error": f"File too small ({len(file_bytes) if file_bytes else 0} bytes)"}
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+
+    try:
+        doc = fitz.open(tmp_path)
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        doc.close()
+
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        title = lines[0][:200] if lines else filename.replace(".pdf", "")
+
+        # AI 提取元数据
+        ai = get_ai()
+        result = ai.chat([
+            {"role": "system", "content": "你是学术文献分析助手。请从以下文本中提取文献元数据，用JSON返回：{\"title\":\"...\",\"authors\":[...],\"year\":2024,\"journal\":\"...\",\"doi\":\"...\",\"abstract\":\"...\",\"summary\":\"200字中文摘要\"}"},
+            {"role": "user", "content": text[:4000]}
+        ])
+
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', result.get("content", ""))
+        meta = {}
+        if json_match:
+            try:
+                meta = json.loads(json_match.group())
+            except:
+                pass
+
+        if not meta.get("title"):
+            meta["title"] = title
+
+        # 保存 PDF 文件
+        pdf_dir = data_dir / "pdfs"
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+        import shutil
+        import uuid as _uuid
+        pdf_filename = f"{_uuid.uuid4().hex[:8]}_{filename}"
+        pdf_path = pdf_dir / pdf_filename
+        with open(pdf_path, "wb") as f:
+            f.write(file_bytes)
+
+        # 生成引用
+        from app.search.citation import format_gb
+        citation = format_gb(meta, 1)
+
+        db = get_session()
+        try:
+            paper = paper_service.create_paper(
+                db,
+                title=meta.get("title", title)[:200],
+                authors=json.dumps(meta.get("authors", []), ensure_ascii=False),
+                year=meta.get("year", 0),
+                doi=meta.get("doi", ""),
+                abstract=meta.get("abstract", text[:1000]),
+                journal=meta.get("journal", ""),
+                source="pdf_import",
+                paper_type="journal",
+                citation=citation,
+                ai_summary=meta.get("summary", ""),
+                local_path=str(pdf_path),
+            )
+            return _paper_to_dict(paper)
+        finally:
+            db.close()
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.get("/api/papers/stats")
+def get_paper_stats():
+    db = get_session()
+    try:
+        return paper_service.get_paper_stats(db)
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/search")
+def search_papers_for_mention(q: str = "", limit: int = 10):
+    """供 @引用使用的文献搜索"""
+    db = get_session()
+    try:
+        papers = paper_service.get_papers(db, search=q)
+        return [{"id": p.id, "title": p.title,
+                 "authors": json.loads(p.authors) if p.authors else [],
+                 "year": p.year} for p in papers[:limit]]
+    finally:
+        db.close()
+
+
+def _paper_to_dict(p: Paper) -> dict:
+    return {
+        "id": p.id, "title": p.title,
+        "authors": json.loads(p.authors) if p.authors else [],
+        "year": p.year, "doi": p.doi, "abstract": p.abstract,
+        "journal": p.journal, "source": p.source, "url": p.url,
+        "citation": p.citation, "paper_type": p.paper_type,
+        "has_fulltext": p.has_fulltext, "star_rating": p.star_rating,
+        "user_notes": p.user_notes, "ai_summary": p.ai_summary,
+        "local_path": p.local_path,
+        "tags": json.loads(p.tags) if p.tags else [],
+        "review_id": p.review_id,
+        "created_at": p.created_at.isoformat(),
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+#  综述
+# ══════════════════════════════════════════════════════════════
+
+from app.models.review import Review
+
+
+class ReviewGenerate(BaseModel):
+    paper_ids: list[str]
+    title: str = ""
+
+
+@app.get("/api/reviews")
+def list_reviews():
+    db = get_session()
+    try:
+        reviews = db.query(Review).order_by(Review.created_at.desc()).all()
+        return [{"id": r.id, "title": r.title, "content": r.content,
+                 "paper_ids": json.loads(r.paper_ids) if r.paper_ids else [],
+                 "created_at": r.created_at.isoformat()} for r in reviews]
+    finally:
+        db.close()
+
+
+@app.get("/api/reviews/{review_id}")
+def get_review(review_id: str):
+    db = get_session()
+    try:
+        review = db.get(Review, review_id)
+        if not review:
+            raise HTTPException(404)
+        return {"id": review.id, "title": review.title, "content": review.content,
+                "paper_ids": json.loads(review.paper_ids) if review.paper_ids else [],
+                "created_at": review.created_at.isoformat()}
+    finally:
+        db.close()
+
+
+@app.post("/api/reviews/generate")
+async def generate_review(body: ReviewGenerate):
+    """AI 生成结构化综述"""
+    db = get_session()
+    try:
+        papers = []
+        for pid in body.paper_ids:
+            p = db.get(Paper, pid)
+            if p:
+                papers.append({
+                    "title": p.title,
+                    "authors": json.loads(p.authors) if p.authors else [],
+                    "year": p.year, "abstract": p.abstract,
+                    "journal": p.journal, "ai_summary": p.ai_summary,
+                })
+    finally:
+        db.close()
+
+    if not papers:
+        raise HTTPException(400, "No valid papers found")
+
+    # 构建 prompt
+    paper_texts = []
+    for i, p in enumerate(papers, 1):
+        text = f"[{i}] {p['title']}"
+        if p.get("authors"):
+            text += f" ({', '.join(p['authors'][:3])})"
+        if p.get("year"):
+            text += f", {p['year']}"
+        if p.get("journal"):
+            text += f" - {p['journal']}"
+        if p.get("ai_summary"):
+            text += f"\n摘要: {p['ai_summary']}"
+        elif p.get("abstract"):
+            text += f"\n摘要: {p['abstract'][:300]}"
+        paper_texts.append(text)
+
+    papers_context = "\n\n".join(paper_texts)
+    title = body.title or "文献综述"
+
+    prompt = f"""请基于以下 {len(papers)} 篇文献，撰写一篇结构化的文献综述。
+
+文献列表：
+{papers_context}
+
+请按以下结构撰写（使用 Markdown 格式）：
+## 引言
+简述研究背景和本综述的范围
+
+## 研究现状
+概括各文献的主要研究内容和发现，引用时使用 [1] [2] 等标注
+
+## 方法对比
+对比各文献使用的研究方法
+
+## 研究趋势
+总结该领域的发展趋势和未来方向
+
+## 结论
+概括主要发现和研究意义
+
+要求：
+1. 每个部分都要引用具体文献（使用 [序号] 格式）
+2. 语言学术、逻辑清晰
+3. 使用中文撰写"""
+
+    ai = get_ai()
+
+    async def generate():
+        full_content = ""
+        for chunk in ai.stream_chat([
+            {"role": "system", "content": "你是学术文献综述写作助手，擅长撰写结构化的文献综述。"},
+            {"role": "user", "content": prompt}
+        ]):
+            if chunk["type"] == "content":
+                full_content += chunk["data"]
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+        # 保存综述
+        db = get_session()
+        try:
+            review = Review(
+                title=title,
+                content=full_content,
+                paper_ids=json.dumps(body.paper_ids, ensure_ascii=False),
+            )
+            db.add(review)
+            db.commit()
+
+            # 更新关联文献的 review_id
+            for pid in body.paper_ids:
+                paper = db.get(Paper, pid)
+                if paper:
+                    paper.review_id = review.id
+            db.commit()
+
+            yield f"data: {json.dumps({'type': 'review_id', 'data': review.id}, ensure_ascii=False)}\n\n"
+        finally:
+            db.close()
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.delete("/api/reviews/{review_id}")
+def delete_review(review_id: str):
+    db = get_session()
+    try:
+        review = db.get(Review, review_id)
+        if not review:
+            raise HTTPException(404)
+        # 清除关联文献的 review_id
+        papers = db.query(Paper).filter(Paper.review_id == review_id).all()
+        for p in papers:
+            p.review_id = ""
+        db.delete(review)
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+# ══════════════════════════════════════════════════════════════
 #  AI 对话
 # ══════════════════════════════════════════════════════════════
 
 class SessionCreate(BaseModel):
     title: str = "新对话"
+    category: str = "general"
 
 
 class MessageCreate(BaseModel):
@@ -540,12 +1126,18 @@ class ChatRequest(BaseModel):
 
 
 @app.get("/api/chat/sessions")
-def list_sessions():
+def list_sessions(category: str = ""):
     db = get_session()
     try:
         sessions = chat_service.get_sessions(db)
-        return [{"id": s.id, "title": s.title, "model_name": s.model_name,
-                 "created_at": s.created_at.isoformat()} for s in sessions]
+        result = []
+        for s in sessions:
+            if category and s.category != category:
+                continue
+            result.append({"id": s.id, "title": s.title, "model_name": s.model_name,
+                           "category": s.category,
+                           "created_at": s.created_at.isoformat()})
+        return result
     finally:
         db.close()
 
@@ -554,8 +1146,8 @@ def list_sessions():
 def create_session(body: SessionCreate):
     db = get_session()
     try:
-        s = chat_service.create_session(db, body.title)
-        return {"id": s.id, "title": s.title}
+        s = chat_service.create_session(db, body.title, body.category)
+        return {"id": s.id, "title": s.title, "category": s.category}
     finally:
         db.close()
 

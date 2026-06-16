@@ -15,6 +15,7 @@ class ChatSession(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title: Mapped[str] = mapped_column(Text, default="新对话")
     model_name: Mapped[str] = mapped_column(String(100), default="")
+    category: Mapped[str] = mapped_column(String(20), default="general")  # general/writing/review/topic
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     messages: Mapped[List["ChatMessage"]] = relationship(back_populates="session", cascade="all, delete-orphan")

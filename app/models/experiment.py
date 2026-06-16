@@ -20,6 +20,9 @@ class Experiment(Base):
     setup: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="planning")  # planning/running/completed/suspended
     related_paper_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of paper IDs
+    local_path: Mapped[str] = mapped_column(Text, default="")  # 本地项目目录
+    repo_url: Mapped[str] = mapped_column(Text, default="")  # GitHub 仓库 URL
+    readme_content: Mapped[str] = mapped_column(Text, default="")  # README.md 内容
     ai_analysis: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)

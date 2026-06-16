@@ -27,4 +27,7 @@ class Paper(Base):
     star_rating: Mapped[int] = mapped_column(Integer, default=0)  # 0-5
     user_notes: Mapped[str] = mapped_column(Text, default="")
     ai_summary: Mapped[str] = mapped_column(Text, default="")
+    local_path: Mapped[str] = mapped_column(Text, default="")  # PDF 本地路径
+    tags: Mapped[str] = mapped_column(Text, default="[]")  # JSON 标签数组
+    review_id: Mapped[str] = mapped_column(String(36), default="")  # 关联综述 ID
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

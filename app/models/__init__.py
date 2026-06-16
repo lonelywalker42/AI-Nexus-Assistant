@@ -5,6 +5,7 @@ from .search_history import SearchHistory
 from .experiment import Experiment, ExperimentResult
 from .knowledge import KnowledgeCard, Tag, CardTag
 from .chat import ChatSession, ChatMessage
+from .review import Review
 
 __all__ = [
     "Task", "WeeklyPlan",
@@ -14,4 +15,5 @@ __all__ = [
     "Experiment", "ExperimentResult",
     "KnowledgeCard", "Tag", "CardTag",
     "ChatSession", "ChatMessage",
+    "Review",
 ]

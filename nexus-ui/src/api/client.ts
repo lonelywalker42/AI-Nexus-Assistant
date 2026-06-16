@@ -134,6 +134,11 @@ export interface Experiment {
   background: string;
   objective: string;
   setup: string;
+  local_path: string;
+  repo_url: string;
+  readme_content: string;
+  related_paper_ids: string[];
+  ai_analysis: string;
   created_at: string;
   updated_at: string;
   results: ExperimentResult[];
@@ -148,12 +153,25 @@ export const experimentsApi = {
   },
   create: (data: { title: string; background?: string; objective?: string; setup?: string }) =>
     request<{ id: string }>("/api/experiments", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<Experiment>) =>
+    request<{ id: string }>(`/api/experiments/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   addResult: (expId: string, data: Partial<ExperimentResult>) =>
     request<{ id: string }>(`/api/experiments/${expId}/results`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  updateResult: (resultId: string, data: Partial<ExperimentResult>) =>
+    request<{ id: string }>(`/api/experiments/results/${resultId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteResult: (resultId: string) =>
+    request<{ ok: boolean }>(`/api/experiments/results/${resultId}`, { method: "DELETE" }),
   delete: (id: string) => request<{ ok: boolean }>(`/api/experiments/${id}`, { method: "DELETE" }),
+  paramsTable: (expId: string) =>
+    request<{ experiment_id: string; param_keys: string[]; rows: Array<{ result_id: string; version: number; description: string; params: Record<string, unknown>; result_data: string; conclusion: string; created_at: string }> }>(`/api/experiments/${expId}/params-table`),
+  aiAnalysis: (expId: string) =>
+    request<{ analysis: string }>(`/api/experiments/${expId}/ai-analysis`, { method: "POST" }),
 };
 
 // ── Knowledge ──────────────────────────────────────────────
@@ -194,6 +212,7 @@ export interface ChatSession {
   id: string;
   title: string;
   model_name: string;
+  category: string;
   created_at: string;
 }
 
@@ -207,10 +226,10 @@ export interface ChatMessage {
 
 export const chatApi = {
   listSessions: () => request<ChatSession[]>("/api/chat/sessions"),
-  createSession: (title?: string) =>
-    request<{ id: string }>("/api/chat/sessions", {
+  createSession: (title?: string, category?: string) =>
+    request<{ id: string; title: string; category: string }>("/api/chat/sessions", {
       method: "POST",
-      body: JSON.stringify({ title: title || "新对话" }),
+      body: JSON.stringify({ title: title || "新对话", category: category || "general" }),
     }),
   deleteSession: (id: string) => request<{ ok: boolean }>(`/api/chat/sessions/${id}`, { method: "DELETE" }),
   getMessages: (sessionId: string) => request<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`),
@@ -267,6 +286,102 @@ export const modelsApi = {
   update: (id: string, data: Partial<ModelConfig>) =>
     request<{ id: string }>(`/api/models/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/api/models/${id}`, { method: "DELETE" }),
+};
+
+// ── Papers (文献库) ─────────────────────────────────────────
+
+export interface PaperDetail {
+  id: string;
+  title: string;
+  authors: string[];
+  year: number;
+  doi: string;
+  abstract: string;
+  journal: string;
+  source: string;
+  url: string;
+  citation: string;
+  paper_type: string;
+  has_fulltext: boolean;
+  star_rating: number;
+  user_notes: string;
+  ai_summary: string;
+  local_path: string;
+  tags: string[];
+  review_id: string;
+  created_at: string;
+}
+
+export const papersApi = {
+  list: (params?: { search?: string; sort_by?: string; sort_order?: string;
+    year_from?: number; year_to?: number; star_min?: number }) => {
+    const p = new URLSearchParams();
+    if (params?.search) p.set("search", params.search);
+    if (params?.sort_by) p.set("sort_by", params.sort_by);
+    if (params?.sort_order) p.set("sort_order", params.sort_order);
+    if (params?.year_from) p.set("year_from", String(params.year_from));
+    if (params?.year_to) p.set("year_to", String(params.year_to));
+    if (params?.star_min) p.set("star_min", String(params.star_min));
+    return request<PaperDetail[]>(`/api/papers?${p}`);
+  },
+  get: (id: string) => request<PaperDetail>(`/api/papers/${id}`),
+  create: (data: Partial<PaperDetail>) =>
+    request<PaperDetail>("/api/papers", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<PaperDetail>) =>
+    request<PaperDetail>(`/api/papers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: (id: string) => request<{ ok: boolean }>(`/api/papers/${id}`, { method: "DELETE" }),
+  batchDelete: (ids: string[]) =>
+    request<{ deleted: number }>("/api/papers/batch-delete", { method: "POST", body: JSON.stringify({ ids }) }),
+  fromSearch: (data: Record<string, unknown>) =>
+    request<PaperDetail>("/api/papers/from-search", { method: "POST", body: JSON.stringify(data) }),
+  citation: (id: string, format: string = "gb7714", index: number = 1) =>
+    request<{ citation: string; format: string }>(`/api/papers/${id}/citation?format=${format}&index=${index}`),
+  aiSummary: (id: string) =>
+    request<{ ai_summary: string }>(`/api/papers/${id}/ai-summary`, { method: "POST" }),
+  stats: () => request<{ total: number; by_source: Record<string, number>; rated: number }>("/api/papers/stats"),
+  searchMention: (q: string, limit: number = 10) =>
+    request<{ id: string; title: string; authors: string[]; year: number }[]>(`/api/papers/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+};
+
+// ── Reviews (综述) ──────────────────────────────────────────
+
+export interface Review {
+  id: string;
+  title: string;
+  content: string;
+  paper_ids: string[];
+  created_at: string;
+}
+
+export const reviewsApi = {
+  list: () => request<Review[]>("/api/reviews"),
+  get: (id: string) => request<Review>(`/api/reviews/${id}`),
+  delete: (id: string) => request<{ ok: boolean }>(`/api/reviews/${id}`, { method: "DELETE" }),
+  generate: async function* (paperIds: string[], title?: string) {
+    const res = await fetch(`${API_BASE}/api/reviews/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_ids: paperIds, title: title || "" }),
+    });
+    const reader = res.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") return;
+          try { yield JSON.parse(data); } catch {}
+        }
+      }
+    }
+  },
 };
 
 // ── History ────────────────────────────────────────────────

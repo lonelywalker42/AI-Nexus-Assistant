@@ -11,9 +11,9 @@ def get_sessions(db: Session) -> list[ChatSession]:
     return db.query(ChatSession).order_by(ChatSession.created_at.desc()).all()
 
 
-def create_session(db: Session, title: str = "新对话", model_name: str = "") -> ChatSession:
+def create_session(db: Session, title: str = "新对话", category: str = "general", model_name: str = "") -> ChatSession:
     """创建对话会话"""
-    session = ChatSession(title=title, model_name=model_name)
+    session = ChatSession(title=title, category=category, model_name=model_name)
     db.add(session)
     db.commit()
     db.refresh(session)
