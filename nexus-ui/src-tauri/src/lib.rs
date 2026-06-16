@@ -155,6 +155,12 @@ fn try_embedded_sidecar(port: u16, app: &tauri::App) -> bool {
     }
     let mut cmd = Command::new(&sidecar_path);
     cmd.args(["--port", &port.to_string()]);
+    // 设置工作目录为 Tauri exe 所在目录，使 sidecar 能找到 open-webSearch/
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            cmd.current_dir(dir);
+        }
+    }
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
     match cmd.spawn() {
@@ -469,6 +475,7 @@ pub fn run() {
                     if !started {
                         let mut cmd = Command::new(dir.join("nexus-server-x86_64-pc-windows-msvc.exe"));
                         cmd.args(["--port",&port.to_string()]);
+                        cmd.current_dir(dir);
                         #[cfg(target_os = "windows")]
                         cmd.creation_flags(CREATE_NO_WINDOW);
                         if let Ok(c) = cmd.spawn() {
