@@ -1,0 +1,3 @@
+[submodule "open-webSearch"]
+	path = open-webSearch
+	url = https://github.com/Aas-ee/open-webSearch.git

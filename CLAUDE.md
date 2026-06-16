@@ -18,7 +18,8 @@ Both share:
 - `app/services/` — Business logic layer
 - `app/search/` — 8-source literature search engine
 - `app/ai/router.py` — Unified AI service (OpenAI + Anthropic protocols, with fallback)
-- `app/ai/web_search.py` — Web search tool (DuckDuckGo, used by AI tool calling)
+- `app/ai/web_search.py` — Web search tool (open-webSearch aggregator + DuckDuckGo fallback)
+- `app/ai/search_service.py` — open-webSearch daemon lifecycle manager
 
 ## Common Commands
 
@@ -34,6 +35,7 @@ cd nexus-ui && npm run tauri dev          # Tauri dev mode
 pip install -e .                          # Core Python deps
 pip install fastapi uvicorn openai anthropic  # For Tauri backend + AI
 cd nexus-ui && npm install                # Frontend deps
+cd open-webSearch && npm install && npm run build  # Web search aggregator (Node.js)
 
 # Build
 python build_server.py                    # Build Python sidecar exe
@@ -77,6 +79,13 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - **Protocol fallback**: if anthropic library not installed, automatically falls back to openai protocol
 - Handles DeepSeek `reasoning_content` (thinking) field
 - Returns `{"type": "thinking"|"content", "data": str}` chunks
+
+### Web Search (`open-webSearch` + `app/ai/`)
+- **open-webSearch** (`open-webSearch/`): TypeScript git submodule，聚合 DuckDuckGo + Bing + Brave + Wikipedia + Arxiv 多引擎搜索
+- `app/ai/search_service.py` — 守护进程管理器，server.py 启动时自动拉起 open-webSearch daemon（端口 3210）
+- `app/ai/web_search.py` — 优先调用 daemon API `POST /search`，不可用时回退到 DuckDuckGo HTML 爬取
+- 守护进程健康检查: `GET http://127.0.0.1:3210/health`
+- 需要 Node.js 运行时；未安装 Node.js 时自动降级到 DuckDuckGo 直接搜索
 
 ## Tauri Frontend: `nexus-ui/`
 
@@ -143,7 +152,7 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - **Auto-save**: Task/experiment pages save on cell/text edit (no explicit save button)
 - **Streaming AI**: Uses `QThread` (PySide6) or `ReadableStream` (Tauri) for real-time output
 - **AI Tool Calling**: `router.py` supports OpenAI function calling + Anthropic tool use with agentic loop (max 3 rounds). SSE chunk types: `thinking`, `content`, `tool_call`, `tool_result`
-- **Web Search**: `app/ai/web_search.py` — DuckDuckGo HTML search, no API key needed. Tool definition in both OpenAI and Anthropic formats
+- **Web Search**: `app/ai/web_search.py` — 调用 open-webSearch 聚合搜索引擎（DuckDuckGo + Bing + Brave + Wikipedia + Arxiv），通过本地守护进程（端口 3210）提供服务，不可用时回退到 DuckDuckGo HTML 直接爬取
 - **Backup**: Runs on startup, keeps 1 monthly + 1 weekly + 6 daily backups in `data/backups/`
 
 ## Debugging Lessons Learned

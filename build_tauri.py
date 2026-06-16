@@ -116,6 +116,25 @@ def step3_package():
         shutil.copy2(dll, release_dir / dll.name)
         print(f"  -> {release_dir / dll.name}")
 
+    # 复制 open-webSearch 目录（AI Chat Web Search 需要 Node.js 运行时）
+    ows_src = PROJECT_DIR / "open-webSearch"
+    ows_dst = release_dir / "open-webSearch"
+    if ows_src.exists():
+        if ows_dst.exists():
+            shutil.rmtree(ows_dst)
+        ows_dst.mkdir(parents=True)
+        for item in ["build", "node_modules", "package.json"]:
+            src_item = ows_src / item
+            if src_item.exists():
+                if src_item.is_dir():
+                    shutil.copytree(src_item, ows_dst / item)
+                else:
+                    shutil.copy2(src_item, ows_dst / item)
+        ows_size = sum(f.stat().st_size for f in ows_dst.rglob("*") if f.is_file())
+        print(f"  -> {ows_dst} ({ows_size / 1024 / 1024:.1f} MB)")
+    else:
+        print("  WARNING: open-webSearch/ not found, web search will fallback to DuckDuckGo")
+
     # 统计
     total = sum(f.stat().st_size for f in release_dir.iterdir() if f.is_file())
     print(f"\nRelease package: {release_dir}")

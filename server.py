@@ -61,9 +61,21 @@ try:
     from app.models import ChatSession, ChatMessage
     from app.services import task_service, experiment_service, knowledge_service, chat_service
     from app.ai.router import AIRouter
+    from app.ai.search_service import start_search_service
 
     # 初始化数据库
     init_db()
+
+    # 启动 open-webSearch 聚合搜索服务（后台子进程）
+    try:
+        _search_ok = start_search_service()
+        if _search_ok:
+            print("[server] open-webSearch 聚合搜索服务已启动", flush=True)
+        else:
+            print("[server] 搜索服务未启动，将使用 DuckDuckGo 直接搜索", flush=True)
+    except Exception as _e:
+        print(f"[server] 搜索服务启动异常: {_e}，将使用 DuckDuckGo 直接搜索", flush=True)
+
     app = FastAPI(title="AI Nexus Assistant API", version="0.1.0")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)

@@ -86,6 +86,8 @@ def build():
         "--hidden-import", "app.search.sources.scopus",
         "--hidden-import", "app.ai",
         "--hidden-import", "app.ai.router",
+        "--hidden-import", "app.ai.web_search",
+        "--hidden-import", "app.ai.search_service",
         "--hidden-import", "app.utils",
         "--hidden-import", "app.utils.paths",
         "--hidden-import", "app.db",
@@ -133,6 +135,26 @@ def build():
     else:
         print(f"ERROR: {src} not found")
         sys.exit(1)
+
+    # 复制 open-webSearch 目录到 release（需要 Node.js 运行时）
+    ows_src = PROJECT_DIR / "open-webSearch"
+    ows_dst = RELEASE_DIR / "open-webSearch"
+    if ows_src.exists():
+        # 只复制必要的文件：build/ + package.json + node_modules/
+        if ows_dst.exists():
+            shutil.rmtree(ows_dst)
+        ows_dst.mkdir(parents=True)
+        for item in ["build", "node_modules", "package.json"]:
+            src_item = ows_src / item
+            if src_item.exists():
+                if src_item.is_dir():
+                    shutil.copytree(src_item, ows_dst / item)
+                else:
+                    shutil.copy2(src_item, ows_dst / item)
+        ows_size = sum(f.stat().st_size for f in ows_dst.rglob("*") if f.is_file())
+        print(f"open-webSearch: {ows_dst} ({ows_size / 1024 / 1024:.1f} MB)")
+    else:
+        print("WARNING: open-webSearch/ not found, web search will fallback to DuckDuckGo")
 
 
 def clean():
