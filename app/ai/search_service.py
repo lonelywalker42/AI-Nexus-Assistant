@@ -30,27 +30,35 @@ def _find_node() -> str | None:
 
 
 def _find_open_websearch_dir() -> Path | None:
-    """查找 open-webSearch 目录（开发模式 vs 冻结模式）
+    """查找 open-webSearch 目录
 
-    冻结模式下按优先级查找:
-    1. _MEIPASS/open-webSearch/  (PyInstaller --add-data 嵌入)
-    2. exe同级/open-webSearch/   (外部部署，exe 旁放置)
-    3. cwd/open-webSearch/       (从 release 目录启动)
+    优先级:
+    1. NEXUS_APP_DIR/open-webSearch/  (Tauri 壳传入的 app 目录)
+    2. _MEIPASS/open-webSearch/       (PyInstaller 嵌入)
+    3. exe同级/open-webSearch/        (外部部署)
+    4. cwd/open-webSearch/            (从 release 目录启动)
+    5. 项目根目录/open-webSearch/     (开发模式)
     """
+    # 收集候选目录
+    candidates = []
+
+    # NEXUS_APP_DIR（Tauri 壳设置）
+    env_dir = os.environ.get("NEXUS_APP_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir))
+
     if getattr(sys, "frozen", False):
         meipass = Path(getattr(sys, "_MEIPASS", ""))
         exe_dir = Path(sys.executable).parent
-
-        for base in [meipass, exe_dir, Path.cwd()]:
-            if not base:
-                continue
-            candidate = base / "open-webSearch"
-            if candidate.exists() and (candidate / "build" / "index.js").exists():
-                return candidate
+        candidates.extend([meipass, exe_dir, Path.cwd()])
     else:
-        # 开发模式：项目根目录下的 open-webSearch 子模块
-        candidate = Path(__file__).resolve().parent.parent.parent / "open-webSearch"
-        if candidate.exists():
+        candidates.append(Path(__file__).resolve().parent.parent.parent)
+
+    for base in candidates:
+        if not base:
+            continue
+        candidate = base / "open-webSearch"
+        if candidate.exists() and (candidate / "build" / "index.js").exists():
             return candidate
     return None
 

@@ -28,7 +28,9 @@ if getattr(sys, 'frozen', False):
 # 确保 app 包可导入（兼容 PyInstaller frozen 模式）
 try:
     if getattr(sys, 'frozen', False):
-        base_dir = Path(sys.executable).parent
+        # NEXUS_APP_DIR 由 Tauri 壳设置，指向 Tauri exe 所在目录
+        _env_app_dir = os.environ.get("NEXUS_APP_DIR")
+        base_dir = Path(_env_app_dir) if _env_app_dir else Path(sys.executable).parent
         meipass = getattr(sys, '_MEIPASS', None)
         print(f"[server] base_dir={base_dir}, _MEIPASS={meipass}", flush=True)
         if meipass:

@@ -1,4 +1,8 @@
-"""路径工具 — 处理 PyInstaller 打包和开发环境的路径差异"""
+"""路径工具 — 处理 PyInstaller 打包和开发环境的路径差异
+
+冻结模式下，sidecar exe 被解压到 %TEMP%，sys.executable 指向临时目录。
+Tauri 壳通过 NEXUS_APP_DIR 环境变量告知真正的 app 目录。
+"""
 
 import sys
 import os
@@ -6,9 +10,21 @@ from pathlib import Path
 
 
 def get_app_dir() -> Path:
-    """获取应用根目录（exe 所在目录或项目根目录）"""
+    """获取应用根目录
+
+    优先级:
+    1. NEXUS_APP_DIR 环境变量（Tauri 壳设置，指向 Tauri exe 所在目录）
+    2. sys.executable.parent（PyInstaller 冻结模式 / 独立运行）
+    3. 项目根目录（开发模式）
+    """
+    # Tauri 壳传入的 app 目录
+    env_dir = os.environ.get("NEXUS_APP_DIR")
+    if env_dir:
+        p = Path(env_dir)
+        if p.exists():
+            return p
+
     if getattr(sys, "frozen", False):
-        # PyInstaller 打包后
         return Path(sys.executable).parent
     else:
         return Path(__file__).resolve().parent.parent.parent
