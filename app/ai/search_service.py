@@ -12,6 +12,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 # 全局子进程引用
 _proc: subprocess.Popen | None = None
+_drain_threads: list[threading.Thread] = []
+_log_file_handle = None
 
 # 默认端口，与 open-webSearch 一致
 DEFAULT_PORT = 3210
@@ -26,7 +29,30 @@ DEFAULT_PORT = 3210
 
 def _find_node() -> str | None:
     """查找 node 可执行文件"""
-    return shutil.which("node")
+    # 优先使用 PATH 查找
+    node = shutil.which("node")
+    if node:
+        return node
+
+    # Windows 常见安装路径回退
+    if sys.platform == "win32":
+        candidates = [
+            Path(os.environ.get("PROGRAMFILES", "")) / "nodejs" / "node.exe",
+            Path(os.environ.get("PROGRAMFILES(X86)", "")) / "nodejs" / "node.exe",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "nodejs" / "node.exe",
+            Path(os.environ.get("APPDATA", "")) / "nvm" / "node.exe",
+            Path.home() / "AppData" / "Local" / "Programs" / "nodejs" / "node.exe",
+        ]
+        # 也检查 NVM_SYMLINK
+        nvm_link = os.environ.get("NVM_SYMLINK")
+        if nvm_link:
+            candidates.insert(0, Path(nvm_link) / "node.exe")
+
+        for p in candidates:
+            if p.exists():
+                return str(p)
+
+    return None
 
 
 def _find_open_websearch_dir() -> Path | None:
@@ -122,21 +148,40 @@ def start_search_service(port: int = DEFAULT_PORT) -> bool:
     # 强制 daemon 模式只启用 HTTP（不需要 stdio MCP）
     env["MODE"] = "http"
 
+    global _log_file_handle
     try:
         # Windows: 不弹出控制台窗口
         kwargs = {}
         if sys.platform == "win32":
             kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
 
-        _proc = subprocess.Popen(
-            [node, str(entry), "serve", "--host", "127.0.0.1", "--port", str(port)],
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=str(ows_dir),
-            **kwargs,
-        )
-        logger.info(f"正在启动搜索服务 (PID={_proc.pid})，端口 {port}...")
+        # 将 stdout/stderr 重定向到日志文件，避免 PIPE 缓冲区满导致死锁
+        log_dir = Path(os.environ.get("NEXUS_APP_DIR", Path.cwd())) / "data"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "search_service.log"
+
+        try:
+            _log_file_handle = open(log_file, "a", encoding="utf-8")
+            _proc = subprocess.Popen(
+                [node, str(entry), "serve", "--host", "127.0.0.1", "--port", str(port)],
+                env=env,
+                stdout=_log_file_handle,
+                stderr=subprocess.STDOUT,
+                cwd=str(ows_dir),
+                **kwargs,
+            )
+            logger.info(f"正在启动搜索服务 (PID={_proc.pid})，端口 {port}，日志: {log_file}")
+        except Exception:
+            # 如果日志文件打不开，回退到 DEVNULL
+            _proc = subprocess.Popen(
+                [node, str(entry), "serve", "--host", "127.0.0.1", "--port", str(port)],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=str(ows_dir),
+                **kwargs,
+            )
+            logger.info(f"正在启动搜索服务 (PID={_proc.pid})，端口 {port}（无日志文件）")
 
         if _wait_for_ready(port, timeout=15.0):
             logger.info(f"搜索服务已就绪，端口 {port}")
@@ -144,7 +189,7 @@ def start_search_service(port: int = DEFAULT_PORT) -> bool:
             atexit.register(stop_search_service)
             return True
         else:
-            logger.warning("搜索服务启动超时")
+            logger.warning(f"搜索服务启动超时，检查日志: {log_file}")
             stop_search_service()
             return False
 
@@ -155,7 +200,7 @@ def start_search_service(port: int = DEFAULT_PORT) -> bool:
 
 def stop_search_service():
     """停止守护进程"""
-    global _proc
+    global _proc, _log_file_handle
     if _proc is None:
         return
 
@@ -176,6 +221,12 @@ def stop_search_service():
         logger.warning(f"停止搜索服务时出错: {e}")
     finally:
         _proc = None
+        if _log_file_handle:
+            try:
+                _log_file_handle.close()
+            except Exception:
+                pass
+            _log_file_handle = None
 
 
 def is_search_service_running(port: int = DEFAULT_PORT) -> bool:

@@ -16,6 +16,18 @@ use tauri::WebviewUrl;
 
 struct BackendProcess(Mutex<Option<Child>>);
 
+impl Drop for BackendProcess {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.0.lock() {
+            if let Some(ref mut c) = *g {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            *g = None;
+        }
+    }
+}
+
 const CLOCK_LABEL: &str = "clock";
 const INPUT_LABEL: &str = "countdown_input";
 const TODO_LABEL: &str = "todo_calendar";
@@ -441,7 +453,11 @@ pub fn run() {
                     "exit" => {
                         if let Some(s) = app.try_state::<BackendProcess>() {
                             if let Ok(mut g) = s.0.lock() {
-                                if let Some(ref mut c) = *g { let _ = c.kill(); }
+                                if let Some(ref mut c) = *g {
+                                    let _ = c.kill();
+                                    let _ = c.wait();
+                                }
+                                *g = None;
                             }
                         }
                         app.exit(0);

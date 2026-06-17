@@ -75,6 +75,26 @@ class SettingsPage(QWidget):
 
         layout.addWidget(theme_group)
 
+        # ── 联网搜索服务 ────────────────────────────────────────
+        search_svc_group = self._create_group("联网搜索服务")
+        search_svc_layout = QHBoxLayout(search_svc_group)
+
+        self._search_status_label = QLabel("状态：检测中...")
+        search_svc_layout.addWidget(self._search_status_label)
+
+        self._search_toggle_btn = QPushButton("启动服务")
+        self._search_toggle_btn.setStyleSheet(BTN_PRIMARY_QSS())
+        self._search_toggle_btn.clicked.connect(self._toggle_search_service)
+        search_svc_layout.addWidget(self._search_toggle_btn)
+
+        refresh_btn = QPushButton("刷新")
+        refresh_btn.setStyleSheet(BTN_SECONDARY_QSS())
+        refresh_btn.clicked.connect(self._check_search_status)
+        search_svc_layout.addWidget(refresh_btn)
+        search_svc_layout.addStretch()
+
+        layout.addWidget(search_svc_group)
+
         # ── 搜索设置 ────────────────────────────────────────
         search_group = self._create_group("🔍 搜索设置")
         search_layout = QVBoxLayout(search_group)
@@ -141,7 +161,26 @@ class SettingsPage(QWidget):
         backup_btn.setStyleSheet(BTN_SECONDARY_QSS())
         backup_btn.clicked.connect(self._manual_backup)
         btn_row2.addWidget(backup_btn)
+
+        import_db_btn = QPushButton("导入 .db 恢复")
+        import_db_btn.setStyleSheet(BTN_SECONDARY_QSS())
+        import_db_btn.clicked.connect(self._import_db_restore)
+        btn_row2.addWidget(import_db_btn)
         data_layout.addLayout(btn_row2)
+
+        # 备份列表
+        self._backup_table = QTableWidget()
+        self._backup_table.setColumnCount(4)
+        self._backup_table.setHorizontalHeaderLabels(["类型", "大小", "时间", "操作"])
+        self._backup_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._backup_table.setStyleSheet(TABLE_QSS())
+        self._backup_table.setMaximumHeight(200)
+        data_layout.addWidget(self._backup_table)
+
+        refresh_backup_btn = QPushButton("刷新备份列表")
+        refresh_backup_btn.setStyleSheet(BTN_SECONDARY_QSS())
+        refresh_backup_btn.clicked.connect(self._load_backups)
+        data_layout.addWidget(refresh_backup_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
         layout.addWidget(data_group)
 
@@ -149,6 +188,8 @@ class SettingsPage(QWidget):
 
     def refresh(self):
         self._load_models()
+        self._load_backups()
+        self._check_search_status()
 
     def _create_group(self, title: str) -> QGroupBox:
         from app.ui.theme import GROUPBOX_QSS
@@ -380,8 +421,128 @@ class SettingsPage(QWidget):
         result = create_backup("manual")
         if result:
             QMessageBox.information(self, "备份成功", f"备份已保存到:\n{result}")
+            self._load_backups()
         else:
             QMessageBox.warning(self, "备份失败", "无法创建备份")
+
+    def _import_db_restore(self):
+        """从 .db 文件恢复数据"""
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(self, "选择数据库文件", "", "SQLite 数据库 (*.db)")
+        if not path:
+            return
+        reply = QMessageBox.question(
+            self, "确认恢复",
+            f"确定要从以下文件恢复数据吗？\n{path}\n\n当前数据将被覆盖（恢复前会自动备份当前数据）。\n恢复后需要重启应用。",
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            from app.services.backup_service import restore_backup
+            result = restore_backup(path)
+            if result:
+                QMessageBox.information(self, "恢复成功", "数据已恢复，请重启应用以加载恢复的数据。")
+                self._load_backups()
+            else:
+                QMessageBox.warning(self, "恢复失败", "无法恢复数据库文件")
+        except Exception as e:
+            QMessageBox.warning(self, "恢复失败", f"恢复失败: {e}")
+
+    def _load_backups(self):
+        """加载备份列表"""
+        from app.services.backup_service import list_backups
+        backups = list_backups()
+        self._backup_table.setRowCount(len(backups))
+        for i, b in enumerate(backups):
+            name = b.get("name", "")
+            # 类型标签
+            if "manual" in name:
+                label = "手动备份"
+            elif "monthly" in name:
+                label = "每月备份"
+            elif "weekly" in name:
+                label = "每周备份"
+            elif "before_restore" in name:
+                label = "恢复前备份"
+            else:
+                label = "每日备份"
+            self._backup_table.setItem(i, 0, QTableWidgetItem(label))
+
+            # 大小
+            size = b.get("size", 0)
+            if size < 1024:
+                size_str = f"{size} B"
+            elif size < 1024 * 1024:
+                size_str = f"{size / 1024:.1f} KB"
+            else:
+                size_str = f"{size / 1024 / 1024:.1f} MB"
+            self._backup_table.setItem(i, 1, QTableWidgetItem(size_str))
+
+            # 时间
+            self._backup_table.setItem(i, 2, QTableWidgetItem(b.get("time", "")))
+
+            # 恢复按钮
+            restore_btn = QPushButton("恢复")
+            restore_btn.setStyleSheet(BTN_PRIMARY_QSS())
+            restore_btn.setFixedSize(60, 28)
+            restore_btn.clicked.connect(lambda _, p=b.get("path", ""): self._restore_backup(p))
+            self._backup_table.setCellWidget(i, 3, restore_btn)
+
+    def _restore_backup(self, backup_path: str):
+        """从备份恢复"""
+        reply = QMessageBox.question(
+            self, "确认恢复",
+            "确定要恢复到此备份吗？\n当前数据将被覆盖（恢复前会自动备份当前数据）。\n恢复后需要重启应用。",
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        from app.services.backup_service import restore_backup
+        result = restore_backup(backup_path)
+        if result:
+            QMessageBox.information(self, "恢复成功", "数据已恢复，请重启应用以加载恢复的数据。")
+            self._load_backups()
+        else:
+            QMessageBox.warning(self, "恢复失败", "无法恢复备份文件")
+
+    def _check_search_status(self):
+        """检查搜索服务状态"""
+        from app.ai.search_service import is_search_service_running
+        running = is_search_service_running()
+        t = self._theme
+        if running:
+            self._search_status_label.setText("状态：运行中")
+            self._search_status_label.setStyleSheet(f"color: {t.get('accent_green', '#10b981')};")
+            self._search_toggle_btn.setText("停止服务")
+        else:
+            self._search_status_label.setText("状态：未启动")
+            self._search_status_label.setStyleSheet(f"color: #ef4444;")
+            self._search_toggle_btn.setText("启动服务")
+
+    def _toggle_search_service(self):
+        """启动/停止搜索服务"""
+        from app.ai.search_service import is_search_service_running, start_search_service, stop_search_service, _find_node, _find_open_websearch_dir
+        if is_search_service_running():
+            stop_search_service()
+        else:
+            node = _find_node()
+            ows_dir = _find_open_websearch_dir()
+            if not node:
+                QMessageBox.warning(self, "启动失败",
+                    "未找到 Node.js，请安装后重启应用。\n\n"
+                    "下载地址: https://nodejs.org\n"
+                    "安装后请确保 Node.js 在系统 PATH 中。")
+            elif not ows_dir:
+                QMessageBox.warning(self, "启动失败",
+                    "未找到 open-webSearch 目录。\n\n"
+                    "请检查应用目录下是否存在 open-webSearch 文件夹。")
+            else:
+                ok = start_search_service()
+                if not ok:
+                    QMessageBox.warning(self, "启动失败",
+                        "搜索服务启动超时，请检查：\n"
+                        "1. 端口 3210 是否被其他程序占用\n"
+                        "2. 查看 data/search_service.log 日志")
+        self._check_search_status()
 
 
 class AddModelDialog(QDialog):

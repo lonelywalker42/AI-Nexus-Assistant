@@ -87,33 +87,56 @@ def save_from_search(db: Session, paper_data: dict) -> Paper:
     """从搜索结果入库"""
     # 检查是否已存在（按 title 去重）
     title = paper_data.get("title", "")
+    if not title:
+        raise ValueError("文献标题不能为空")
+
     existing = db.query(Paper).filter(Paper.title == title).first()
     if existing:
         return existing
 
+    # 清洗 authors 数据
     authors = paper_data.get("authors", [])
-    if isinstance(authors, list):
-        authors_json = json.dumps(authors, ensure_ascii=False)
-    else:
-        authors_json = str(authors)
+    if isinstance(authors, str):
+        try:
+            authors = json.loads(authors)
+        except (json.JSONDecodeError, TypeError):
+            authors = [authors] if authors else []
+    if not isinstance(authors, list):
+        authors = []
+    authors = [a for a in authors if a]  # 过滤空字符串
+    authors_json = json.dumps(authors, ensure_ascii=False)
 
-    # 生成 GB/T 7714 引用
-    from app.search.citation import format_gb
-    citation = format_gb(paper_data, 1)
+    # 清洗 year
+    year = paper_data.get("year", 0)
+    if isinstance(year, str):
+        try:
+            year = int(year)
+        except (ValueError, TypeError):
+            year = 0
+    elif not isinstance(year, int):
+        year = 0
+
+    # 生成 GB/T 7714 引用（容错处理）
+    citation = ""
+    try:
+        from app.search.citation import format_gb
+        citation = format_gb(paper_data, 1)
+    except Exception:
+        pass  # 引用生成失败不影响入库
 
     paper = Paper(
-        title=title,
+        title=title[:500],
         authors=authors_json,
-        year=paper_data.get("year", 0),
-        doi=paper_data.get("doi", ""),
-        abstract=paper_data.get("abstract", ""),
-        journal=paper_data.get("journal", ""),
-        source=paper_data.get("source", ""),
-        url=paper_data.get("url", ""),
+        year=year,
+        doi=str(paper_data.get("doi", ""))[:200],
+        abstract=str(paper_data.get("abstract", ""))[:10000],
+        journal=str(paper_data.get("journal", ""))[:500],
+        source=str(paper_data.get("source", ""))[:50],
+        url=str(paper_data.get("url", ""))[:1000],
         citation=citation,
-        paper_type=paper_data.get("paper_type", "未知"),
-        has_fulltext=paper_data.get("has_fulltext", False),
-        star_rating=paper_data.get("star_rating", 0),
+        paper_type=str(paper_data.get("paper_type", "未知"))[:50],
+        has_fulltext=bool(paper_data.get("has_fulltext", False)),
+        star_rating=int(paper_data.get("star_rating", 0)) if paper_data.get("star_rating") else 0,
     )
     db.add(paper)
     db.commit()

@@ -57,7 +57,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
           onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
         >
-          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v1.4.0</span>
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v2.0.0</span>
         </div>
       </aside>
 
@@ -74,19 +74,19 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
             <div className="text-center space-y-3">
               <div className="text-3xl font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>NEXUS</div>
               <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>AI Nexus Assistant</p>
-              <p className="text-xs" style={{ color: "var(--text-muted)" }}>v1.0.0</p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>v2.0.0</p>
               <div className="h-px" style={{ background: "var(--border-color)" }} />
               <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                 面向航空航天/控制领域科研人员的个人研究助手桌面应用。
-                集成任务管理、文献检索、AI 综述、试验记录、知识库、AI 对话六大功能模块，
-                支持 8 源学术搜索、流式 AI 对话、本地文献管理。
+                集成仪表盘、任务管理、文献检索与管理、AI 综述、试验记录、知识库、AI 对话七大功能模块，
+                支持 8 源学术搜索、PDF 文献导入与 AI 元数据提取、流式 AI 对话（含联网搜索）、本地数据备份与恢复。
               </p>
               <div className="flex justify-center gap-4 text-[10px] pt-1" style={{ color: "var(--text-muted)" }}>
                 <span>Tauri 2 + React</span>
                 <span>•</span>
                 <span>FastAPI + SQLite</span>
                 <span>•</span>
-                <span>DeepSeek / OpenAI</span>
+                <span>DeepSeek / OpenAI / Anthropic</span>
               </div>
               {sysInfo && (
                 <div className="text-[10px] pt-1 space-y-0.5" style={{ color: "var(--text-muted)" }}>

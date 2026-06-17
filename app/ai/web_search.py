@@ -53,8 +53,35 @@ def web_search(query: str, max_results: int = 5) -> list[dict]:
         return results
 
     except httpx.ConnectError:
-        logger.warning("open-webSearch 守护进程未运行 (port 3210)")
-        return [{"title": "搜索服务未启动", "url": "", "snippet": "请确保 open-webSearch 守护进程已启动", "engine": "error"}]
+        logger.warning("open-webSearch 守护进程未运行 (port 3210)，尝试重启...")
+        # 尝试自动重启搜索服务
+        try:
+            from app.ai.search_service import start_search_service
+            if start_search_service():
+                # 重启成功，重试搜索
+                try:
+                    resp = httpx.post(
+                        _OWS_URL,
+                        json={"query": query, "limit": max_results, "engines": ["bing"]},
+                        timeout=_OWS_TIMEOUT,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    if data.get("status") == "ok" and data.get("data"):
+                        results = []
+                        for item in data["data"].get("results", [])[:max_results]:
+                            results.append({
+                                "title": item.get("title", ""),
+                                "url": item.get("url", ""),
+                                "snippet": item.get("description", ""),
+                                "engine": item.get("engine", "open-websearch"),
+                            })
+                        return results
+                except Exception as retry_err:
+                    logger.warning(f"重启后重试搜索失败: {retry_err}")
+        except Exception as restart_err:
+            logger.warning(f"重启搜索服务失败: {restart_err}")
+        return [{"title": "搜索服务未启动", "url": "", "snippet": "open-webSearch 守护进程不可用，请检查 Node.js 是否安装", "engine": "error"}]
     except Exception as e:
         logger.warning(f"open-webSearch 调用失败: {e}")
         return [{"title": "搜索失败", "url": "", "snippet": str(e), "engine": "error"}]

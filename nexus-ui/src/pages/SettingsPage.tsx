@@ -15,14 +15,17 @@ export default function SettingsPage() {
   const [form, setForm] = useState({ name: "", base_url: "", api_key: "", model_name: "", protocol: "openai", purpose: "all" });
   const [theme, setTheme] = useState(() => localStorage.getItem("nexus-theme") || "light");
   const [backups, setBackups] = useState<BackupItem[]>([]);
+  const [searchRunning, setSearchRunning] = useState<boolean | null>(null);
 
   useEffect(() => {
     modelsApi.list().then(setModels).catch(console.error);
     loadBackups();
+    loadSearchStatus();
   }, []);
 
   const loadModels = () => modelsApi.list().then(setModels).catch(console.error);
   const loadBackups = () => fetch("http://127.0.0.1:8765/api/backups").then(r => r.json()).then(setBackups).catch(() => {});
+  const loadSearchStatus = () => fetch("http://127.0.0.1:8765/api/search-service/status").then(r => r.json()).then(d => setSearchRunning(d.running)).catch(() => setSearchRunning(null));
 
   const handleSaveModel = async () => {
     if (!form.name || !form.base_url || !form.model_name) return;
@@ -209,6 +212,49 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* 联网搜索服务 */}
+      <div className="glass-card p-5 space-y-4">
+        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>联网搜索服务</h3>
+        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          AI 对话中使用联网搜索需要 open-webSearch 服务运行（需要 Node.js）
+        </p>
+        <div className="flex items-center gap-3">
+          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            状态：
+            {searchRunning === null ? "检测中..." :
+              searchRunning ?
+                <span style={{ color: "var(--accent-green)" }}>运行中</span> :
+                <span style={{ color: "#ef4444" }}>未启动</span>}
+          </span>
+          <button className="btn-ghost text-xs" onClick={loadSearchStatus}>刷新</button>
+          {searchRunning ? (
+            <button className="btn-ghost text-xs"
+              style={{ color: "#ef4444" }}
+              onClick={async () => {
+                try {
+                  await fetch("http://127.0.0.1:8765/api/search-service/stop", { method: "POST" });
+                  loadSearchStatus();
+                } catch (err) { alert(`停止失败: ${err}`); }
+              }}
+            >停止服务</button>
+          ) : (
+            <button className="btn-gradient btn-click text-xs"
+              onClick={async () => {
+                try {
+                  const res = await fetch("http://127.0.0.1:8765/api/search-service/start", { method: "POST" });
+                  const data = await res.json();
+                  loadSearchStatus();
+                  if (!data.ok) {
+                    const errMsg = data.error || "未知错误";
+                    alert(`启动失败：${errMsg}\n\n请确保：\n1. Node.js 已安装（https://nodejs.org）\n2. 安装后重启应用\n3. 检查系统 PATH 环境变量包含 Node.js 路径`);
+                  }
+                } catch (err) { alert(`启动失败: ${err}\n\n请确认后端服务正在运行`); }
+              }}
+            >启动服务</button>
+          )}
+        </div>
+      </div>
+
       {/* 数据管理 */}
       <div className="glass-card p-5 space-y-4">
         <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>数据管理</h3>
@@ -250,6 +296,36 @@ export default function SettingsPage() {
               }
             }}
           >手动备份</button>
+          <button className="btn-ghost"
+            onClick={() => {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = ".db";
+              input.onchange = async (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (!file) return;
+                if (!confirm(`确定要从 "${file.name}" 恢复数据吗？当前数据将被覆盖（恢复前会自动备份）。`)) return;
+                try {
+                  const bytes = await file.arrayBuffer();
+                  const res = await fetch("http://127.0.0.1:8765/api/backups/import-db", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/octet-stream" },
+                    body: bytes,
+                  });
+                  const result = await res.json();
+                  if (result.ok) {
+                    alert("恢复成功！请重启应用以加载恢复的数据。");
+                    loadBackups();
+                  } else {
+                    alert("恢复失败: " + (result.detail || "未知错误"));
+                  }
+                } catch (err) {
+                  alert(`恢复失败: ${err}`);
+                }
+              };
+              input.click();
+            }}
+          >导入 .db 恢复</button>
         </div>
 
         {/* 备份列表 */}

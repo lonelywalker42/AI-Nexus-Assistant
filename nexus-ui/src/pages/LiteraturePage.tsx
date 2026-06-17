@@ -358,7 +358,10 @@ export default function LiteraturePage() {
                     try {
                       await papersApi.fromSearch(p as unknown as Record<string, unknown>);
                       alert("已入库");
-                    } catch { alert("入库失败"); }
+                    } catch (err) {
+                      console.error("入库失败:", err);
+                      alert("入库失败: " + (err instanceof Error ? err.message : String(err)));
+                    }
                   }}>入库</button>
                 </div>
               </div>

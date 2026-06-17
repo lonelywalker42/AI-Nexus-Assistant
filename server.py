@@ -68,6 +68,40 @@ try:
     # 初始化数据库
     init_db()
 
+    # 自动迁移：对比模型定义与实际数据库 schema，自动添加缺失列
+    def _auto_migrate():
+        import sqlite3
+        try:
+            db_path = get_data_dir() / "nexus.db"
+            if not db_path.exists():
+                return
+            conn = sqlite3.connect(str(db_path))
+
+            # 导入所有模型，获取 ORM 定义的表结构
+            from app.models.paper import Paper
+            from app.models.chat import ChatSession, ChatMessage
+            from app.models.experiment import Experiment, ExperimentResult
+
+            models = [Paper, ChatSession, ChatMessage, Experiment, ExperimentResult]
+            for model in models:
+                try:
+                    cursor = conn.execute(f"PRAGMA table_info({model.__tablename__})")
+                    existing = {row[1] for row in cursor.fetchall()}
+                    for col in model.__table__.columns:
+                        if col.name not in existing:
+                            typedef = str(col.type)
+                            conn.execute(f"ALTER TABLE {model.__tablename__} ADD COLUMN {col.name} {typedef}")
+                            print(f"[server] 迁移: 添加 {model.__tablename__}.{col.name}", flush=True)
+                except Exception:
+                    pass  # 表不存在时忽略
+
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[server] 自动迁移警告: {e}", flush=True)
+
+    _auto_migrate()
+
     # 启动 open-webSearch 聚合搜索服务（后台子进程）
     try:
         _search_ok = start_search_service()
@@ -791,6 +825,10 @@ def save_paper_from_search(body: dict):
     try:
         paper = paper_service.save_from_search(db, body)
         return _paper_to_dict(paper)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(400, str(e))
     finally:
         db.close()
 
@@ -823,88 +861,169 @@ def generate_paper_summary(paper_id: str):
 
 @app.post("/api/papers/import-pdf")
 async def import_paper_pdf(request: Request):
-    """导入 PDF 到文献库"""
+    """导入 PDF 到文献库 — 使用 AI 提取元数据"""
     import urllib.parse
     import tempfile
-    import fitz
+    import re
+
+    # 检查 fitz 可用性
+    try:
+        import fitz
+    except ImportError:
+        raise HTTPException(500, "PyMuPDF 未安装，请运行: pip install pymupdf")
 
     filename_raw = request.headers.get("x-filename", "paper.pdf")
     filename = urllib.parse.unquote(filename_raw)
     file_bytes = await request.body()
 
     if not file_bytes or len(file_bytes) < 100:
-        return {"error": f"File too small ({len(file_bytes) if file_bytes else 0} bytes)"}
+        raise HTTPException(400, f"文件太小 ({len(file_bytes) if file_bytes else 0} bytes)")
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(file_bytes)
         tmp_path = tmp.name
 
     try:
+        # 提取 PDF 文本
         doc = fitz.open(tmp_path)
         text = ""
         for page in doc:
             text += page.get_text()
         doc.close()
 
+        if not text.strip():
+            raise HTTPException(400, "PDF 无法提取文本（可能是扫描版或纯图片 PDF）")
+
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         title = lines[0][:200] if lines else filename.replace(".pdf", "")
 
-        # AI 提取元数据
+        # AI 提取元数据 — 使用详细 prompt
         ai = get_ai()
+        system_prompt = """你是学术文献分析助手。请从以下学术论文文本中提取元数据。
+
+要求：
+1. 仔细阅读文本，提取准确的标题、作者、年份、期刊/会议名、DOI、摘要
+2. 生成一段200字以内的中文摘要，概括研究目的、方法和主要发现
+3. authors 应该是字符串数组，每个元素是"名 姓"格式
+4. year 必须是整数
+5. 必须返回纯JSON，不要添加任何其他文本或代码块标记
+
+返回格式：
+{"title":"...","authors":["FirstName LastName", "..."],"year":2024,"journal":"...","doi":"...","abstract":"...","summary":"中文摘要..."}"""
+
         result = ai.chat([
-            {"role": "system", "content": "你是学术文献分析助手。请从以下文本中提取文献元数据，用JSON返回：{\"title\":\"...\",\"authors\":[...],\"year\":2024,\"journal\":\"...\",\"doi\":\"...\",\"abstract\":\"...\",\"summary\":\"200字中文摘要\"}"},
-            {"role": "user", "content": text[:4000]}
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text[:8000]}
         ])
 
-        import re
-        json_match = re.search(r'\{[\s\S]*\}', result.get("content", ""))
-        meta = {}
-        if json_match:
-            try:
-                meta = json.loads(json_match.group())
-            except:
-                pass
+        content = result.get("content", "")
+
+        # 解析 JSON — 支持多种格式
+        meta = _parse_ai_json(content)
+
+        # JSON 解析失败时重试
+        if not meta or not meta.get("title"):
+            retry_prompt = f"""请从以下文本中提取文献元数据，只返回纯JSON，不要包含```json```标记：
+{{"title":"...","authors":["..."],"year":2024,"journal":"...","doi":"...","abstract":"...","summary":"..."}}
+
+文本内容：
+{text[:6000]}"""
+            result2 = ai.chat([{"role": "user", "content": retry_prompt}])
+            meta = _parse_ai_json(result2.get("content", ""))
 
         if not meta.get("title"):
             meta["title"] = title
 
+        # 确保 authors 是列表
+        if isinstance(meta.get("authors"), str):
+            meta["authors"] = [a.strip() for a in meta["authors"].split(",") if a.strip()]
+        elif not isinstance(meta.get("authors"), list):
+            meta["authors"] = []
+
+        # 确保 year 是整数
+        try:
+            meta["year"] = int(meta.get("year", 0))
+        except (ValueError, TypeError):
+            meta["year"] = 0
+
         # 保存 PDF 文件
         pdf_dir = data_dir / "pdfs"
         pdf_dir.mkdir(parents=True, exist_ok=True)
-        import shutil
         import uuid as _uuid
         pdf_filename = f"{_uuid.uuid4().hex[:8]}_{filename}"
         pdf_path = pdf_dir / pdf_filename
         with open(pdf_path, "wb") as f:
             f.write(file_bytes)
 
-        # 生成引用
-        from app.search.citation import format_gb
-        citation = format_gb(meta, 1)
+        # 生成引用（容错）
+        citation = ""
+        try:
+            from app.search.citation import format_gb
+            citation = format_gb(meta, 1)
+        except Exception:
+            pass
 
         db = get_session()
         try:
             paper = paper_service.create_paper(
                 db,
-                title=meta.get("title", title)[:200],
+                title=str(meta.get("title", title))[:200],
                 authors=json.dumps(meta.get("authors", []), ensure_ascii=False),
                 year=meta.get("year", 0),
-                doi=meta.get("doi", ""),
-                abstract=meta.get("abstract", text[:1000]),
-                journal=meta.get("journal", ""),
+                doi=str(meta.get("doi", ""))[:200],
+                abstract=str(meta.get("abstract", text[:1000]))[:10000],
+                journal=str(meta.get("journal", ""))[:500],
                 source="pdf_import",
                 paper_type="journal",
                 citation=citation,
-                ai_summary=meta.get("summary", ""),
+                ai_summary=str(meta.get("summary", ""))[:2000],
                 local_path=str(pdf_path),
             )
             return _paper_to_dict(paper)
         finally:
             db.close()
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, str(e))
     finally:
-        os.unlink(tmp_path)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def _parse_ai_json(content: str) -> dict:
+    """从 AI 返回内容中解析 JSON，支持纯 JSON 和 markdown 代码块"""
+    import re
+    if not content:
+        return {}
+
+    # 尝试1: 直接解析整个内容
+    try:
+        return json.loads(content.strip())
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # 尝试2: 从 markdown 代码块中提取 ```json ... ```
+    code_block = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?\s*```', content)
+    if code_block:
+        try:
+            return json.loads(code_block.group(1).strip())
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 尝试3: 提取最外层 { ... }
+    json_match = re.search(r'\{[\s\S]*\}', content)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return {}
 
 
 @app.get("/api/papers/stats")
@@ -922,24 +1041,39 @@ def search_papers_for_mention(q: str = "", limit: int = 10):
     db = get_session()
     try:
         papers = paper_service.get_papers(db, search=q)
+        def _safe_authors(s):
+            if not s:
+                return []
+            try:
+                return json.loads(s)
+            except (json.JSONDecodeError, TypeError):
+                return []
         return [{"id": p.id, "title": p.title,
-                 "authors": json.loads(p.authors) if p.authors else [],
+                 "authors": _safe_authors(p.authors),
                  "year": p.year} for p in papers[:limit]]
     finally:
         db.close()
 
 
 def _paper_to_dict(p: Paper) -> dict:
+    def _safe_json(s, default):
+        if not s:
+            return default
+        try:
+            return json.loads(s)
+        except (json.JSONDecodeError, TypeError):
+            return default
+
     return {
         "id": p.id, "title": p.title,
-        "authors": json.loads(p.authors) if p.authors else [],
+        "authors": _safe_json(p.authors, []),
         "year": p.year, "doi": p.doi, "abstract": p.abstract,
         "journal": p.journal, "source": p.source, "url": p.url,
         "citation": p.citation, "paper_type": p.paper_type,
         "has_fulltext": p.has_fulltext, "star_rating": p.star_rating,
         "user_notes": p.user_notes, "ai_summary": p.ai_summary,
         "local_path": p.local_path,
-        "tags": json.loads(p.tags) if p.tags else [],
+        "tags": _safe_json(p.tags, []),
         "review_id": p.review_id,
         "created_at": p.created_at.isoformat(),
     }
@@ -1375,6 +1509,74 @@ def restore_backup(body: dict):
     return {"ok": bool(result)}
 
 
+@app.post("/api/backups/import-db")
+async def import_db_file(request: Request):
+    """导入 .db 文件恢复数据"""
+    import tempfile
+    import shutil
+
+    file_bytes = await request.body()
+    if not file_bytes or len(file_bytes) < 100:
+        raise HTTPException(400, "文件太小或为空")
+
+    # 验证是 SQLite 文件（头16字节应包含 "SQLite format"）
+    header = file_bytes[:16]
+    if b"SQLite format" not in header:
+        raise HTTPException(400, "不是有效的 SQLite 数据库文件")
+
+    # 写入临时文件
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+
+    try:
+        from app.services.backup_service import restore_backup as _restore
+        result = _restore(tmp_path)
+        if result:
+            get_ai().reload()
+        return {"ok": bool(result)}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+# ══════════════════════════════════════════════════════════════
+#  搜索服务控制
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/api/search-service/status")
+def search_service_status():
+    """检查搜索服务状态"""
+    from app.ai.search_service import is_search_service_running
+    return {"running": is_search_service_running()}
+
+
+@app.post("/api/search-service/start")
+def search_service_start():
+    """启动搜索服务"""
+    from app.ai.search_service import start_search_service, _find_node, _find_open_websearch_dir
+    node = _find_node()
+    ows_dir = _find_open_websearch_dir()
+    if not node:
+        return {"ok": False, "running": False, "error": "未找到 Node.js，请安装后重启应用"}
+    if not ows_dir:
+        return {"ok": False, "running": False, "error": "未找到 open-webSearch 目录"}
+    ok = start_search_service()
+    return {"ok": ok, "running": ok}
+
+
+@app.post("/api/search-service/stop")
+def search_service_stop():
+    """停止搜索服务"""
+    from app.ai.search_service import stop_search_service, is_search_service_running
+    stop_search_service()
+    return {"ok": True, "running": is_search_service_running()}
+
+
 # ══════════════════════════════════════════════════════════════
 #  导入
 # ══════════════════════════════════════════════════════════════
@@ -1622,6 +1824,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
+
+    # 检测端口是否已被占用（旧实例未退出）
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", args.port))
+        sock.close()
+    except OSError:
+        print(f"[server] 端口 {args.port} 已被占用，可能有旧实例在运行", flush=True)
+        print(f"[server] 请先关闭旧实例，或使用 taskkill /F /IM nexus-server.exe", flush=True)
+        # 不退出 — 让搜索服务继续运行，Tauri 前端会连接到旧实例
+        # 但需要清理搜索服务（因为 atexit 会在 sys.exit 时触发）
+        sys.exit(0)
 
     print(f"NEXUS_SERVER_READY:{args.port}", flush=True)
     import uvicorn

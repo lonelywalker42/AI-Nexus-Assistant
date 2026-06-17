@@ -25,7 +25,8 @@ export default function PaperLibraryPage() {
   const [sortOrder, setSortOrder] = useState("desc");
   const [loading, setLoading] = useState(false);
 
-  // 详情编辑
+  // 详情面板
+  const [showDetail, setShowDetail] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState("");
   const [citationFormat, setCitationFormat] = useState("gb7714");
@@ -53,7 +54,14 @@ export default function PaperLibraryPage() {
   const loadPapers = () => {
     setLoading(true);
     papersApi.list({ search, sort_by: sortBy, sort_order: sortOrder })
-      .then(setPapers)
+      .then(result => {
+        setPapers(prev => {
+          // 合并服务器结果与本地新增（防止竞态覆盖）
+          const serverIds = new Set(result.map((p: PaperDetail) => p.id));
+          const localOnly = prev.filter(p => !serverIds.has(p.id));
+          return [...result, ...localOnly];
+        });
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
@@ -68,7 +76,8 @@ export default function PaperLibraryPage() {
     }
   }, [selectedId, citationFormat]);
 
-  const handleStar = async (id: string, rating: number) => {
+  const handleStar = async (id: string, rating: number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     await papersApi.update(id, { star_rating: rating } as Partial<PaperDetail>);
     setPapers(prev => prev.map(p => p.id === id ? { ...p, star_rating: rating } : p));
   };
@@ -77,7 +86,7 @@ export default function PaperLibraryPage() {
     if (!confirm("确定删除此文献？")) return;
     await papersApi.delete(id);
     setPapers(prev => prev.filter(p => p.id !== id));
-    if (selectedId === id) setSelectedId(null);
+    if (selectedId === id) { setSelectedId(null); setShowDetail(false); }
   };
 
   const handleBatchDelete = async () => {
@@ -87,7 +96,7 @@ export default function PaperLibraryPage() {
     setPapers(prev => prev.filter(p => !selectedIds.has(p.id)));
     setSelectedIds(new Set());
     setBatchMode(false);
-    if (selectedId && selectedIds.has(selectedId)) setSelectedId(null);
+    if (selectedId && selectedIds.has(selectedId)) { setSelectedId(null); setShowDetail(false); }
   };
 
   const handleSaveNotes = async () => {
@@ -130,6 +139,8 @@ export default function PaperLibraryPage() {
           alert(`导入失败: ${data.error}`);
         } else {
           setPapers(prev => [data, ...prev]);
+          setSelectedId(data.id);
+          setShowDetail(true);
         }
       } catch (err) {
         alert(`导入失败: ${err}`);
@@ -158,7 +169,8 @@ export default function PaperLibraryPage() {
     setGenerating(false);
   };
 
-  const toggleBatchSelect = (id: string) => {
+  const toggleBatchSelect = (id: string, e?: React.SyntheticEvent) => {
+    e?.stopPropagation();
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -166,250 +178,301 @@ export default function PaperLibraryPage() {
     });
   };
 
+  const openDetail = (id: string) => {
+    if (batchMode) return;
+    setSelectedId(id);
+    setShowDetail(true);
+    setEditingNotes(false);
+    setCitationFormat("gb7714");
+  };
+
+  const getSourceColor = (source: string) => {
+    const colors: Record<string, { bg: string; text: string }> = {
+      openalex: { bg: "rgba(59,130,246,0.1)", text: "var(--accent-blue)" },
+      arxiv: { bg: "rgba(239,68,68,0.1)", text: "#ef4444" },
+      semantic_scholar: { bg: "rgba(16,185,129,0.1)", text: "var(--accent-green)" },
+      crossref: { bg: "rgba(245,158,11,0.1)", text: "#f59e0b" },
+      pubmed: { bg: "rgba(139,92,246,0.1)", text: "#8b5cf6" },
+      pdf_import: { bg: "rgba(107,114,128,0.1)", text: "var(--text-muted)" },
+    };
+    return colors[source] || { bg: "rgba(107,114,128,0.1)", text: "var(--text-muted)" };
+  };
+
   return (
-    <div className="flex gap-5 h-full">
-      {/* 左侧列表 */}
-      <div className="w-80 flex-shrink-0 flex flex-col gap-3">
-        {/* 搜索 + 排序 */}
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }} />
-            <input className="input-glass pl-8 w-full" placeholder="搜索文献..."
-              value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <select className="input-glass w-28" value={sortBy} onChange={e => setSortBy(e.target.value)}>
-            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <button className="btn-ghost px-2" onClick={() => setSortOrder(o => o === "desc" ? "asc" : "desc")}
-            title={sortOrder === "desc" ? "降序" : "升序"}>
-            {sortOrder === "desc" ? "↓" : "↑"}
-          </button>
+    <div className="flex flex-col h-full gap-4">
+      {/* 顶部工具栏 */}
+      <div className="flex gap-2 items-center flex-wrap">
+        <div className="relative flex-1 min-w-48">
+          <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }} />
+          <input className="input-glass pl-8 w-full" placeholder="搜索文献..."
+            value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-
-        {/* 操作栏 */}
-        <div className="flex gap-2">
-          <button className="btn-gradient btn-click flex-1 text-xs" onClick={() => fileInputRef.current?.click()}>
-            <IconUpload size={12} /> {importing ? "导入中..." : "导入 PDF"}
+        <select className="input-glass w-28" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <button className="btn-ghost px-2" onClick={() => setSortOrder(o => o === "desc" ? "asc" : "desc")}
+          title={sortOrder === "desc" ? "降序" : "升序"}>
+          {sortOrder === "desc" ? "↓" : "↑"}
+        </button>
+        <button className="btn-gradient btn-click text-xs" onClick={() => fileInputRef.current?.click()}>
+          <IconUpload size={12} /> {importing ? "导入中..." : "导入 PDF"}
+        </button>
+        <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={handleImportPdf} />
+        <button className={`btn-ghost text-xs ${batchMode ? "!bg-red-500 !text-white" : ""}`}
+          onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}>
+          {batchMode ? "取消" : "批量"}
+        </button>
+        {batchMode && selectedIds.size > 0 && (
+          <button className="btn-ghost text-xs !bg-red-500 !text-white" onClick={handleBatchDelete}>
+            删除 ({selectedIds.size})
           </button>
-          <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={handleImportPdf} />
-          <button className={`btn-ghost text-xs ${batchMode ? "!bg-red-500 !text-white" : ""}`}
-            onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}>
-            {batchMode ? "取消" : "批量"}
-          </button>
-          {batchMode && selectedIds.size > 0 && (
-            <button className="btn-ghost text-xs !bg-red-500 !text-white" onClick={handleBatchDelete}>
-              删除 ({selectedIds.size})
-            </button>
-          )}
-        </div>
+        )}
+      </div>
 
-        {/* 文献列表 */}
-        <div className="flex-1 overflow-y-auto space-y-1.5">
-          {loading && <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>加载中...</p>}
-          {papers.map(p => (
-            <div key={p.id}
-              onClick={() => batchMode ? toggleBatchSelect(p.id) : setSelectedId(p.id)}
-              className="glass-card px-3 py-2.5 cursor-pointer transition-all"
-              style={selectedId === p.id ? { borderLeft: "3px solid var(--accent-blue)" } : {}}
-            >
-              <div className="flex items-start gap-2">
-                {batchMode && (
-                  <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleBatchSelect(p.id)}
-                    className="mt-1 rounded" onClick={e => e.stopPropagation()} />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{p.title}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>{p.year || "—"}</span>
-                    <span className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>{p.journal}</span>
-                  </div>
-                  <div className="flex items-center gap-1 mt-1">
-                    {[1, 2, 3, 4, 5].map(s => (
-                      <button key={s} onClick={e => { e.stopPropagation(); handleStar(p.id, s === p.star_rating ? 0 : s); }}
-                        className="cursor-pointer">
-                        <IconStar size={12} filled={s <= p.star_rating}
-                          style={{ color: s <= p.star_rating ? "#f59e0b" : "var(--text-muted)" }} />
-                      </button>
-                    ))}
-                    {p.ai_summary && <span className="text-[10px] px-1 rounded" style={{ background: "rgba(16,185,129,0.1)", color: "#10b981" }}>AI</span>}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-          {papers.length === 0 && !loading && (
-            <div className="text-center py-8">
-              <p className="text-sm" style={{ color: "var(--text-muted)" }}>暂无文献</p>
+      {/* 统计信息 */}
+      <div className="flex items-center gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
+        <span>共 {papers.length} 篇文献</span>
+        <span>·</span>
+        <span>{papers.filter(p => p.star_rating > 0).length} 篇已评分</span>
+        {papers.filter(p => p.ai_summary).length > 0 && (
+          <>
+            <span>·</span>
+            <span>{papers.filter(p => p.ai_summary).length} 篇有 AI 摘要</span>
+          </>
+        )}
+        <div className="flex-1" />
+        <button className="btn-ghost text-xs" onClick={() => { setSelectedForReview([]); setShowReviewModal(true); }}>
+          生成综述
+        </button>
+      </div>
+
+      {/* 卡片网格 + 详情面板 */}
+      <div className="flex-1 flex gap-4 min-h-0">
+        {/* 卡片网格 */}
+        <div className={`flex-1 overflow-y-auto ${showDetail ? "hidden lg:block lg:w-0 lg:flex-none" : ""}`}>
+          {loading && <p className="text-xs text-center py-8" style={{ color: "var(--text-muted)" }}>加载中...</p>}
+
+          {!loading && papers.length === 0 && (
+            <div className="text-center py-16">
+              <IconFile size={40} style={{ color: "var(--text-muted)", margin: "0 auto" }} />
+              <p className="mt-3 text-sm" style={{ color: "var(--text-muted)" }}>暂无文献</p>
               <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>导入 PDF 或从搜索结果入库</p>
             </div>
           )}
+
+          {!loading && papers.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {papers.map(p => (
+                <div key={p.id}
+                  onClick={(e) => batchMode ? toggleBatchSelect(p.id, e) : openDetail(p.id)}
+                  className="glass-card p-4 cursor-pointer transition-all hover:scale-[1.01] flex flex-col gap-2 relative group"
+                  style={selectedId === p.id ? { borderLeft: "3px solid var(--accent-blue)" } : {}}
+                >
+                  {/* 批量选择复选框 */}
+                  {batchMode && (
+                    <div className="absolute top-3 left-3">
+                      <input type="checkbox" checked={selectedIds.has(p.id)}
+                        onChange={() => toggleBatchSelect(p.id)}
+                        className="rounded" onClick={e => e.stopPropagation()} />
+                    </div>
+                  )}
+
+                  {/* 标题 */}
+                  <h3 className="text-sm font-semibold leading-snug line-clamp-2 pr-6"
+                    style={{ color: "var(--text-primary)" }}>
+                    {batchMode && <span className="w-5 inline-block" />}
+                    {p.title}
+                  </h3>
+
+                  {/* 来源标签 + 星级 */}
+                  <div className="flex items-center justify-between">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                      style={{ background: getSourceColor(p.source).bg, color: getSourceColor(p.source).text }}>
+                      {p.source || "未知"}
+                    </span>
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map(s => (
+                        <button key={s} onClick={(e) => handleStar(p.id, s === p.star_rating ? 0 : s, e)}
+                          className="cursor-pointer">
+                          <IconStar size={10} filled={s <= p.star_rating}
+                            style={{ color: s <= p.star_rating ? "#f59e0b" : "var(--text-muted)" }} />
+                        </button>
+                      ))}
+                      {p.ai_summary && (
+                        <span className="ml-1 text-[10px] px-1 rounded"
+                          style={{ background: "rgba(16,185,129,0.1)", color: "#10b981" }}>AI</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 作者 + 年份 + 期刊 */}
+                  <div className="text-xs line-clamp-1" style={{ color: "var(--text-secondary)" }}>
+                    {p.authors.length > 0 && <span>{p.authors.slice(0, 3).join(", ")}{p.authors.length > 3 ? " 等" : ""}</span>}
+                    {p.year > 0 && <span> · {p.year}</span>}
+                    {p.journal && <span> · {p.journal}</span>}
+                  </div>
+
+                  {/* 摘要预览 */}
+                  {(p.ai_summary || p.abstract) && (
+                    <p className="text-[11px] leading-relaxed line-clamp-3"
+                      style={{ color: "var(--text-muted)" }}>
+                      {p.ai_summary || p.abstract}
+                    </p>
+                  )}
+
+                  {/* 标签 */}
+                  {p.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-auto">
+                      {p.tags.slice(0, 3).map(tag => (
+                        <span key={tag} className="px-1.5 py-0.5 rounded text-[9px]"
+                          style={{ background: "rgba(59,130,246,0.06)", color: "var(--accent-blue)" }}>
+                          {tag}
+                        </span>
+                      ))}
+                      {p.tags.length > 3 && (
+                        <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>+{p.tags.length - 3}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
 
-      {/* 右侧详情 */}
-      <div className="flex-1 overflow-y-auto space-y-4">
-        {selected ? (
-          <>
-            {/* 基本信息 */}
-            <div className="glass-card p-5 space-y-3">
-              <div className="flex items-start justify-between">
-                <h2 className="text-lg font-bold leading-relaxed" style={{ color: "var(--text-primary)" }}>{selected.title}</h2>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => handleDelete(selected.id)} className="text-xs transition-colors"
-                    style={{ color: "var(--text-muted)" }}
-                    onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
-                    onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
-                  >删除</button>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                {selected.authors.length > 0 && <span>{selected.authors.slice(0, 5).join(", ")}{selected.authors.length > 5 ? " 等" : ""}</span>}
-                {selected.year > 0 && <span>{selected.year}</span>}
-                {selected.journal && <span>{selected.journal}</span>}
-                {selected.doi && <a href={`https://doi.org/${selected.doi}`} target="_blank" rel="noopener"
-                  className="text-xs" style={{ color: "var(--accent-blue)" }}>DOI: {selected.doi}</a>}
-              </div>
-
-              {/* 评分 */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs" style={{ color: "var(--text-muted)" }}>评分:</span>
-                {[1, 2, 3, 4, 5].map(s => (
-                  <button key={s} onClick={() => handleStar(selected.id, s === selected.star_rating ? 0 : s)}
-                    className="cursor-pointer">
-                    <IconStar size={16} filled={s <= selected.star_rating}
-                      style={{ color: s <= selected.star_rating ? "#f59e0b" : "var(--text-muted)" }} />
-                  </button>
-                ))}
-              </div>
-
-              {/* 标签 */}
-              {selected.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {selected.tags.map(tag => (
-                    <span key={tag} className="px-2 py-0.5 rounded-full text-[10px]"
-                      style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>{tag}</span>
-                  ))}
-                </div>
-              )}
+        {/* 详情面板（右侧滑出） */}
+        {showDetail && selected && (
+          <div className="w-full lg:w-[380px] flex-shrink-0 overflow-y-auto space-y-3 glass-card p-5">
+            {/* 关闭按钮 */}
+            <div className="flex items-start justify-between">
+              <h2 className="text-base font-bold leading-relaxed flex-1 pr-2" style={{ color: "var(--text-primary)" }}>
+                {selected.title}
+              </h2>
+              <button onClick={() => { setShowDetail(false); setSelectedId(null); }}
+                className="flex-shrink-0 cursor-pointer p-1 rounded-lg transition-colors"
+                style={{ color: "var(--text-muted)" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                <IconX size={16} />
+              </button>
             </div>
 
+            {/* 基本信息 */}
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+              {selected.authors.length > 0 && <span>{selected.authors.slice(0, 5).join(", ")}{selected.authors.length > 5 ? " 等" : ""}</span>}
+              {selected.year > 0 && <span>{selected.year}</span>}
+              {selected.journal && <span>{selected.journal}</span>}
+              {selected.doi && <a href={`https://doi.org/${selected.doi}`} target="_blank" rel="noopener"
+                className="text-xs" style={{ color: "var(--accent-blue)" }}>DOI: {selected.doi}</a>}
+            </div>
+
+            {/* 评分 */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>评分:</span>
+              {[1, 2, 3, 4, 5].map(s => (
+                <button key={s} onClick={() => handleStar(selected.id, s === selected.star_rating ? 0 : s)}
+                  className="cursor-pointer">
+                  <IconStar size={14} filled={s <= selected.star_rating}
+                    style={{ color: s <= selected.star_rating ? "#f59e0b" : "var(--text-muted)" }} />
+                </button>
+              ))}
+            </div>
+
+            {/* 标签 */}
+            {selected.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selected.tags.map(tag => (
+                  <span key={tag} className="px-2 py-0.5 rounded-full text-[10px]"
+                    style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>{tag}</span>
+                ))}
+              </div>
+            )}
+
             {/* 引用 */}
-            <div className="glass-card p-5 space-y-3">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>引用格式</h3>
+                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>引用格式</h3>
                 <div className="flex gap-2 items-center">
-                  <select className="input-glass text-xs" value={citationFormat}
+                  <select className="input-glass text-[10px] py-1" value={citationFormat}
                     onChange={e => setCitationFormat(e.target.value)}>
                     {CITATION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                   </select>
-                  <button className="btn-ghost text-xs" onClick={handleCopyCitation}>
+                  <button className="btn-ghost text-[10px] py-1" onClick={handleCopyCitation}>
                     {copied ? "已复制 ✓" : "复制"}
                   </button>
                 </div>
               </div>
-              <pre className="text-xs p-3 rounded-lg whitespace-pre-wrap break-all"
+              <pre className="text-[10px] p-2 rounded-lg whitespace-pre-wrap break-all"
                 style={{ background: "var(--hover-bg)", color: "var(--text-secondary)" }}>
                 {citationText || "无引用数据"}
               </pre>
             </div>
 
-            {/* 摘要 */}
-            <div className="glass-card p-5 space-y-3">
+            {/* AI 摘要 */}
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>AI 摘要</h3>
-                <button className="btn-ghost text-xs" onClick={() => handleAiSummary(selected.id)}>
+                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>AI 摘要</h3>
+                <button className="btn-ghost text-[10px] py-1" onClick={() => handleAiSummary(selected.id)}>
                   {selected.ai_summary ? "重新生成" : "生成摘要"}
                 </button>
               </div>
-              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
                 {selected.ai_summary || "未生成 AI 摘要"}
               </p>
             </div>
 
             {/* 原始摘要 */}
             {selected.abstract && (
-              <div className="glass-card p-5 space-y-2">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>原始摘要</h3>
-                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{selected.abstract}</p>
+              <div className="space-y-1">
+                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>原始摘要</h3>
+                <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{selected.abstract}</p>
               </div>
             )}
 
             {/* 笔记 */}
-            <div className="glass-card p-5 space-y-3">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>笔记</h3>
+                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>笔记</h3>
                 {!editingNotes ? (
-                  <button className="btn-ghost text-xs" onClick={() => { setNotesValue(selected.user_notes); setEditingNotes(true); }}>
+                  <button className="btn-ghost text-[10px] py-1" onClick={() => { setNotesValue(selected.user_notes); setEditingNotes(true); }}>
                     编辑
                   </button>
                 ) : (
-                  <div className="flex gap-2">
-                    <button className="btn-ghost text-xs" onClick={handleSaveNotes}>保存</button>
-                    <button className="btn-ghost text-xs" onClick={() => setEditingNotes(false)}>取消</button>
+                  <div className="flex gap-1">
+                    <button className="btn-ghost text-[10px] py-1" onClick={handleSaveNotes}>保存</button>
+                    <button className="btn-ghost text-[10px] py-1" onClick={() => setEditingNotes(false)}>取消</button>
                   </div>
                 )}
               </div>
               {editingNotes ? (
-                <textarea className="input-glass" rows={4} value={notesValue}
+                <textarea className="input-glass" rows={3} value={notesValue}
                   onChange={e => setNotesValue(e.target.value)} />
               ) : (
-                <p className="text-sm" style={{ color: selected.user_notes ? "var(--text-secondary)" : "var(--text-muted)" }}>
+                <p className="text-xs" style={{ color: selected.user_notes ? "var(--text-secondary)" : "var(--text-muted)" }}>
                   {selected.user_notes || "暂无笔记"}
                 </p>
               )}
             </div>
 
             {/* 关联综述 */}
-            {selected.review_id && (
-              <div className="glass-card p-5 space-y-2">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>关联综述</h3>
-                {(() => {
-                  const review = reviews.find(r => r.id === selected.review_id);
-                  return review ? (
-                    <p className="text-xs" style={{ color: "var(--accent-blue)" }}>{review.title}</p>
-                  ) : (
-                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>综述未找到</p>
-                  );
-                })()}
-              </div>
-            )}
-          </>
-        ) : (
-          /* 空状态 + 综述入口 */
-          <div className="space-y-4">
-            <div className="glass-card p-12 text-center">
-              <IconFile size={32} style={{ color: "var(--text-muted)", margin: "0 auto" }} />
-              <p className="mt-3" style={{ color: "var(--text-muted)" }}>选择一篇文献查看详情</p>
-              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                共 {papers.length} 篇文献 · {papers.filter(p => p.star_rating > 0).length} 篇已评分
-              </p>
-            </div>
-
-            {/* 综述生成入口 */}
-            <div className="glass-card p-5 space-y-3">
-              <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>文献综述</h3>
-              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                从文献库选择多篇文献，AI 生成结构化综述
-              </p>
-              <button className="btn-gradient btn-click text-xs"
-                onClick={() => { setSelectedForReview([]); setShowReviewModal(true); }}>
-                选择文献生成综述
-              </button>
-
-              {/* 已有综述列表 */}
-              {reviews.length > 0 && (
-                <div className="space-y-1.5 mt-3">
-                  <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>已有综述:</p>
-                  {reviews.slice(0, 5).map(r => (
-                    <div key={r.id} className="flex items-center gap-2 text-xs p-2 rounded-lg"
-                      style={{ background: "var(--hover-bg)" }}>
-                      <span className="flex-1 truncate" style={{ color: "var(--text-primary)" }}>{r.title}</span>
-                      <span style={{ color: "var(--text-muted)" }}>{new Date(r.created_at).toLocaleDateString()}</span>
-                    </div>
-                  ))}
+            {selected.review_id && (() => {
+              const review = reviews.find(r => r.id === selected.review_id);
+              return review ? (
+                <div className="space-y-1">
+                  <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>关联综述</h3>
+                  <p className="text-xs" style={{ color: "var(--accent-blue)" }}>{review.title}</p>
                 </div>
-              )}
+              ) : null;
+            })()}
+
+            {/* 删除按钮 */}
+            <div className="pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
+              <button onClick={() => handleDelete(selected.id)}
+                className="text-xs transition-colors cursor-pointer"
+                style={{ color: "var(--text-muted)" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
+                onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+              >删除此文献</button>
             </div>
           </div>
         )}
