@@ -14,6 +14,7 @@ import {
   IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat,
   IconGear, IconX, IconMinus, IconMaximize, IconCalendar, IconLightbulb, IconImage,
 } from "./components/Icons";
+import { useAppName } from "./hooks/useAppName";
 
 // ── 页面注册 ──
 const PAGES = [
@@ -74,6 +75,7 @@ async function windowClose() {
 function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [loading, setLoading] = useState(true);
+  const { name } = useAppName();
 
   // 初始化主题
   useEffect(() => {
@@ -99,7 +101,7 @@ function App() {
       <div className="flex items-center justify-center h-screen" style={{ background: 'var(--bg-gradient)' }}>
         <div className="glass-card p-8 text-center space-y-4">
           <div className="flex justify-center" style={{ color: "var(--accent-blue)" }}><IconBrain size={40} /></div>
-          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>AI Nexus Assistant</h1>
+          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>{name} Assistant</h1>
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>正在启动后端服务...</p>
           <div className="w-48 h-1.5 rounded-full overflow-hidden mx-auto" style={{ background: "var(--border-color)" }}>
             <div className="h-full rounded-full animate-pulse" style={{ width: "60%", background: "var(--accent-blue)" }} />
@@ -132,7 +134,7 @@ function App() {
         style={{ background: 'var(--glass-bg)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-color)' }}
         data-tauri-drag-region
       >
-        <span className="text-xs pointer-events-none" style={{ color: "var(--text-muted)" }}>AI Nexus Assistant</span>
+        <span className="text-xs pointer-events-none" style={{ color: "var(--text-muted)" }}>{name} Assistant</span>
         <div className="flex gap-0.5" data-tauri-drag-region="false">
           <button
             onClick={windowMinimize}

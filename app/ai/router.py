@@ -1,4 +1,11 @@
-"""统一 AI 服务层 — 支持 OpenAI 和 Anthropic 协议，处理 thinking 内容，支持工具调用"""
+"""统一 AI 服务层 — 支持 OpenAI 和 Anthropic 协议，处理 thinking 内容，支持工具调用
+
+工具调用流程：
+1. 模型生成文本 + 工具调用 → 执行工具 → 将结果送回模型
+2. 中间轮次的文本不发送给前端（避免显示"让我搜索..."）
+3. 仅最后一轮（无工具调用）的文本作为最终回复
+4. 中间文本保留在消息历史中，确保模型看到自己的推理上下文
+"""
 
 import json
 from typing import Generator
@@ -17,23 +24,19 @@ from app.ai.tools import (
 class AIRouter:
     """统一 AI 服务层"""
 
-    # 最大工具调用轮次，防止无限循环
     MAX_TOOL_ROUNDS = 3
 
     def __init__(self):
         self._models: dict[str, ModelConfig] = {}
         self._load_models()
-        # 初始化工具注册
         try:
             init_tools()
         except Exception as e:
             print(f"[AIRouter] Tool init warning: {e}", flush=True)
-        # 构建工具定义列表（web_search + 所有注册工具）
         self._openai_tools = [TOOL_DEFINITION_OPENAI] + get_all_openai_tools()
         self._anthropic_tools = [TOOL_DEFINITION_ANTHROPIC] + get_all_anthropic_tools()
 
     def _load_models(self):
-        """从数据库加载模型配置"""
         db = get_session()
         try:
             models = db.query(ModelConfig).filter(ModelConfig.is_active == True).all()
@@ -45,7 +48,6 @@ class AIRouter:
         self._load_models()
 
     def get_model(self, purpose: str = "all") -> ModelConfig | None:
-        """根据用途选择活跃模型"""
         for m in self._models.values():
             if m.purpose == purpose and m.is_active:
                 return m
@@ -64,7 +66,6 @@ class AIRouter:
 
     def chat(self, messages: list[dict], purpose: str = "chat",
              model_id: str | None = None, **kwargs) -> dict:
-        """同步对话，返回 {"thinking": str, "content": str}"""
         model = self._resolve_model(model_id, purpose)
         if not model:
             return {"thinking": "", "content": "❌ 未配置 AI 模型，请在设置中添加。"}
@@ -78,7 +79,6 @@ class AIRouter:
         return self._call_openai(model, messages, **kwargs)
 
     def _call_openai(self, model: ModelConfig, messages: list[dict], **kwargs) -> dict:
-        """OpenAI 协议调用"""
         try:
             import openai
         except ImportError as e:
@@ -97,16 +97,13 @@ class AIRouter:
             choice = resp.choices[0]
             thinking = ""
             content = choice.message.content or ""
-
             if hasattr(choice.message, 'reasoning_content') and choice.message.reasoning_content:
                 thinking = choice.message.reasoning_content
-
             return {"thinking": thinking, "content": content}
         except Exception as e:
             return {"thinking": "", "content": f"❌ AI 调用失败: {e}"}
 
     def _call_anthropic(self, model: ModelConfig, messages: list[dict], **kwargs) -> dict:
-        """Anthropic 协议调用"""
         try:
             import anthropic
         except ImportError:
@@ -128,7 +125,6 @@ class AIRouter:
                 system=system_msg if system_msg else anthropic.NOT_GIVEN,
                 messages=user_messages,
             )
-
             thinking = ""
             content = ""
             for block in resp.content:
@@ -136,7 +132,6 @@ class AIRouter:
                     thinking = block.thinking
                 elif block.type == "text":
                     content = block.text
-
             return {"thinking": thinking, "content": content}
         except Exception as e:
             return {"thinking": "", "content": f"❌ AI 调用失败: {e}"}
@@ -145,7 +140,6 @@ class AIRouter:
 
     def stream_chat(self, messages: list[dict], purpose: str = "chat",
                     model_id: str | None = None, **kwargs) -> Generator[dict, None, None]:
-        """流式对话，yield {"type": "thinking"|"content"|"tool_call"|"tool_result", "data": str}"""
         model = self._resolve_model(model_id, purpose)
         if not model:
             yield {"type": "content", "data": "❌ 未配置 AI 模型"}
@@ -161,7 +155,13 @@ class AIRouter:
             yield from self._stream_openai_with_tools(model, messages, **kwargs)
 
     def _stream_openai_with_tools(self, model: ModelConfig, messages: list[dict], **kwargs):
-        """OpenAI 协议流式调用，支持工具调用循环"""
+        """OpenAI 协议流式调用，支持工具调用循环
+
+        关键逻辑：
+        - 每轮收集文本内容和工具调用
+        - 工具调用轮次：文本存入历史但不 yield 给前端
+        - 最终轮次（无工具调用）：文本 yield 给前端
+        """
         try:
             import openai
         except ImportError as e:
@@ -176,6 +176,8 @@ class AIRouter:
 
         for round_num in range(self.MAX_TOOL_ROUNDS + 1):
             try:
+                print(f"[router] round {round_num}: calling API with {len(current_messages)} msgs, "
+                      f"model={model.model_name}", flush=True)
                 stream = client.chat.completions.create(
                     model=model.model_name,
                     messages=current_messages,
@@ -185,25 +187,29 @@ class AIRouter:
                     tool_choice="auto",
                     stream=True,
                 )
+                print(f"[router] round {round_num}: API call succeeded, streaming...", flush=True)
 
-                # 收集本轮的工具调用和文本内容
-                tool_calls = {}  # index -> {id, name, arguments}
+                tool_calls = {}
                 has_tool_call = False
+                text_content = ""  # 本轮文本内容（存入历史）
+                round_thinking = ""  # 本轮思考内容（暂存，确认无工具调用后才 yield）
+                chunk_count = 0
 
                 for chunk in stream:
+                    chunk_count += 1
                     if not chunk.choices:
                         continue
                     delta = chunk.choices[0].delta
 
-                    # 处理 thinking（DeepSeek）
+                    # thinking（DeepSeek reasoning_content）— 暂存，不在工具调用轮次 yield
                     if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
-                        yield {"type": "thinking", "data": delta.reasoning_content}
+                        round_thinking += delta.reasoning_content
 
-                    # 处理文本内容
+                    # 文本内容 — 收集但暂不 yield（等确认无工具调用后再决定）
                     if delta.content:
-                        yield {"type": "content", "data": delta.content}
+                        text_content += delta.content
 
-                    # 处理工具调用
+                    # 工具调用
                     if delta.tool_calls:
                         has_tool_call = True
                         for tc in delta.tool_calls:
@@ -218,16 +224,54 @@ class AIRouter:
                                 if tc.function.arguments:
                                     tool_calls[idx]["arguments"] += tc.function.arguments
 
-                # 如果没有工具调用，流式结束
-                if not has_tool_call:
+                print(f"[router] round {round_num}: stream done, "
+                      f"chunks={chunk_count}, has_tool={has_tool_call}, "
+                      f"text={len(text_content)} chars, thinking={len(round_thinking)} chars",
+                      flush=True)
+
+                if not has_tool_call or round_num == self.MAX_TOOL_ROUNDS:
+                    # 最终轮次（无工具调用 或 已达最大轮次）— yield thinking 和文本内容
+                    if not text_content and round_num == self.MAX_TOOL_ROUNDS:
+                        # 模型用完所有轮次仍在调用工具 — 强制请求最终回复
+                        print(f"[router] max tool rounds reached, forcing final response", flush=True)
+                        current_messages.append({
+                            "role": "user",
+                            "content": "请基于以上所有搜索结果和信息，直接回答用户的问题。不需要再搜索。"
+                        })
+                        try:
+                            final_stream = client.chat.completions.create(
+                                model=model.model_name,
+                                messages=current_messages,
+                                temperature=kwargs.get("temperature", 0.7),
+                                max_tokens=kwargs.get("max_tokens", 4096),
+                                stream=True,
+                            )
+                            for chunk in final_stream:
+                                if not chunk.choices:
+                                    continue
+                                delta = chunk.choices[0].delta
+                                if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                                    yield {"type": "thinking", "data": delta.reasoning_content}
+                                if delta.content:
+                                    text_content += delta.content
+                                    yield {"type": "content", "data": delta.content}
+                        except Exception as e:
+                            print(f"[router] forced final response error: {e}", flush=True)
+                    else:
+                        if round_thinking:
+                            yield {"type": "thinking", "data": round_thinking}
+                        if text_content:
+                            yield {"type": "content", "data": text_content}
                     return
 
-                # 执行工具调用
+                # 工具调用轮次
+                # 1. 执行所有工具，收集结果
+                tool_calls_for_msg = []
+                tool_results_for_msg = []
                 for idx in sorted(tool_calls.keys()):
                     tc = tool_calls[idx]
                     tool_name = tc["name"]
 
-                    # 解析参数
                     try:
                         args = json.loads(tc["arguments"])
                         query = args.get("query", args.get("q", ""))
@@ -238,7 +282,6 @@ class AIRouter:
                         "name": tool_name, "query": query
                     }, ensure_ascii=False)}
 
-                    # 分发到对应工具
                     if tool_name == "web_search":
                         result = execute_tool_call(tc["arguments"])
                     else:
@@ -248,26 +291,44 @@ class AIRouter:
                         "name": tool_name, "query": query, "result": result[:5000]
                     }, ensure_ascii=False)}
 
-                    # 将工具调用和结果添加到消息历史
-                    current_messages.append({
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [{
-                            "id": tc["id"],
-                            "type": "function",
-                            "function": {
-                                "name": tool_name,
-                                "arguments": tc["arguments"],
-                            }
-                        }]
+                    tool_calls_for_msg.append({
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": tc["arguments"],
+                        }
                     })
-                    current_messages.append({
+                    tool_results_for_msg.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
                         "content": result,
                     })
 
+                # 2. 追加消息：assistant(text + tool_calls) → tool(results)
+                #    OpenAI 格式：一个 assistant 消息包含 content + tool_calls，后面跟 tool 消息
+                #    兼容 DeepSeek 等国产模型：content 使用空字符串而非 null
+                current_messages.append({
+                    "role": "assistant",
+                    "content": text_content if text_content else "",
+                    "tool_calls": tool_calls_for_msg,
+                })
+                current_messages.extend(tool_results_for_msg)
+
+                print(f"[router] round {round_num}: executed {len(tool_calls_for_msg)} tool(s), "
+                      f"msg_history={len(current_messages)} msgs", flush=True)
+                # 打印最后几条消息的角色和长度，方便调试
+                for i, m in enumerate(current_messages[-4:]):
+                    role = m.get("role", "?")
+                    clen = len(str(m.get("content", "")))
+                    has_tc = "tool_calls" in m and m["tool_calls"]
+                    print(f"[router]   msg[{len(current_messages)-4+i}]: role={role}, "
+                          f"content={clen}chars, tool_calls={has_tc}", flush=True)
+
             except Exception as e:
+                import traceback
+                print(f"[router] round {round_num} exception: {e}", flush=True)
+                traceback.print_exc()
                 yield {"type": "content", "data": f"\n\n❌ 流式调用失败: {e}"}
                 return
 
@@ -281,7 +342,6 @@ class AIRouter:
 
         client = anthropic.Anthropic(api_key=model.api_key)
 
-        # 分离 system 消息
         system_msg = ""
         user_messages = []
         for msg in messages:
@@ -301,12 +361,13 @@ class AIRouter:
                     messages=current_messages,
                     tools=self._anthropic_tools,
                 ) as stream:
-                    # 收集本轮的工具调用
-                    tool_use_blocks = []  # {id, name, input_json}
+                    tool_use_blocks = []
                     current_tool_id = None
                     current_tool_name = None
                     current_tool_input = ""
                     in_tool_use = False
+                    text_content = ""
+                    round_thinking = ""
 
                     for event in stream:
                         if event.type == "content_block_start":
@@ -318,9 +379,9 @@ class AIRouter:
                                     current_tool_input = ""
                         elif event.type == "content_block_delta":
                             if hasattr(event.delta, 'thinking'):
-                                yield {"type": "thinking", "data": event.delta.thinking}
+                                round_thinking += event.delta.thinking
                             elif hasattr(event.delta, 'text'):
-                                yield {"type": "content", "data": event.delta.text}
+                                text_content += event.delta.text
                             elif hasattr(event.delta, 'partial_json') and in_tool_use:
                                 current_tool_input += event.delta.partial_json
                         elif event.type == "content_block_stop":
@@ -332,11 +393,19 @@ class AIRouter:
                                 })
                                 in_tool_use = False
 
-                # 如果没有工具调用，流式结束
                 if not tool_use_blocks:
+                    # 最终轮次 — yield thinking 和文本
+                    if round_thinking:
+                        yield {"type": "thinking", "data": round_thinking}
+                    if text_content:
+                        yield {"type": "content", "data": text_content}
                     return
 
-                # 执行工具调用
+                # 工具调用轮次 — 文本存入历史但不 yield
+                assistant_content = []
+                if text_content:
+                    assistant_content.append({"type": "text", "text": text_content})
+
                 tool_results = []
                 for tu in tool_use_blocks:
                     tool_name = tu["name"]
@@ -351,7 +420,6 @@ class AIRouter:
                         "name": tool_name, "query": query
                     }, ensure_ascii=False)}
 
-                    # 分发到对应工具
                     if tool_name == "web_search":
                         result = execute_tool_call(tu["input_json"])
                     else:
@@ -361,25 +429,26 @@ class AIRouter:
                         "name": tool_name, "query": query, "result": result[:5000]
                     }, ensure_ascii=False)}
 
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu["id"],
-                        "content": result,
-                    })
-
-                # 将助手的工具调用和工具结果添加到消息历史
-                assistant_content = []
-                for tu in tool_use_blocks:
                     assistant_content.append({
                         "type": "tool_use",
                         "id": tu["id"],
                         "name": tu["name"],
                         "input": json.loads(tu["input_json"]),
                     })
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tu["id"],
+                        "content": result,
+                    })
+
                 current_messages.append({"role": "assistant", "content": assistant_content})
                 current_messages.append({"role": "user", "content": tool_results})
 
             except Exception as e:
+                import traceback
+                print(f"[router] round {round_num} exception: {e}", flush=True)
+                traceback.print_exc()
                 yield {"type": "content", "data": f"\n\n❌ 流式调用失败: {e}"}
                 return
 

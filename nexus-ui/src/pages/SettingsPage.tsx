@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { modelsApi, type ModelConfig } from "../api/client";
+import { useAppName, setAppName, resetAppName } from "../hooks/useAppName";
 
 interface BackupItem {
   name: string;
@@ -16,12 +17,19 @@ export default function SettingsPage() {
   const [theme, setTheme] = useState(() => localStorage.getItem("nexus-theme") || "light");
   const [backups, setBackups] = useState<BackupItem[]>([]);
   const [searchRunning, setSearchRunning] = useState<boolean | null>(null);
+  const { name: appName, isDefault } = useAppName();
+  const [editingName, setEditingName] = useState(appName);
 
   useEffect(() => {
     modelsApi.list().then(setModels).catch(console.error);
     loadBackups();
     loadSearchStatus();
   }, []);
+
+  // 同步 appName 变化到 editingName
+  useEffect(() => {
+    setEditingName(appName);
+  }, [appName]);
 
   const loadModels = () => modelsApi.list().then(setModels).catch(console.error);
   const loadBackups = () => fetch("http://127.0.0.1:8765/api/backups").then(r => r.json()).then(setBackups).catch(() => {});
@@ -190,6 +198,41 @@ export default function SettingsPage() {
         )}
       </div>
 
+      {/* 个性化 */}
+      <div className="glass-card p-5 space-y-4">
+        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>个性化</h3>
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>应用名称</p>
+            <div className="flex gap-2 items-center">
+              <input
+                className="input-glass text-sm flex-1 max-w-xs"
+                placeholder="输入自定义名称..."
+                value={editingName}
+                onChange={e => setEditingName(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { setAppName(editingName); } }}
+                maxLength={20}
+              />
+              <button className="btn-ghost text-xs py-2" onClick={() => setAppName(editingName)}>
+                保存
+              </button>
+              {!isDefault && (
+                <button className="text-xs cursor-pointer transition-colors" style={{ color: "var(--text-muted)" }}
+                  onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-blue)")}
+                  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+                  onClick={() => { resetAppName(); setEditingName("NEXUS"); }}>
+                  恢复默认
+                </button>
+              )}
+            </div>
+            <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>
+              当前显示名称：<span style={{ color: "var(--accent-blue)" }}>{appName}</span>
+              {isDefault ? "（默认）" : ""}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* 主题 */}
       <div className="glass-card p-5 space-y-4">
         <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>主题</h3>
@@ -300,7 +343,7 @@ export default function SettingsPage() {
             onClick={() => {
               const input = document.createElement("input");
               input.type = "file";
-              input.accept = ".db";
+              input.accept = ".db,.zip";
               input.onchange = async (e) => {
                 const file = (e.target as HTMLInputElement).files?.[0];
                 if (!file) return;
@@ -325,7 +368,24 @@ export default function SettingsPage() {
               };
               input.click();
             }}
-          >导入 .db 恢复</button>
+          >导入 .db/.zip 恢复</button>
+          <button className="btn-ghost"
+            onClick={async () => {
+              try {
+                const res = await fetch("http://127.0.0.1:8765/api/backups/export-db");
+                if (!res.ok) { alert("导出失败"); return; }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `nexus_backup_${new Date().toISOString().slice(0,10)}.zip`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch (err) {
+                alert(`导出失败: ${err}`);
+              }
+            }}
+          >导出数据 (.zip)</button>
         </div>
 
         {/* 备份列表 */}

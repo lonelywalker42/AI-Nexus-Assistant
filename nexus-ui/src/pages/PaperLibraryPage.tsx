@@ -249,7 +249,7 @@ export default function PaperLibraryPage() {
       {/* 卡片网格 + 详情面板 */}
       <div className="flex-1 flex gap-4 min-h-0">
         {/* 卡片网格 */}
-        <div className={`flex-1 overflow-y-auto ${showDetail ? "hidden lg:block lg:w-0 lg:flex-none" : ""}`}>
+        <div className={`flex-1 overflow-y-auto min-w-0 ${showDetail ? "hidden lg:block" : ""}`}>
           {loading && <p className="text-xs text-center py-8" style={{ color: "var(--text-muted)" }}>加载中...</p>}
 
           {!loading && papers.length === 0 && (
@@ -342,7 +342,7 @@ export default function PaperLibraryPage() {
 
         {/* 详情面板（右侧滑出） */}
         {showDetail && selected && (
-          <div className="w-full lg:w-[380px] xl:w-[420px] flex-shrink-0 overflow-y-auto space-y-3 glass-card p-5 max-h-[calc(100vh-200px)]">
+          <div className="w-full lg:w-[420px] xl:flex-1 xl:max-w-[600px] flex-shrink-0 overflow-y-auto space-y-3 glass-card p-5 max-h-[calc(100vh-200px)]">
             {/* 关闭按钮 */}
             <div className="flex items-start justify-between">
               <h2 className="text-base font-bold leading-relaxed flex-1 pr-2" style={{ color: "var(--text-primary)" }}>

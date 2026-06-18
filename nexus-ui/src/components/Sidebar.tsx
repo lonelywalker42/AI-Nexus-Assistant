@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { getPageIcon } from "../App";
 import { systemApi, type SystemInfo } from "../api/client";
+import { useAppName } from "../hooks/useAppName";
 import { IconChat } from "./Icons";
 
 interface Page {
@@ -26,6 +27,7 @@ const GROUPS = [
 export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps) {
   const [showAbout, setShowAbout] = useState(false);
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
+  const { name, subtitle } = useAppName();
 
   useEffect(() => {
     if (showAbout && !sysInfo) {
@@ -40,8 +42,8 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
       <aside className="w-52 h-full flex flex-col" style={{ background: 'var(--glass-bg)', backdropFilter: 'blur(12px)', borderRight: '1px solid var(--border-color)' }}>
         {/* Logo */}
         <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
-          <h1 className="text-lg font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>NEXUS</h1>
-          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>AI 科研助手</p>
+          <h1 className="text-lg font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>{name}</h1>
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{subtitle}</p>
         </div>
 
         {/* 导航 */}
@@ -120,8 +122,8 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
             onClick={e => e.stopPropagation()}
           >
             <div className="text-center space-y-3">
-              <div className="text-3xl font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>NEXUS</div>
-              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>AI Nexus Assistant</p>
+              <div className="text-3xl font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>{name}</div>
+              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{name} Assistant</p>
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>v2.1.0</p>
               <div className="h-px" style={{ background: "var(--border-color)" }} />
               <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>

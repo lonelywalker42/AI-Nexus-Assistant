@@ -418,14 +418,15 @@ export default function ChatPage() {
                   : { background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }
                 }
               >
-                {/* 复制按钮 */}
+                {/* 复制按钮 — 增大点击区域 */}
                 <button
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded text-[10px] cursor-pointer"
+                  className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs cursor-pointer z-10"
                   style={{
-                    background: msg.role === "user" ? "rgba(255,255,255,0.2)" : "var(--hover-bg)",
-                    color: msg.role === "user" ? "rgba(255,255,255,0.8)" : "var(--text-muted)",
+                    background: msg.role === "user" ? "rgba(255,255,255,0.25)" : "var(--hover-bg)",
+                    color: msg.role === "user" ? "rgba(255,255,255,0.9)" : "var(--text-secondary)",
+                    backdropFilter: "blur(4px)",
                   }}
-                  onClick={() => copy(msg.id, msg.thinking_content ? `[Thinking]\n${msg.thinking_content}\n\n${msg.content}` : msg.content)}
+                  onClick={(e) => { e.stopPropagation(); copy(msg.id, msg.thinking_content ? `[Thinking]\n${msg.thinking_content}\n\n${msg.content}` : msg.content); }}
                 >
                   {copiedId === msg.id ? "已复制 ✓" : "复制"}
                 </button>

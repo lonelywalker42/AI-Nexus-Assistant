@@ -1511,37 +1511,112 @@ def restore_backup(body: dict):
 
 @app.post("/api/backups/import-db")
 async def import_db_file(request: Request):
-    """导入 .db 文件恢复数据"""
+    """导入 .db 文件恢复数据
+
+    支持两种格式：
+    1. 单个 .db 文件（向后兼容）
+    2. .zip 包含 nexus.db + nexus.db-wal + nexus.db-shm（推荐）
+    """
     import tempfile
-    import shutil
+    import zipfile
+    import io
 
     file_bytes = await request.body()
     if not file_bytes or len(file_bytes) < 100:
         raise HTTPException(400, "文件太小或为空")
 
-    # 验证是 SQLite 文件（头16字节应包含 "SQLite format"）
-    header = file_bytes[:16]
-    if b"SQLite format" not in header:
-        raise HTTPException(400, "不是有效的 SQLite 数据库文件")
-
-    # 写入临时文件
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        tmp.write(file_bytes)
-        tmp_path = tmp.name
+    tmp_dir = tempfile.mkdtemp(prefix="nexus_restore_")
 
     try:
-        from app.services.backup_service import restore_backup as _restore
-        result = _restore(tmp_path)
+        # 判断是 zip 还是单个 db
+        if zipfile.is_zipfile(io.BytesIO(file_bytes)):
+            # ZIP 模式：解压 .db、.db-wal、.db-shm
+            with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as zf:
+                names = zf.namelist()
+                # 找到 .db 文件
+                db_name = None
+                for n in names:
+                    if n.endswith(".db") and not n.endswith(".db-wal") and not n.endswith(".db-shm"):
+                        db_name = n
+                        break
+                if not db_name:
+                    raise HTTPException(400, "ZIP 中未找到 .db 文件")
+
+                # 解压所有 db 相关文件
+                zf.extractall(tmp_dir)
+
+            # 验证 .db 文件
+            db_file = os.path.join(tmp_dir, db_name)
+            with open(db_file, "rb") as f:
+                header = f.read(16)
+            if b"SQLite format" not in header:
+                raise HTTPException(400, "不是有效的 SQLite 数据库文件")
+
+            from app.services.backup_service import restore_backup as _restore
+            result = _restore(db_file)
+        else:
+            # 单文件模式（向后兼容）
+            header = file_bytes[:16]
+            if b"SQLite format" not in header:
+                raise HTTPException(400, "不是有效的 SQLite 数据库文件")
+
+            db_file = os.path.join(tmp_dir, "nexus.db")
+            with open(db_file, "wb") as f:
+                f.write(file_bytes)
+
+            from app.services.backup_service import restore_backup as _restore
+            result = _restore(db_file)
+
         if result:
             get_ai().reload()
         return {"ok": bool(result)}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(500, str(e))
     finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@app.get("/api/backups/export-db")
+def export_db_file():
+    """导出数据库为 zip 文件（包含 .db + .db-wal + .db-shm）"""
+    import zipfile
+    import io
+    from fastapi.responses import StreamingResponse
+
+    from app.utils.paths import get_data_dir
+    db_path = get_data_dir() / "nexus.db"
+    if not db_path.exists():
+        raise HTTPException(404, "数据库文件不存在")
+
+    # 先 checkpoint，尽量减小 WAL
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.close()
+    except Exception:
+        pass
+
+    # 创建 zip 包
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(db_path, "nexus.db")
+        for suffix in ["-wal", "-shm"]:
+            f = db_path.with_suffix(db_path.suffix + suffix)
+            if f.exists() and f.stat().st_size > 0:
+                zf.write(f, f.name)
+
+    zip_buf.seek(0)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"nexus_backup_{timestamp}.zip"
+
+    return StreamingResponse(
+        zip_buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ══════════════════════════════════════════════════════════════
