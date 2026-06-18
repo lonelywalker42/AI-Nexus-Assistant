@@ -7,6 +7,20 @@ use std::io::Write;
 use std::os::windows::process::CommandExt;
 use tauri::Manager;
 
+/// 杀死进程及其所有子进程树（Windows: taskkill /F /T, Unix: kill）
+#[cfg(target_os = "windows")]
+fn kill_process_tree(pid: u32) {
+    let _ = Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn kill_process_tree(pid: u32) {
+    let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+}
+
 /// Windows CREATE_NO_WINDOW — 不弹出控制台窗口
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -20,7 +34,7 @@ impl Drop for BackendProcess {
     fn drop(&mut self) {
         if let Ok(mut g) = self.0.lock() {
             if let Some(ref mut c) = *g {
-                let _ = c.kill();
+                kill_process_tree(c.id());
                 let _ = c.wait();
             }
             *g = None;
@@ -454,7 +468,7 @@ pub fn run() {
                         if let Some(s) = app.try_state::<BackendProcess>() {
                             if let Ok(mut g) = s.0.lock() {
                                 if let Some(ref mut c) = *g {
-                                    let _ = c.kill();
+                                    kill_process_tree(c.id());
                                     let _ = c.wait();
                                 }
                                 *g = None;

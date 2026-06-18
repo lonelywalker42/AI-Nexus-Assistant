@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import TaskPage from "./pages/TaskPage";
+import TodayPage from "./pages/TodayPage";
 import LiteraturePage from "./pages/LiteraturePage";
 import PaperLibraryPage from "./pages/PaperLibraryPage";
 import ExperimentPage from "./pages/ExperimentPage";
@@ -9,22 +10,33 @@ import KnowledgePage from "./pages/KnowledgePage";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import { dashboardApi } from "./api/client";
-import { IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat, IconGear, IconX, IconMinus, IconMaximize } from "./components/Icons";
+import {
+  IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat,
+  IconGear, IconX, IconMinus, IconMaximize, IconCalendar, IconLightbulb, IconImage,
+} from "./components/Icons";
 
+// ── 页面注册 ──
 const PAGES = [
-  { id: "dashboard", label: "仪表盘", icon: "chart" },
-  { id: "tasks", label: "任务与日程", icon: "clipboard" },
-  { id: "literature", label: "文献检索", icon: "search" },
-  { id: "paper-library", label: "文献库", icon: "book" },
-  { id: "experiments", label: "试验管理", icon: "flask" },
-  { id: "knowledge", label: "知识库", icon: "brain" },
-  { id: "chat", label: "AI 对话", icon: "chat" },
-  { id: "settings", label: "设置", icon: "gear" },
+  // 总览
+  { id: "dashboard", label: "仪表盘", icon: "chart", group: "overview" },
+  { id: "tasks", label: "任务与日程", icon: "clipboard", group: "overview" },
+  { id: "today", label: "今日工作", icon: "calendar", group: "overview" },
+  // 科研助手
+  { id: "literature", label: "文献检索", icon: "search", group: "research" },
+  { id: "paper-library", label: "文献库", icon: "book", group: "research" },
+  { id: "knowledge", label: "IDEA", icon: "lightbulb", group: "research" },
+  { id: "experiments", label: "试验管理", icon: "flask", group: "research" },
+  { id: "chat", label: "AI 对话", icon: "chat", group: "research" },
+  // 个人助手
+  { id: "materials", label: "素材库", icon: "image", group: "personal" },
+  // 设置
+  { id: "settings", label: "设置", icon: "gear", group: "settings" },
 ];
 
 const ICON_MAP: Record<string, React.FC<{ size?: number }>> = {
   chart: IconChart, clipboard: IconClipboard, book: IconBook, search: IconSearch,
   flask: IconFlask, brain: IconBrain, chat: IconChat, gear: IconGear,
+  calendar: IconCalendar, lightbulb: IconLightbulb, image: IconImage,
 };
 
 export function getPageIcon(iconKey: string, size = 18) {
@@ -101,6 +113,7 @@ function App() {
     switch (activePage) {
       case "dashboard": return <Dashboard onNavigate={setActivePage} />;
       case "tasks": return <TaskPage />;
+      case "today": return <TodayPage onNavigate={setActivePage} />;
       case "literature": return <LiteraturePage />;
       case "paper-library": return <PaperLibraryPage />;
       case "experiments": return <ExperimentPage />;

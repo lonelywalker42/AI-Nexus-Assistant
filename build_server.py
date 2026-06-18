@@ -7,6 +7,8 @@ import subprocess
 import sys
 import shutil
 import os
+import stat
+import time
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).parent
@@ -38,13 +40,34 @@ EXCLUDE_MODULES = [
 ]
 
 
+def _rmtree_retry(path: Path, retries: int = 5, delay: float = 1.0):
+    """删除目录，Windows 文件锁时自动重试"""
+
+    def _on_error(func, fpath, exc_info):
+        """处理只读文件和权限问题"""
+        os.chmod(fpath, stat.S_IWRITE)
+        func(fpath)
+
+    for attempt in range(retries):
+        try:
+            shutil.rmtree(path, onerror=_on_error)
+            return
+        except PermissionError:
+            if attempt < retries - 1:
+                print(f"  目录被占用，{delay}s 后重试 ({attempt + 1}/{retries})...")
+                time.sleep(delay)
+            else:
+                print(f"  WARNING: 无法删除 {path}，跳过清理")
+                return
+
+
 def build():
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
 
     # 清理旧构建产物
     for d in [PROJECT_DIR / "build", PROJECT_DIR / "dist"]:
         if d.exists():
-            shutil.rmtree(d)
+            _rmtree_retry(d)
 
     args = [
         sys.executable, "-m", "PyInstaller",
@@ -149,15 +172,25 @@ def build():
     if ows_src.exists():
         # 只复制必要的文件：build/ + package.json + node_modules/
         if ows_dst.exists():
-            shutil.rmtree(ows_dst)
-        ows_dst.mkdir(parents=True)
+            try:
+                _rmtree_retry(ows_dst)
+            except Exception:
+                pass
+        if not ows_dst.exists():
+            ows_dst.mkdir(parents=True)
         for item in ["build", "node_modules", "package.json"]:
             src_item = ows_src / item
+            dst_item = ows_dst / item
             if src_item.exists():
-                if src_item.is_dir():
-                    shutil.copytree(src_item, ows_dst / item)
-                else:
-                    shutil.copy2(src_item, ows_dst / item)
+                try:
+                    if src_item.is_dir():
+                        if dst_item.exists():
+                            shutil.rmtree(dst_item, onerror=lambda _f, _p, _e: os.chmod(_p, stat.S_IWRITE))
+                        shutil.copytree(src_item, dst_item)
+                    else:
+                        shutil.copy2(src_item, dst_item)
+                except PermissionError:
+                    print(f"  SKIP: {dst_item} (被占用)")
         ows_size = sum(f.stat().st_size for f in ows_dst.rglob("*") if f.is_file())
         print(f"open-webSearch: {ows_dst} ({ows_size / 1024 / 1024:.1f} MB)")
     else:
@@ -169,7 +202,7 @@ def clean():
     for d in [PROJECT_DIR / "build", PROJECT_DIR / "dist",
               PROJECT_DIR / ".build-venv"]:
         if d.exists():
-            shutil.rmtree(d)
+            _rmtree_retry(d)
             print(f"Removed: {d}")
 
 

@@ -1,6 +1,30 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { chatApi, modelsApi, papersApi, type ChatSession, type ChatMessage, type ModelConfig, type PaperDetail } from "../api/client";
 
+// 从文本中提取关键词生成 ≤10 字标题
+function extractTitle(userMsg: string, _aiMsg: string): string {
+  // 优先从用户消息提取核心名词短语
+  const text = userMsg.replace(/[@#]/g, "").trim();
+  // 尝试匹配 "请/帮我/关于...的..." 模式
+  const patterns = [
+    /(?:请|帮我|关于|分析|解释|什么是|如何|怎么)(.{2,8})/u,
+    /^(.{2,10})[？?。.!！]/u,
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m && m[1]) {
+      const title = m[1].trim().slice(0, 10);
+      if (title.length >= 2) return title;
+    }
+  }
+  // 降级：取前 10 个中文字符或前 10 个单词字符
+  const cn = text.match(/[一-鿿]{2,10}/);
+  if (cn) return cn[0].slice(0, 10);
+  const en = text.match(/[a-zA-Z0-9\s]{3,15}/);
+  if (en) return en[0].trim().slice(0, 10);
+  return text.slice(0, 10) || "新对话";
+}
+
 // 复制状态 hook
 function useCopyable() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -73,6 +97,23 @@ const WRITING_PROMPTS: Record<string, string> = {
   abstract: "请为以下内容生成一份学术摘要（200-300字），包含：1) 研究背景 2) 方法 3) 主要发现 4) 结论。使用第三人称，语言精炼。",
 };
 
+// 会话分类
+const CHAT_CATEGORIES = [
+  { key: "all", label: "全部" },
+  { key: "general", label: "通用" },
+  { key: "review", label: "文献综述" },
+  { key: "idea", label: "IDEA" },
+  { key: "research", label: "研究" },
+];
+
+function detectCategory(title: string, category: string): string {
+  if (category && category !== "general") return category;
+  if (title.includes("综述") || title.includes("review")) return "review";
+  if (title.includes("IDEA") || title.includes("想法")) return "idea";
+  if (title.includes("选题") || title.includes("研究")) return "research";
+  return "general";
+}
+
 export default function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
@@ -84,6 +125,7 @@ export default function ChatPage() {
   const [streamThinking, setStreamThinking] = useState("");
   const [streamToolCalls, setStreamToolCalls] = useState<{name: string; query: string; result?: string}[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>("");
+  const [activeCategory, setActiveCategory] = useState("all");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // @引用系统
@@ -145,9 +187,10 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamContent, streamToolCalls]);
 
-  const handleNewSession = async () => {
-    const res = await chatApi.createSession();
-    setSessions(prev => [{ id: res.id, title: "新对话", model_name: "", category: "general", created_at: new Date().toISOString() }, ...prev]);
+  const handleNewSession = async (cat?: string) => {
+    const category = cat || (activeCategory !== "all" ? activeCategory : "general");
+    const res = await chatApi.createSession(undefined, category);
+    setSessions(prev => [{ id: res.id, title: "新对话", model_name: "", category, created_at: new Date().toISOString() }, ...prev]);
     setActiveSession(res.id);
     setMessages([]);
   };
@@ -240,9 +283,8 @@ export default function ChatPage() {
     const msg = await chatApi.addMessage(activeSession!, content);
     setMessages(prev => [...prev, msg]);
 
-    if (messages.length === 0) {
-      setSessions(prev => prev.map(s => s.id === activeSession ? { ...s, title: content.slice(0, 30) } : s));
-    }
+    // 首次对话后自动生成标题
+    const isFirstMessage = messages.length === 0;
 
     setStreaming(true);
     setStreamContent("");
@@ -278,6 +320,15 @@ export default function ChatPage() {
     setStreamContent("");
     setStreamThinking("");
     setStreamToolCalls([]);
+
+    // 首次对话后自动生成标题
+    if (isFirstMessage && activeSession) {
+      const aiReply = updated.find(m => m.role === "assistant");
+      if (aiReply) {
+        const autoTitle = extractTitle(content, aiReply.content);
+        setSessions(prev => prev.map(s => s.id === activeSession ? { ...s, title: autoTitle } : s));
+      }
+    }
   };
 
   const { copiedId, copy } = useCopyable();
@@ -298,9 +349,33 @@ export default function ChatPage() {
             )) : <option>未配置模型</option>}
           </select>
         </div>
-        <button className="btn-gradient btn-click" onClick={handleNewSession}>新建对话</button>
+
+        {/* 分类标签 */}
+        <div className="flex flex-wrap gap-1 px-1">
+          {CHAT_CATEGORIES.map(cat => {
+            const count = cat.key === "all" ? sessions.length : sessions.filter(s => detectCategory(s.title, s.category) === cat.key).length;
+            return (
+              <button
+                key={cat.key}
+                className="px-2 py-1 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
+                style={activeCategory === cat.key
+                  ? { background: "rgba(59,130,246,0.12)", color: "var(--accent-blue)" }
+                  : { color: "var(--text-muted)" }
+                }
+                onClick={() => setActiveCategory(cat.key)}
+              >
+                {cat.label}{count > 0 ? ` ${count}` : ""}
+              </button>
+            );
+          })}
+        </div>
+
+        <button className="btn-gradient btn-click text-xs py-2" onClick={() => handleNewSession()}>新建对话</button>
         <div className="flex-1 space-y-1 overflow-y-auto">
-          {sessions.map(s => (
+          {(activeCategory === "all" ? sessions : sessions.filter(s => detectCategory(s.title, s.category) === activeCategory)).map(s => {
+            const cat = detectCategory(s.title, s.category);
+            const catInfo = CHAT_CATEGORIES.find(c => c.key === cat);
+            return (
             <div
               key={s.id}
               onClick={() => setActiveSession(s.id)}
@@ -312,12 +387,18 @@ export default function ChatPage() {
               onMouseEnter={e => { if (activeSession !== s.id) e.currentTarget.style.background = "var(--hover-bg)"; }}
               onMouseLeave={e => { if (activeSession !== s.id) e.currentTarget.style.background = "transparent"; }}
             >
-              {s.title.slice(0, 20)}
+              <span className="truncate">{s.title.slice(0, 20)}</span>
+              {cat !== "general" && catInfo && (
+                <span className="ml-1 text-[9px] px-1 py-0.5 rounded" style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>
+                  {catInfo.label}
+                </span>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
         {activeSession && (
-          <button className="text-sm py-2 transition-colors" style={{ color: "var(--text-muted)" }}
+          <button className="text-xs py-2 transition-colors" style={{ color: "var(--text-muted)" }}
             onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
             onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
             onClick={handleDeleteSession}>删除当前对话</button>

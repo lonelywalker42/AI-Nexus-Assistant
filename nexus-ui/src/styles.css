@@ -270,6 +270,13 @@ select.input-glass {
 }
 
 /* ── 工具类 ── */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -282,4 +289,21 @@ select.input-glass {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* ── 渐变文字 ── */
+.text-gradient {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ── 浮动按钮动画 ── */
+@keyframes fabPulse {
+  0%, 100% { box-shadow: 0 8px 24px rgba(59,130,246,0.3); }
+  50% { box-shadow: 0 8px 32px rgba(59,130,246,0.5); }
+}
+
+.fab-pulse {
+  animation: fabPulse 2s ease-in-out infinite;
 }

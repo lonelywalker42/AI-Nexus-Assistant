@@ -245,7 +245,7 @@ class AIRouter:
                         result = execute_registered_tool(tool_name, tc["arguments"])
 
                     yield {"type": "tool_result", "data": json.dumps({
-                        "name": tool_name, "query": query, "result": result[:2000]
+                        "name": tool_name, "query": query, "result": result[:5000]
                     }, ensure_ascii=False)}
 
                     # 将工具调用和结果添加到消息历史
@@ -358,7 +358,7 @@ class AIRouter:
                         result = execute_registered_tool(tool_name, tu["input_json"])
 
                     yield {"type": "tool_result", "data": json.dumps({
-                        "name": tool_name, "query": query, "result": result[:2000]
+                        "name": tool_name, "query": query, "result": result[:5000]
                     }, ensure_ascii=False)}
 
                     tool_results.append({

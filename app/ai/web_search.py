@@ -93,7 +93,7 @@ TOOL_DEFINITION_OPENAI = {
     "type": "function",
     "function": {
         "name": "web_search",
-        "description": "搜索互联网获取最新信息。当用户询问实时信息、最新新闻、当前事件或你不确定的事实时使用此工具。",
+        "description": "搜索互联网获取最新信息。当用户询问实时信息、最新新闻、当前事件或你不确定的事实时使用此工具。收到搜索结果后，你必须仔细阅读每条结果的标题、链接和摘要内容，然后基于这些信息为用户提供全面、准确的回答。不要只告诉用户你搜索了什么，而要基于搜索结果回答用户的问题。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -114,7 +114,7 @@ TOOL_DEFINITION_OPENAI = {
 
 TOOL_DEFINITION_ANTHROPIC = {
     "name": "web_search",
-    "description": "搜索互联网获取最新信息。当用户询问实时信息、最新新闻、当前事件或你不确定的事实时使用此工具。",
+    "description": "搜索互联网获取最新信息。当用户询问实时信息、最新新闻、当前事件或你不确定的事实时使用此工具。收到搜索结果后，你必须仔细阅读每条结果的标题、链接和摘要内容，然后基于这些信息为用户提供全面、准确的回答。不要只告诉用户你搜索了什么，而要基于搜索结果回答用户的问题。",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -152,15 +152,21 @@ def execute_tool_call(arguments: str | dict) -> str:
     results = web_search(query, max_results)
 
     if not results:
-        return f"未找到与 \"{query}\" 相关的搜索结果。"
+        return f"未找到与 \"{query}\" 相关的搜索结果。请尝试更换关键词重新搜索。"
 
-    lines = [f"搜索 \"{query}\" 的结果：\n"]
-    for i, r in enumerate(results, 1):
-        engine_tag = f" [{r.get('engine', '')}]" if r.get('engine') else ""
-        lines.append(f"{i}. **{r['title']}**{engine_tag}")
-        lines.append(f"   链接: {r['url']}")
+    # 过滤掉错误结果
+    valid_results = [r for r in results if r.get("engine") != "error"]
+    if not valid_results:
+        return f"搜索 \"{query}\" 未获得有效结果。请尝试更换关键词。"
+
+    lines = [f"以下是搜索 \"{query}\" 获得的 {len(valid_results)} 条结果，请仔细阅读并基于这些内容回答用户问题：\n"]
+    for i, r in enumerate(valid_results, 1):
+        lines.append(f"[{i}] {r['title']}")
+        if r.get('url'):
+            lines.append(f"    来源: {r['url']}")
         if r.get('snippet'):
-            lines.append(f"   摘要: {r['snippet']}")
+            lines.append(f"    内容: {r['snippet']}")
         lines.append("")
 
+    lines.append("请基于以上搜索结果，为用户提供详细、准确的回答。引用具体来源。")
     return "\n".join(lines)

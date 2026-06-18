@@ -90,8 +90,16 @@ def build_messages_for_ai(db: Session, session_id: str,
                           system_prompt: str = "") -> list[dict]:
     """构建发送给 AI 的消息列表"""
     messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    if not system_prompt:
+        system_prompt = (
+            "你是一个专业的科研助手。你可以使用工具来搜索互联网获取最新信息。"
+            "当使用 web_search 工具获取搜索结果后，你必须：\n"
+            "1. 仔细阅读每条搜索结果的标题和摘要内容\n"
+            "2. 基于搜索结果中的具体信息回答用户问题\n"
+            "3. 引用信息来源（标题或链接）\n"
+            "4. 不要只告诉用户你搜索了什么关键词，而要给出搜索到的实际内容和答案"
+        )
+    messages.append({"role": "system", "content": system_prompt})
 
     db_messages = get_messages(db, session_id)
     for msg in db_messages:

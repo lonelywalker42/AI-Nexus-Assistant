@@ -204,26 +204,26 @@ export default function PaperLibraryPage() {
       <div className="flex gap-2 items-center flex-wrap">
         <div className="relative flex-1 min-w-48">
           <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }} />
-          <input className="input-glass pl-8 w-full" placeholder="搜索文献..."
+          <input className="input-glass pl-8 w-full text-sm" placeholder="搜索文献..."
             value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className="input-glass w-28" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+        <select className="input-glass text-xs py-2 w-24" value={sortBy} onChange={e => setSortBy(e.target.value)}>
           {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <button className="btn-ghost px-2" onClick={() => setSortOrder(o => o === "desc" ? "asc" : "desc")}
+        <button className="btn-ghost text-xs px-2 py-2" onClick={() => setSortOrder(o => o === "desc" ? "asc" : "desc")}
           title={sortOrder === "desc" ? "降序" : "升序"}>
           {sortOrder === "desc" ? "↓" : "↑"}
         </button>
-        <button className="btn-gradient btn-click text-xs" onClick={() => fileInputRef.current?.click()}>
+        <button className="btn-gradient btn-click text-xs py-2 px-3 flex items-center gap-1" onClick={() => fileInputRef.current?.click()}>
           <IconUpload size={12} /> {importing ? "导入中..." : "导入 PDF"}
         </button>
         <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={handleImportPdf} />
-        <button className={`btn-ghost text-xs ${batchMode ? "!bg-red-500 !text-white" : ""}`}
+        <button className={`btn-ghost text-xs py-2 ${batchMode ? "!bg-red-500 !text-white" : ""}`}
           onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}>
           {batchMode ? "取消" : "批量"}
         </button>
         {batchMode && selectedIds.size > 0 && (
-          <button className="btn-ghost text-xs !bg-red-500 !text-white" onClick={handleBatchDelete}>
+          <button className="btn-ghost text-xs py-2 !bg-red-500 !text-white" onClick={handleBatchDelete}>
             删除 ({selectedIds.size})
           </button>
         )}
@@ -342,7 +342,7 @@ export default function PaperLibraryPage() {
 
         {/* 详情面板（右侧滑出） */}
         {showDetail && selected && (
-          <div className="w-full lg:w-[380px] flex-shrink-0 overflow-y-auto space-y-3 glass-card p-5">
+          <div className="w-full lg:w-[380px] xl:w-[420px] flex-shrink-0 overflow-y-auto space-y-3 glass-card p-5 max-h-[calc(100vh-200px)]">
             {/* 关闭按钮 */}
             <div className="flex items-start justify-between">
               <h2 className="text-base font-bold leading-relaxed flex-1 pr-2" style={{ color: "var(--text-primary)" }}>
