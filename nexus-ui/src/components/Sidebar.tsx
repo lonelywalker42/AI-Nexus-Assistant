@@ -17,10 +17,10 @@ interface SidebarProps {
   onNavigate: (id: string) => void;
 }
 
-const GROUPS = [
+const GROUPS: Array<{ key: string; label: string; badge?: string }> = [
   { key: "overview", label: "总览" },
   { key: "research", label: "科研助手" },
-  { key: "personal", label: "个人助手", badge: "待开发" },
+  { key: "personal", label: "个人助手" },
   { key: "settings", label: "设置" },
 ];
 
@@ -107,7 +107,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
           onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
         >
-          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v2.2.2</span>
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v3.0.0</span>
         </div>
       </aside>
 
@@ -124,7 +124,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
             <div className="text-center space-y-3">
               <div className="text-3xl font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>{name}</div>
               <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{name} Assistant</p>
-              <p className="text-xs" style={{ color: "var(--text-muted)" }}>v2.2.2</p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>v3.0.0</p>
               <div className="h-px" style={{ background: "var(--border-color)" }} />
               <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                 面向航空航天/控制领域科研人员的个人研究助手桌面应用。

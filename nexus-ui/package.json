@@ -1,7 +1,7 @@
 {
   "name": "nexus-ui",
   "private": true,
-  "version": "2.2.2",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,10 +12,12 @@
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
+    "epubjs": "^0.3.93",
+    "jsmediatags": "^3.9.7",
+    "lucide-react": "^0.400.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-markdown": "^9.0.0",
-    "lucide-react": "^0.400.0"
+    "react-markdown": "^9.0.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

@@ -7,9 +7,9 @@
   --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
   --glass-bg: rgba(255, 255, 255, 0.75);
   --glass-border: rgba(226, 232, 240, 0.8);
-  --glass-blur: blur(12px);
-  --radius-card: 16px;
-  --radius-element: 12px;
+  --glass-blur: blur(16px);
+  --radius-card: 20px;
+  --radius-element: 14px;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.07);
   --text-primary: #1e293b;
@@ -52,6 +52,13 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
+/* ── 自定义主题 (用户可配置) ── */
+[data-theme="custom-1"],
+[data-theme="custom-2"],
+[data-theme="custom-3"] {
+  /* 自定义主题的变量由 JS 通过 style.setProperty 覆盖 */
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -73,15 +80,15 @@ body {
   height: 100vh;
 }
 
-/* ── 玻璃质感卡片 ── */
+/* ── 玻璃质感卡片 (iOS 风格) ── */
 .glass-card {
   background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur) saturate(150%);
+  -webkit-backdrop-filter: var(--glass-blur) saturate(150%);
   border-radius: var(--radius-card);
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
 }
 
 .glass-card:hover {
@@ -89,7 +96,7 @@ body {
 }
 
 .glass-card-hover:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
 
@@ -116,13 +123,13 @@ body {
   background: #94a3b8;
 }
 
-/* ── 按钮 ── */
+/* ── 按钮 (iOS 风格弹簧动效) ── */
 .btn-click {
-  transition: transform 0.12s ease;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .btn-click:active {
-  transform: scale(0.97);
+  transform: scale(0.95);
 }
 
 .btn-gradient {
@@ -306,4 +313,150 @@ select.input-glass {
 
 .fab-pulse {
   animation: fabPulse 2s ease-in-out infinite;
+}
+
+/* ── 唱片旋转动画 ── */
+@keyframes vinylSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.vinyl-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vinyl-disc {
+  border-radius: 50%;
+  position: relative;
+  background: radial-gradient(
+    circle,
+    #2a2a2a 0%, #2a2a2a 32%,
+    #1a1a1a 33%, #1a1a1a 35%,
+    #111 36%, #111 100%
+  );
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4), inset 0 0 30px rgba(0,0,0,0.3);
+}
+
+.vinyl-disc.spinning {
+  animation: vinylSpin 3s linear infinite;
+}
+
+.vinyl-grooves {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-radial-gradient(
+    circle,
+    transparent 0px, transparent 3px,
+    rgba(255,255,255,0.03) 3px, rgba(255,255,255,0.03) 4px
+  );
+}
+
+.vinyl-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 34%;
+  height: 34%;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.1);
+}
+
+.vinyl-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vinyl-default {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, #333 0%, #222 100%);
+}
+
+/* ── 书架样式 ── */
+.bookshelf-row {
+  padding: 20px 0;
+  position: relative;
+}
+
+.bookshelf-books {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 0 20px 0;
+  min-height: 200px;
+  flex-wrap: wrap;
+}
+
+.book-spine-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.2s ease;
+}
+
+.book-spine-wrapper:hover {
+  transform: translateY(-8px);
+}
+
+.book-spine {
+  width: 36px;
+  height: 180px;
+  border-radius: 3px 5px 5px 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: inset -2px 0 4px rgba(0,0,0,0.2), 2px 2px 6px rgba(0,0,0,0.15);
+  cursor: pointer;
+}
+
+.book-spine::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: rgba(0,0,0,0.15);
+  border-radius: 3px 0 0 3px;
+}
+
+.book-spine-title {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  color: rgba(255,255,255,0.9);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 160px;
+  padding: 8px 0;
+}
+
+.book-spine-shadow {
+  width: 36px;
+  height: 6px;
+  border-radius: 0 0 3px 3px;
+  opacity: 0.3;
+  filter: blur(2px);
+  margin-top: -1px;
+}
+
+.bookshelf-plank {
+  height: 12px;
+  margin: 0 -10px;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }

@@ -275,6 +275,70 @@ export function IconFilter({ size = 18, className, style }: IconProps) {
   );
 }
 
+export function IconPlay({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className} style={style}>
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  );
+}
+
+export function IconPause({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className} style={style}>
+      <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+    </svg>
+  );
+}
+
+export function IconSkipBack({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className} style={style}>
+      <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+    </svg>
+  );
+}
+
+export function IconSkipForward({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className} style={style}>
+      <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+    </svg>
+  );
+}
+
+export function IconShuffle({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+    </svg>
+  );
+}
+
+export function IconRepeat({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}
+
+export function IconVolume2({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <path d="M11 5L6 9H2v6h4l5 4V5z" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+    </svg>
+  );
+}
+
+export function IconVolumeX({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <path d="M11 5L6 9H2v6h4l5 4V5z" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" />
+    </svg>
+  );
+}
+
 export function IconCalendar({ size = 18, className, style }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
@@ -311,6 +375,38 @@ export function IconSun({ size = 18, className, style }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
       <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </svg>
+  );
+}
+
+export function IconMusic({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+    </svg>
+  );
+}
+
+export function IconDisc({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+export function IconBookOpen({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+    </svg>
+  );
+}
+
+export function IconLibrary({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
     </svg>
   );
 }

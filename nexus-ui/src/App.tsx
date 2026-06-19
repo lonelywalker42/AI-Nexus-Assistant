@@ -9,10 +9,13 @@ import ExperimentPage from "./pages/ExperimentPage";
 import KnowledgePage from "./pages/KnowledgePage";
 import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
+import MusicPage from "./pages/MusicPage";
+import BookshelfPage from "./pages/BookshelfPage";
 import { dashboardApi } from "./api/client";
 import {
   IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat,
   IconGear, IconX, IconMinus, IconMaximize, IconCalendar, IconLightbulb, IconImage,
+  IconMusic, IconBookOpen,
 } from "./components/Icons";
 import { useAppName } from "./hooks/useAppName";
 
@@ -29,6 +32,8 @@ const PAGES = [
   { id: "experiments", label: "试验管理", icon: "flask", group: "research" },
   { id: "chat", label: "AI 对话", icon: "chat", group: "research" },
   // 个人助手
+  { id: "music", label: "音乐", icon: "music", group: "personal" },
+  { id: "bookshelf", label: "书架", icon: "bookOpen", group: "personal" },
   { id: "materials", label: "素材库", icon: "image", group: "personal" },
   // 设置
   { id: "settings", label: "设置", icon: "gear", group: "settings" },
@@ -38,6 +43,7 @@ const ICON_MAP: Record<string, React.FC<{ size?: number }>> = {
   chart: IconChart, clipboard: IconClipboard, book: IconBook, search: IconSearch,
   flask: IconFlask, brain: IconBrain, chat: IconChat, gear: IconGear,
   calendar: IconCalendar, lightbulb: IconLightbulb, image: IconImage,
+  music: IconMusic, bookOpen: IconBookOpen,
 };
 
 export function getPageIcon(iconKey: string, size = 18) {
@@ -121,6 +127,8 @@ function App() {
       case "experiments": return <ExperimentPage />;
       case "knowledge": return <KnowledgePage />;
       case "chat": return <ChatPage />;
+      case "music": return <MusicPage />;
+      case "bookshelf": return <BookshelfPage />;
       case "settings": return <SettingsPage />;
       default: return <Dashboard onNavigate={setActivePage} />;
     }
