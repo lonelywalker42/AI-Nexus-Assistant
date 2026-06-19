@@ -174,10 +174,10 @@ input[type="file"]{display:none}
       <button class="pbtn" id="btnMode" title="顺序播放">
         <svg viewBox="0 0 24 24" id="iconMode"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
       </button>
-      <label class="file-btn" title="加载音乐文件夹">
+      <button class="pbtn" id="btnFolder" title="加载音乐文件夹">
         <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-        <input type="file" id="folderInput" accept=".mp3,.flac,.wav,.ogg,.m4a,.aac" webkitdirectory>
-      </label>
+      </button>
+      <input type="file" id="folderPicker" accept=".mp3,.flac,.wav,.ogg,.m4a,.aac" webkitdirectory style="display:none">
       <label class="file-btn" id="alertLabel" title="设置倒计时结束提示音">
         <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
         <input type="file" id="alertInput" accept=".mp3,.flac,.wav,.ogg,.m4a,.aac">
@@ -199,78 +199,75 @@ window._trans = false;
 
 function $(id){return document.getElementById(id)}
 
-// ── IndexedDB 持久化 ──
-var DB_NAME = 'nexus-clock';
+// ── IndexedDB 持久化（存储文件 ArrayBuffer）──
+var DB_NAME = 'nexus-clock-audio';
 var DB_VER = 1;
-var db = null;
 
 function openDB(cb){
-  if(db){cb(db);return}
   var req = indexedDB.open(DB_NAME, DB_VER);
   req.onupgradeneeded = function(e){
     var d = e.target.result;
-    if(!d.objectStoreNames.contains('playlist')) d.createObjectStore('playlist', {keyPath:'name'});
-    if(!d.objectStoreNames.contains('settings')) d.createObjectStore('settings', {keyPath:'key'});
+    if(!d.objectStoreNames.contains('tracks')) d.createObjectStore('tracks', {keyPath:'name'});
+    if(!d.objectStoreNames.contains('alert')) d.createObjectStore('alert', {keyPath:'key'});
   };
-  req.onsuccess = function(e){db=e.target.result;cb(db)};
+  req.onsuccess = function(e){cb(e.target.result)};
   req.onerror = function(){cb(null)};
 }
 
+// 保存播放列表到 IndexedDB
 function savePlaylistToDB(files){
-  openDB(function(d){
-    if(!d)return;
-    var tx = d.transaction('playlist','readwrite');
-    var store = tx.objectStore('playlist');
+  openDB(function(db){
+    if(!db)return;
+    var tx = db.transaction('tracks','readwrite');
+    var store = tx.objectStore('tracks');
     store.clear();
-    files.forEach(function(f){
+    var pending = files.length;
+    if(pending===0) return;
+    files.forEach(function(item){
+      var f = item.file || item;
       f.arrayBuffer().then(function(buf){
-        store.put({name:f.name, type:f.type, size:f.size, data:buf});
+        store.put({name:item.name, type:item.type||f.type, size:item.size||f.size, data:buf});
+        pending--;
       });
     });
   });
 }
 
+// 从 IndexedDB 加载播放列表
 function loadPlaylistFromDB(cb){
-  openDB(function(d){
-    if(!d){cb([]);return}
-    var tx = d.transaction('playlist','readonly');
-    var store = tx.objectStore('playlist');
-    var req = store.getAll();
+  openDB(function(db){
+    if(!db){cb([]);return}
+    var tx = db.transaction('tracks','readonly');
+    var req = tx.objectStore('tracks').getAll();
     req.onsuccess = function(){
-      var items = req.result || [];
-      var files = items.map(function(item){
-        return new File([item.data], item.name, {type:item.type});
+      var items = (req.result||[]).map(function(e){
+        return {name:e.name, file:new File([e.data],e.name,{type:e.type}), type:e.type, size:e.size};
       }).sort(function(a,b){return a.name.localeCompare(b.name,'zh')});
-      cb(files);
+      cb(items);
     };
     req.onerror = function(){cb([])};
   });
 }
 
+// 保存提示音到 IndexedDB
 function saveAlertToDB(file){
-  openDB(function(d){
-    if(!d)return;
-    var tx = d.transaction('settings','readwrite');
-    var store = tx.objectStore('settings');
+  openDB(function(db){
+    if(!db)return;
+    var tx = db.transaction('alert','readwrite');
     file.arrayBuffer().then(function(buf){
-      store.put({key:'alert', name:file.name, type:file.type, data:buf});
+      tx.objectStore('alert').put({key:'alert', name:file.name, type:file.type, data:buf});
     });
   });
 }
 
+// 从 IndexedDB 加载提示音
 function loadAlertFromDB(cb){
-  openDB(function(d){
-    if(!d){cb(null);return}
-    var tx = d.transaction('settings','readonly');
-    var store = tx.objectStore('settings');
-    var req = store.get('alert');
+  openDB(function(db){
+    if(!db){cb(null);return}
+    var req = db.transaction('alert','readonly').objectStore('alert').get('alert');
     req.onsuccess = function(){
-      var item = req.result;
-      if(item){
-        cb(new File([item.data], item.name, {type:item.type}));
-      }else{
-        cb(null);
-      }
+      var e = req.result;
+      cb(e ? new File([e.data],e.name,{type:e.type}) : null);
     };
     req.onerror = function(){cb(null)};
   });
@@ -324,7 +321,9 @@ setInterval(tick,500);tick();
 
 // ── 倒计时提示音 ──
 var _alertSrc = null;
+var _alertFile = null;
 var _alertPlaying = false;
+
 function playAlertSound(){
   var el = $('alertEl');
   if(_alertSrc){
@@ -431,37 +430,38 @@ function resizeCanvas(){
 resizeCanvas();
 drawSpectrum();
 
-// ── 从 IndexedDB 恢复持久化数据 ──
-loadPlaylistFromDB(function(files){
-  if(files.length > 0){
-    playlist = files;
+// ── 从 IndexedDB 恢复播放列表和提示音 ──
+loadPlaylistFromDB(function(items){
+  if(items.length > 0){
+    playlist = items;
     currentIdx = -1;
-    $('trackInfo').textContent = files.length + ' 首音乐已加载';
+    $('trackInfo').textContent = items.length + ' 首音乐已加载';
     $('trackInfo').className = 'track-info active';
   }
 });
 loadAlertFromDB(function(file){
   if(file){
     _alertSrc = URL.createObjectURL(file);
+    _alertFile = file;
     $('alertBadge').className = 'alert-badge show';
     $('alertLabel').title = '提示音: ' + file.name;
   }
 });
 
-// 播放控制
+// 播放控制 — playlist 项为 {name, file:File, type:string}
 function loadAndPlay(idx){
   if(idx < 0 || idx >= playlist.length) return;
   currentIdx = idx;
-  var file = playlist[idx];
-  var url = URL.createObjectURL(file);
+  var item = playlist[idx];
+  $('trackInfo').textContent = item.name.replace(/\.[^.]+$/, '');
+  $('trackInfo').className = 'track-info active';
+  var url = URL.createObjectURL(item.file);
   audioEl.src = url;
   audioEl.play().then(function(){
     initAudio();
     if(audioCtx.state === 'suspended') audioCtx.resume();
     isPlaying = true;
     updatePlayBtn();
-    $('trackInfo').textContent = file.name.replace(/\.[^.]+$/, '');
-    $('trackInfo').className = 'track-info active';
   }).catch(function(){});
 }
 
@@ -579,37 +579,41 @@ $('volBar').addEventListener('click', function(e){
   setVolume(x);
 });
 
-// 文件夹加载（替换播放列表 + 持久化）
-$('folderInput').addEventListener('change', function(e){
+// 文件夹按钮 → 触发隐藏 input
+$('btnFolder').addEventListener('click', function(){
+  $('folderPicker').click();
+});
+
+// 文件夹选择（webkitdirectory）
+$('folderPicker').addEventListener('change', function(e){
   var files = Array.from(e.target.files).filter(function(f){
     return /\.(mp3|flac|wav|ogg|m4a|aac)$/i.test(f.name);
-  }).sort(function(a, b){
-    return a.name.localeCompare(b.name, 'zh');
-  });
-  if(files.length === 0) return;
+  }).sort(function(a,b){return a.name.localeCompare(b.name,'zh')});
+  if(files.length === 0){alert('目录中未找到音频文件');this.value='';return}
   audioEl.pause();
   isPlaying = false;
   updatePlayBtn();
-  playlist = files;
+  playlist = files.map(function(f){return {name:f.name, file:f, type:f.type, size:f.size}});
   currentIdx = -1;
   $('trackInfo').textContent = files.length + ' 首音乐已加载';
   $('trackInfo').className = 'track-info active';
+  savePlaylistToDB(playlist);
   loadAndPlay(0);
-  savePlaylistToDB(files);
   this.value = '';
 });
 
-// 倒计时提示音选择 + 持久化
+// 倒计时提示音选择 + 持久化到 IndexedDB
 $('alertInput').addEventListener('change', function(e){
   var file = e.target.files[0];
   if(!file) return;
   _alertSrc = URL.createObjectURL(file);
+  _alertFile = file;
   $('alertBadge').className = 'alert-badge show';
   $('alertLabel').title = '提示音: ' + file.name;
   saveAlertToDB(file);
 });
 
-// 拖拽音频文件到播放器（替换播放列表）
+// 拖拽音频文件到播放器
 $('playerWrap').addEventListener('dragover', function(e){
   e.preventDefault();
   e.stopPropagation();
@@ -625,17 +629,16 @@ $('playerWrap').addEventListener('drop', function(e){
   this.style.borderColor = '';
   var files = Array.from(e.dataTransfer.files).filter(function(f){
     return /\.(mp3|flac|wav|ogg|m4a|aac)$/i.test(f.name);
-  }).sort(function(a, b){
-    return a.name.localeCompare(b.name, 'zh');
   });
   if(files.length > 0){
     audioEl.pause();
     isPlaying = false;
     updatePlayBtn();
-    playlist = files;
+    playlist = files.map(function(f){return {name:f.name, file:f, type:f.type, size:f.size}});
     currentIdx = -1;
     $('trackInfo').textContent = files.length + ' 首音乐已加载';
     $('trackInfo').className = 'track-info active';
+    savePlaylistToDB(playlist);
     loadAndPlay(0);
   }
 });

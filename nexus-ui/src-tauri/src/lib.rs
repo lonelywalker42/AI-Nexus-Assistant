@@ -112,6 +112,58 @@ fn toggle_bg(app: tauri::AppHandle) {
     }
 }
 
+/// 读取目录中的音频文件列表
+#[tauri::command]
+fn list_audio_files(dir_path: String) -> Result<Vec<serde_json::Value>, String> {
+    let dir = std::path::Path::new(&dir_path);
+    if !dir.is_dir() {
+        return Err("不是有效目录".into());
+    }
+    let audio_exts = [".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac"];
+    let mut files = Vec::new();
+    let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(ext) = path.extension() {
+                let ext_lower = ext.to_string_lossy().to_lowercase();
+                if audio_exts.iter().any(|e| e.trim_start_matches('.') == ext_lower) {
+                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                    let mime = match ext_lower.as_str() {
+                        "mp3" => "audio/mpeg",
+                        "flac" => "audio/flac",
+                        "wav" => "audio/wav",
+                        "ogg" => "audio/ogg",
+                        "m4a" => "audio/mp4",
+                        "aac" => "audio/aac",
+                        _ => "application/octet-stream",
+                    };
+                    files.push(serde_json::json!({
+                        "name": name,
+                        "path": path.to_string_lossy().to_string(),
+                        "size": size,
+                        "type": mime
+                    }));
+                }
+            }
+        }
+    }
+    files.sort_by(|a, b| {
+        a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or(""))
+    });
+    Ok(files)
+}
+
+/// 读取文件内容并返回 base64
+#[tauri::command]
+fn read_file_base64(file_path: String) -> Result<String, String> {
+    let data = std::fs::read(&file_path).map_err(|e| e.to_string())?;
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&data))
+}
+
 #[tauri::command]
 fn resize_clock(app: tauri::AppHandle, width: f64, height: f64) {
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
@@ -425,7 +477,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet, show_main_window, close_clock_window, close_input_window, close_todo_window,
             set_countdown, cancel_countdown, toggle_bg,
-            show_context_menu, resize_clock
+            show_context_menu, resize_clock,
+            list_audio_files, read_file_base64
         ])
         .setup(|app| {
             // 托盘
