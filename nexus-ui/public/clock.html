@@ -25,6 +25,8 @@ body.transparent .led{
 }
 body.transparent .col .cd{box-shadow:0 0 8px var(--hot),0 0 16px var(--wire),0 0 24px var(--glow)}
 body.transparent .tube::after{background:rgba(26,26,32,0.4);border-color:rgba(48,48,56,0.3)}
+body.transparent .player-wrap{background:rgba(6,6,8,0.45);backdrop-filter:blur(10px);border-color:rgba(18,18,26,0.2)}
+body.transparent .spec-canvas{opacity:0.7}
 
 .wrap{display:flex;flex-direction:column;align-items:center;gap:6px}
 .row{display:flex;align-items:center;gap:2px;position:relative;cursor:move}
@@ -73,12 +75,69 @@ body.transparent .tube::after{background:rgba(26,26,32,0.4);border-color:rgba(48
 .cd-lbl.exp{color:#ef4444;text-shadow:0 0 4px rgba(239,68,68,.5);animation:gf .5s infinite}
 .xbtn{position:absolute;top:6px;right:10px;font-size:10px;color:#3a3a44;cursor:pointer;z-index:10}
 .xbtn:hover{color:#ef4444}
+
+/* ── 音乐播放器 ── */
+.player-wrap{
+  width:100%;background:#060608;border:1px solid #12121a;border-radius:4px;
+  padding:4px 8px;box-shadow:inset 0 0 8px rgba(0,0,0,.9);transition:background .3s;
+  display:flex;flex-direction:column;gap:3px;position:relative;
+}
+.spec-canvas{
+  width:100%;height:24px;border-radius:2px;opacity:0.8;
+}
+.player-controls{
+  display:flex;align-items:center;gap:6px;
+}
+.pbtn{
+  background:none;border:none;cursor:pointer;padding:2px;
+  color:var(--led);opacity:0.7;transition:opacity 0.2s;
+  display:flex;align-items:center;justify-content:center;
+}
+.pbtn:hover{opacity:1}
+.pbtn svg{width:12px;height:12px;fill:currentColor}
+.track-info{
+  flex:1;min-width:0;font-size:9px;color:var(--led);opacity:0.6;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  text-shadow:0 0 4px rgba(204,102,0,.3);letter-spacing:1px;
+}
+.track-info.active{opacity:0.9}
+.vol-wrap{
+  display:flex;align-items:center;gap:3px;
+}
+.vol-bar{
+  width:40px;height:3px;background:rgba(204,102,0,0.2);border-radius:2px;
+  cursor:pointer;position:relative;
+}
+.vol-fill{
+  height:100%;background:var(--led);border-radius:2px;
+  box-shadow:0 0 4px rgba(204,102,0,.4);transition:width 0.1s;
+}
+.file-btn{
+  cursor:pointer;color:var(--led);opacity:0.5;transition:opacity 0.2s;
+  display:flex;align-items:center;
+}
+.file-btn:hover{opacity:1}
+.file-btn svg{width:11px;height:11px;fill:currentColor}
+input[type="file"]{display:none}
+
+/* ── 倒计时音频设置 ── */
+.alert-badge{
+  position:absolute;top:-2px;right:-2px;width:6px;height:6px;
+  border-radius:50%;background:#ef4444;box-shadow:0 0 4px #ef4444;
+  display:none;
+}
+.alert-badge.show{display:block}
 </style>
 </head>
 <body>
 
 <div class="wrap">
-  <div class="cd-lbl" id="cdL">&nbsp;</div>
+  <div style="display:flex;align-items:center;gap:6px;height:12px">
+    <div class="cd-lbl" id="cdL">&nbsp;</div>
+    <button class="pbtn" id="alertStop" title="停止提示音" style="display:none;color:#ef4444">
+      <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+    </button>
+  </div>
   <div class="row" id="dragZone">
     <div class="tube"><span class="dg" id="h1">0</span></div>
     <div class="tube"><span class="dg" id="h2">0</span></div>
@@ -91,7 +150,45 @@ body.transparent .tube::after{background:rgba(26,26,32,0.4);border-color:rgba(48
     <span class="xbtn" id="xB">✕</span>
   </div>
   <div class="led"><div class="led-t" id="ld"></div></div>
+
+  <!-- 音乐播放器 -->
+  <div class="player-wrap" id="playerWrap">
+    <canvas class="spec-canvas" id="specCanvas"></canvas>
+    <div class="player-controls">
+      <button class="pbtn" id="btnPrev" title="上一首">
+        <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+      </button>
+      <button class="pbtn" id="btnPlay" title="播放/暂停">
+        <svg viewBox="0 0 24 24" id="iconPlay"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="pbtn" id="btnNext" title="下一首">
+        <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+      </button>
+      <span class="track-info" id="trackInfo">拖入音频文件或点击 +</span>
+      <div class="vol-wrap">
+        <button class="pbtn" id="btnVol" title="静音">
+          <svg viewBox="0 0 24 24" id="iconVol"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+        </button>
+        <div class="vol-bar" id="volBar"><div class="vol-fill" id="volFill" style="width:70%"></div></div>
+      </div>
+      <button class="pbtn" id="btnMode" title="顺序播放">
+        <svg viewBox="0 0 24 24" id="iconMode"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+      </button>
+      <label class="file-btn" title="加载音乐文件夹">
+        <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+        <input type="file" id="folderInput" accept=".mp3,.flac,.wav,.ogg,.m4a,.aac" webkitdirectory>
+      </label>
+      <label class="file-btn" id="alertLabel" title="设置倒计时结束提示音">
+        <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+        <input type="file" id="alertInput" accept=".mp3,.flac,.wav,.ogg,.m4a,.aac">
+        <span class="alert-badge" id="alertBadge"></span>
+      </label>
+    </div>
+  </div>
 </div>
+
+<audio id="audioEl" preload="auto"></audio>
+<audio id="alertEl" preload="auto"></audio>
 
 <script>
 // ── 状态（由 Rust eval 注入到 window._xxx） ──
@@ -101,10 +198,88 @@ window._cdDone = false;
 window._trans = false;
 
 function $(id){return document.getElementById(id)}
+
+// ── IndexedDB 持久化 ──
+var DB_NAME = 'nexus-clock';
+var DB_VER = 1;
+var db = null;
+
+function openDB(cb){
+  if(db){cb(db);return}
+  var req = indexedDB.open(DB_NAME, DB_VER);
+  req.onupgradeneeded = function(e){
+    var d = e.target.result;
+    if(!d.objectStoreNames.contains('playlist')) d.createObjectStore('playlist', {keyPath:'name'});
+    if(!d.objectStoreNames.contains('settings')) d.createObjectStore('settings', {keyPath:'key'});
+  };
+  req.onsuccess = function(e){db=e.target.result;cb(db)};
+  req.onerror = function(){cb(null)};
+}
+
+function savePlaylistToDB(files){
+  openDB(function(d){
+    if(!d)return;
+    var tx = d.transaction('playlist','readwrite');
+    var store = tx.objectStore('playlist');
+    store.clear();
+    files.forEach(function(f){
+      f.arrayBuffer().then(function(buf){
+        store.put({name:f.name, type:f.type, size:f.size, data:buf});
+      });
+    });
+  });
+}
+
+function loadPlaylistFromDB(cb){
+  openDB(function(d){
+    if(!d){cb([]);return}
+    var tx = d.transaction('playlist','readonly');
+    var store = tx.objectStore('playlist');
+    var req = store.getAll();
+    req.onsuccess = function(){
+      var items = req.result || [];
+      var files = items.map(function(item){
+        return new File([item.data], item.name, {type:item.type});
+      }).sort(function(a,b){return a.name.localeCompare(b.name,'zh')});
+      cb(files);
+    };
+    req.onerror = function(){cb([])};
+  });
+}
+
+function saveAlertToDB(file){
+  openDB(function(d){
+    if(!d)return;
+    var tx = d.transaction('settings','readwrite');
+    var store = tx.objectStore('settings');
+    file.arrayBuffer().then(function(buf){
+      store.put({key:'alert', name:file.name, type:file.type, data:buf});
+    });
+  });
+}
+
+function loadAlertFromDB(cb){
+  openDB(function(d){
+    if(!d){cb(null);return}
+    var tx = d.transaction('settings','readonly');
+    var store = tx.objectStore('settings');
+    var req = store.get('alert');
+    req.onsuccess = function(){
+      var item = req.result;
+      if(item){
+        cb(new File([item.data], item.name, {type:item.type}));
+      }else{
+        cb(null);
+      }
+    };
+    req.onerror = function(){cb(null)};
+  });
+}
 var D={h1:$('h1'),h2:$('h2'),m1:$('m1'),m2:$('m2'),s1:$('s1'),s2:$('s2')};
 var C=[$('c1'),$('c2'),$('c3'),$('c4')];
 var blink=true;
 
+// ── 时钟逻辑 ──
 function p2(n){return String(n).padStart(2,'0')}
 function show(h,m,s,cls){
   var t=p2(h)+p2(m)+p2(s),k=['h1','h2','m1','m2','s1','s2'];
@@ -115,23 +290,355 @@ function showDate(){
   $('ld').textContent=n.getFullYear()+'.'+p2(n.getMonth()+1)+'.'+p2(n.getDate())+'  '+w[n.getDay()]+'  '+(n.getHours()<12?'AM':'PM');
 }
 
+var _prevCdDone = false;
 function tick(){
   blink=!blink;
   for(var i=0;i<C.length;i++)C[i].classList.toggle('off',!blink);
   if(window._isCD){
     var r=Math.max(0,Math.ceil((window._cdTarget-Date.now())/1000));
     if(r<=0){
-      if(!window._cdDone){window._cdDone=true;$('cdL').textContent='TIME UP!';$('cdL').className='cd-lbl exp'}
+      if(!window._cdDone){
+        window._cdDone=true;
+        $('cdL').textContent='TIME UP!';
+        $('cdL').className='cd-lbl exp';
+        // 播放倒计时结束提示音
+        if(!_prevCdDone) playAlertSound();
+      }
       show(99,99,99,'expire');return;
     }
+    _prevCdDone = false;
     show(Math.floor(r/3600),Math.floor((r%3600)/60),r%60,r<=10?'flash':'');
     $('cdL').textContent='COUNTDOWN';$('cdL').className='cd-lbl'+(r<=10?' exp':'');
   }else{
+    if(_prevCdDone || window._cdDone){
+      // 倒计时重置 → 停止提示音
+      stopAlertSound();
+    }
+    _prevCdDone = false;
+    window._cdDone = false;
     var n=new Date();show(n.getHours(),n.getMinutes(),n.getSeconds(),'');
     showDate();$('cdL').innerHTML='&nbsp;';$('cdL').className='cd-lbl';
   }
 }
 setInterval(tick,500);tick();
+
+// ── 倒计时提示音 ──
+var _alertSrc = null;
+var _alertPlaying = false;
+function playAlertSound(){
+  var el = $('alertEl');
+  if(_alertSrc){
+    el.src = _alertSrc;
+    el.currentTime = 0;
+    el.play().then(function(){
+      _alertPlaying = true;
+      $('alertStop').style.display = 'flex';
+    }).catch(function(){});
+  }
+}
+function stopAlertSound(){
+  var el = $('alertEl');
+  el.pause();
+  el.currentTime = 0;
+  _alertPlaying = false;
+  $('alertStop').style.display = 'none';
+}
+
+// ── 音乐播放器 ──
+var audioCtx = null;
+var analyser = null;
+var sourceNode = null;
+var gainNode = null;
+var playlist = [];
+var currentIdx = -1;
+var isPlaying = false;
+var volume = 0.7;
+var isMuted = false;
+var playMode = 'sequential'; // 'sequential' | 'shuffle'
+
+var audioEl = $('audioEl');
+var canvas = $('specCanvas');
+var ctx = canvas.getContext('2d');
+
+// 初始化 Web Audio API
+function initAudio(){
+  if(audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 128;
+  analyser.smoothingTimeConstant = 0.8;
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = volume;
+
+  sourceNode = audioCtx.createMediaElementSource(audioEl);
+  sourceNode.connect(analyser);
+  analyser.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+}
+
+// 频谱绘制
+var specData = null;
+function drawSpectrum(){
+  requestAnimationFrame(drawSpectrum);
+  if(!analyser){drawIdleSpectrum();return;}
+
+  var bufLen = analyser.frequencyBinCount;
+  if(!specData || specData.length !== bufLen) specData = new Uint8Array(bufLen);
+  analyser.getByteFrequencyData(specData);
+
+  var w = canvas.width;
+  var h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  var barCount = bufLen;
+  var barW = Math.max(1, (w / barCount) - 1);
+  var gap = 1;
+
+  for(var i = 0; i < barCount; i++){
+    var v = specData[i] / 255;
+    var barH = Math.max(1, v * h);
+
+    // 颜色渐变：底部橙色 → 顶部亮黄
+    var r = 204 + Math.floor(51 * v);
+    var g = 85 + Math.floor(170 * v);
+    var b = 0;
+
+    ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + (0.5 + v * 0.5) + ')';
+    ctx.fillRect(i * (barW + gap), h - barH, barW, barH);
+  }
+}
+
+function drawIdleSpectrum(){
+  var w = canvas.width;
+  var h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  // 绘制静态基线
+  ctx.fillStyle = 'rgba(204,102,0,0.15)';
+  var barCount = 32;
+  var barW = Math.max(1, (w / barCount) - 1);
+  for(var i = 0; i < barCount; i++){
+    ctx.fillRect(i * (barW + 1), h - 1, barW, 1);
+  }
+}
+
+// 调整 canvas 分辨率
+function resizeCanvas(){
+  var rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * (window.devicePixelRatio || 1);
+  canvas.height = rect.height * (window.devicePixelRatio || 1);
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+}
+resizeCanvas();
+drawSpectrum();
+
+// ── 从 IndexedDB 恢复持久化数据 ──
+loadPlaylistFromDB(function(files){
+  if(files.length > 0){
+    playlist = files;
+    currentIdx = -1;
+    $('trackInfo').textContent = files.length + ' 首音乐已加载';
+    $('trackInfo').className = 'track-info active';
+  }
+});
+loadAlertFromDB(function(file){
+  if(file){
+    _alertSrc = URL.createObjectURL(file);
+    $('alertBadge').className = 'alert-badge show';
+    $('alertLabel').title = '提示音: ' + file.name;
+  }
+});
+
+// 播放控制
+function loadAndPlay(idx){
+  if(idx < 0 || idx >= playlist.length) return;
+  currentIdx = idx;
+  var file = playlist[idx];
+  var url = URL.createObjectURL(file);
+  audioEl.src = url;
+  audioEl.play().then(function(){
+    initAudio();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    isPlaying = true;
+    updatePlayBtn();
+    $('trackInfo').textContent = file.name.replace(/\.[^.]+$/, '');
+    $('trackInfo').className = 'track-info active';
+  }).catch(function(){});
+}
+
+function togglePlay(){
+  if(playlist.length === 0) return;
+  initAudio();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+
+  if(isPlaying){
+    audioEl.pause();
+    isPlaying = false;
+  }else{
+    if(currentIdx < 0) currentIdx = 0;
+    audioEl.play().then(function(){isPlaying=true;updatePlayBtn();}).catch(function(){});
+  }
+  updatePlayBtn();
+}
+
+function playNext(){
+  if(playlist.length === 0) return;
+  var next;
+  if(playMode === 'shuffle'){
+    next = Math.floor(Math.random() * playlist.length);
+    if(playlist.length > 1){
+      while(next === currentIdx) next = Math.floor(Math.random() * playlist.length);
+    }
+  }else{
+    next = (currentIdx + 1) % playlist.length;
+  }
+  loadAndPlay(next);
+}
+
+function playPrev(){
+  if(playlist.length === 0) return;
+  var prev;
+  if(playMode === 'shuffle'){
+    prev = Math.floor(Math.random() * playlist.length);
+    if(playlist.length > 1){
+      while(prev === currentIdx) prev = Math.floor(Math.random() * playlist.length);
+    }
+  }else{
+    prev = (currentIdx - 1 + playlist.length) % playlist.length;
+  }
+  loadAndPlay(prev);
+}
+
+function togglePlayMode(){
+  if(playMode === 'sequential'){
+    playMode = 'shuffle';
+    $('iconMode').innerHTML = '<path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>';
+    $('btnMode').title = '随机播放';
+  }else{
+    playMode = 'sequential';
+    $('iconMode').innerHTML = '<path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>';
+    $('btnMode').title = '顺序播放';
+  }
+}
+
+function updatePlayBtn(){
+  var icon = $('iconPlay');
+  if(isPlaying){
+    icon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+  }else{
+    icon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+  }
+}
+
+function setVolume(v){
+  volume = Math.max(0, Math.min(1, v));
+  if(gainNode) gainNode.gain.value = isMuted ? 0 : volume;
+  audioEl.volume = isMuted ? 0 : volume;
+  $('volFill').style.width = (volume * 100) + '%';
+  updateVolIcon();
+}
+
+function toggleMute(){
+  isMuted = !isMuted;
+  if(gainNode) gainNode.gain.value = isMuted ? 0 : volume;
+  audioEl.volume = isMuted ? 0 : volume;
+  updateVolIcon();
+}
+
+function updateVolIcon(){
+  var icon = $('iconVol');
+  if(isMuted || volume === 0){
+    icon.innerHTML = '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>';
+  }else{
+    icon.innerHTML = '<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>';
+  }
+}
+
+// 自动播放下一首
+audioEl.addEventListener('ended', function(){
+  playNext();
+});
+
+// 提示音自然结束
+$('alertEl').addEventListener('ended', function(){
+  _alertPlaying = false;
+  $('alertStop').style.display = 'none';
+});
+
+// 事件绑定
+$('btnPlay').addEventListener('click', togglePlay);
+$('btnNext').addEventListener('click', playNext);
+$('btnPrev').addEventListener('click', playPrev);
+$('btnVol').addEventListener('click', toggleMute);
+$('btnMode').addEventListener('click', togglePlayMode);
+$('alertStop').addEventListener('click', stopAlertSound);
+
+// 音量条点击
+$('volBar').addEventListener('click', function(e){
+  var rect = this.getBoundingClientRect();
+  var x = (e.clientX - rect.left) / rect.width;
+  setVolume(x);
+});
+
+// 文件夹加载（替换播放列表 + 持久化）
+$('folderInput').addEventListener('change', function(e){
+  var files = Array.from(e.target.files).filter(function(f){
+    return /\.(mp3|flac|wav|ogg|m4a|aac)$/i.test(f.name);
+  }).sort(function(a, b){
+    return a.name.localeCompare(b.name, 'zh');
+  });
+  if(files.length === 0) return;
+  audioEl.pause();
+  isPlaying = false;
+  updatePlayBtn();
+  playlist = files;
+  currentIdx = -1;
+  $('trackInfo').textContent = files.length + ' 首音乐已加载';
+  $('trackInfo').className = 'track-info active';
+  loadAndPlay(0);
+  savePlaylistToDB(files);
+  this.value = '';
+});
+
+// 倒计时提示音选择 + 持久化
+$('alertInput').addEventListener('change', function(e){
+  var file = e.target.files[0];
+  if(!file) return;
+  _alertSrc = URL.createObjectURL(file);
+  $('alertBadge').className = 'alert-badge show';
+  $('alertLabel').title = '提示音: ' + file.name;
+  saveAlertToDB(file);
+});
+
+// 拖拽音频文件到播放器（替换播放列表）
+$('playerWrap').addEventListener('dragover', function(e){
+  e.preventDefault();
+  e.stopPropagation();
+  this.style.borderColor = 'var(--led)';
+});
+$('playerWrap').addEventListener('dragleave', function(e){
+  e.preventDefault();
+  this.style.borderColor = '';
+});
+$('playerWrap').addEventListener('drop', function(e){
+  e.preventDefault();
+  e.stopPropagation();
+  this.style.borderColor = '';
+  var files = Array.from(e.dataTransfer.files).filter(function(f){
+    return /\.(mp3|flac|wav|ogg|m4a|aac)$/i.test(f.name);
+  }).sort(function(a, b){
+    return a.name.localeCompare(b.name, 'zh');
+  });
+  if(files.length > 0){
+    audioEl.pause();
+    isPlaying = false;
+    updatePlayBtn();
+    playlist = files;
+    currentIdx = -1;
+    $('trackInfo').textContent = files.length + ' 首音乐已加载';
+    $('trackInfo').className = 'track-info active';
+    loadAndPlay(0);
+  }
+});
 
 // 右键 → 调用 Rust 原生菜单
 document.addEventListener('contextmenu',function(e){
@@ -142,6 +649,7 @@ document.addEventListener('contextmenu',function(e){
 // 双击返回主窗口
 document.addEventListener('dblclick',function(e){
   if(e.target.closest('.xbtn'))return;
+  if(e.target.closest('.player-wrap'))return;
   if(window.invoke) window.invoke('show_main_window',{}).catch(function(){});
 });
 
@@ -158,20 +666,22 @@ $('dragZone').addEventListener('mousedown',function(e){
 });
 
 // ── 滚轮缩放 ──
-var CW=360, CH=140, SCALE=1;
+var CW=360, CH=180, SCALE=1;
 document.addEventListener('wheel',function(e){
   e.preventDefault();
   var step = e.deltaY < 0 ? 0.1 : -0.1;
   SCALE = Math.max(0.6, Math.min(2.5, SCALE + step));
   CW = Math.round(360 * SCALE);
-  CH = Math.round(140 * SCALE);
-  // 缩放所有元素
+  CH = Math.round(180 * SCALE);
   var s = SCALE;
   document.querySelectorAll('.tube').forEach(function(t){t.style.width=(38*s)+'px';t.style.height=(72*s)+'px'});
   document.querySelectorAll('.dg').forEach(function(d){d.style.fontSize=(48*s)+'px'});
   document.querySelectorAll('.cd').forEach(function(c){c.style.width=(8*s)+'px';c.style.height=(8*s)+'px'});
   document.querySelectorAll('.col').forEach(function(c){c.style.gap=(16*s)+'px'});
   document.querySelector('.led-t').style.fontSize=(14*s)+'px';
+  // 缩放播放器
+  document.querySelector('.player-wrap').style.padding=(4*s)+'px '+(8*s)+'px';
+  document.querySelector('.spec-canvas').style.height=(24*s)+'px';
   // 调整窗口大小
   if(window.invoke)window.invoke('resize_clock',{width:CW,height:CH}).catch(function(){});
 },{passive:false});

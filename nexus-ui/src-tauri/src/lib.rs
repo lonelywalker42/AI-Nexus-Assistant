@@ -136,7 +136,7 @@ fn show_context_menu(app: tauri::AppHandle, has_cd: bool, is_trans: bool) {
 
 fn close_clock(app: &tauri::AppHandle) {
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
-        let _ = cw.close();
+        let _ = cw.hide();
     }
 }
 
@@ -230,8 +230,9 @@ fn create_clock_window(app: &tauri::AppHandle) {
 }
 
 fn do_create_clock(app: &tauri::AppHandle) {
-    // 尝试聚焦已有窗口
+    // 尝试显示已有窗口（隐藏状态的窗口仍存在）
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
+        let _ = cw.show();
         let _ = cw.set_focus();
         return;
     }
@@ -260,7 +261,7 @@ fn do_create_clock(app: &tauri::AppHandle) {
         app, CLOCK_LABEL, WebviewUrl::App("clock.html".into()),
     )
     .title("Nexus Clock")
-    .inner_size(360.0, 140.0)
+    .inner_size(360.0, 180.0)
     .resizable(true)
     .decorations(false)
     .transparent(true)
