@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v1.4.0**.
+AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v2.2.2**.
 
 ## Dual Frontend Architecture
 
@@ -71,7 +71,7 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - `experiment_service.py` — CRUD + version management + Markdown export
 - `knowledge_service.py` — CRUD + tag management + card generation from paper
 - `chat_service.py` — Session management + message persistence + AI message building
-- `backup_service.py` — Auto backup (1 monthly + 1 weekly + 6 daily)
+- `backup_service.py` — Auto backup (1 monthly + 1 weekly + 6 daily), backup/restore handles .db + .db-wal + .db-shm
 
 ### AI Service (`app/ai/router.py`)
 - `AIRouter` class: loads models from DB, routes by purpose (summary/review/chat)
@@ -79,13 +79,17 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - **Protocol fallback**: if anthropic library not installed, automatically falls back to openai protocol
 - Handles DeepSeek `reasoning_content` (thinking) field
 - Returns `{"type": "thinking"|"content", "data": str}` chunks
+- **Tool calling**: OpenAI function calling + Anthropic tool use with agentic loop (max 3 rounds)
+- **Forced final response**: when max tool rounds reached, forces a final text response without tools
 
 ### Web Search (`open-webSearch` + `app/ai/`)
-- **open-webSearch** (`open-webSearch/`): TypeScript git submodule，聚合 DuckDuckGo + Bing + Brave + Wikipedia + Arxiv 多引擎搜索
-- `app/ai/search_service.py` — 守护进程管理器，server.py 启动时自动拉起 open-webSearch daemon（端口 3210）
-- `app/ai/web_search.py` — 优先调用 daemon API `POST /search`，不可用时回退到 DuckDuckGo HTML 爬取
-- 守护进程健康检查: `GET http://127.0.0.1:3210/health`
-- 需要 Node.js 运行时；未安装 Node.js 时自动降级到 DuckDuckGo 直接搜索
+- **open-webSearch** (`open-webSearch/`): TypeScript git submodule, aggregates DuckDuckGo + Bing + Brave + Wikipedia + Arxiv
+- `app/ai/search_service.py` — daemon lifecycle manager, auto-starts on server.py startup (port 3210)
+- `app/ai/web_search.py` — calls daemon API `POST /search`, fallback to DuckDuckGo HTML scraping
+- **Proxy bypass**: httpx client uses `proxy=None` to bypass local proxy (e.g. Clash) avoiding 502 errors
+- **Timeout**: 60 seconds (Chinese search queries take longer)
+- Health check: `GET http://127.0.0.1:3210/health`
+- Requires Node.js; auto-degrades to DuckDuckGo direct search when unavailable
 
 ## Tauri Frontend: `nexus-ui/`
 
@@ -95,30 +99,36 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - Three themes: light (default), warm (#F5F0E1), dark (#0f172a)
 - `src/api/client.ts` — Typed HTTP client connecting to FastAPI backend
 
-### Key Files
-- `src/App.tsx` — Main app with title bar, sidebar, page routing, loading state
-- `src/pages/` — 7 page components (Dashboard, Task, Literature, Experiment, Knowledge, Chat, Settings)
-- `src/components/Icons.tsx` — 20+ SVG icon components (replacing emoji icons)
-- `src/components/Sidebar.tsx` — Navigation sidebar with About dialog (v1.4.0 clickable)
-- `src-tauri/src/lib.rs` — Rust: sidecar spawn, clock window, native menus, IPC bridge
-- `src-tauri/tauri.conf.json` — Window config (frameless, 1360×860)
-- `src-tauri/capabilities/default.json` — Tauri 2 permissions for all windows (`"windows": ["*"]`)
+### Pages
+- `src/pages/Dashboard.tsx` — Dashboard (data overview)
+- `src/pages/TaskPage.tsx` — Tasks & Schedule
+- `src/pages/TodayPage.tsx` — Today (task sync, progress, work log)
+- `src/pages/LiteraturePage.tsx` — Literature Search (7-source search, review generation, review pool FAB)
+- `src/pages/PaperLibraryPage.tsx` — Paper Library (PDF import, citation, AI summary)
+- `src/pages/KnowledgePage.tsx` — IDEA (knowledge cards, quick notes, AI chat association)
+- `src/pages/ExperimentPage.tsx` — Experiment Management
+- `src/pages/ChatPage.tsx` — AI Chat (tool calling, category management, auto title)
+- `src/pages/SettingsPage.tsx` — Settings (model config, theme, backup, app rename)
 
-### Clock Window (辉光管时钟)
+### Key Components
+- `src/components/Icons.tsx` — 30+ SVG icon components
+- `src/components/Sidebar.tsx` — Grouped navigation (Overview/Research/Personal Assistant/Settings) + AI Chat floating button + About dialog
+- `src/hooks/useAppName.ts` — Custom app name hook (localStorage + Event)
+
+### Clock Window (Nixie Tube Clock)
 - `public/clock.html` — Nixie tube clock with CSS glow effects, transparent mode
-- `public/countdown-input.html` — Separate input window for custom countdown
+- **Music player**: folder loading, sequential/shuffle play, spectrum visualization (Web Audio API + Canvas)
+- **IndexedDB persistence**: playlist and alert sound stored as ArrayBuffer, auto-restore on restart
+- **Countdown alert**: countdown ends pauses music, plays alert, manual stop button restores music and clock
 - Triggered when main window is closed (minimized to tray)
-- **Double-click** clock → returns to main window
-- **Right-click** → native OS menu (countdown options, transparent toggle, back to main)
-- **Mouse wheel** → zoom in/out (0.6x to 2.5x)
-- Colors: `#ffe8aa` (core), `#ff8c00` (wire), `#cc5500` (glow), `#7a3a08` (halo), `#0e0e12` (glass)
-- Window config: 360×140, frameless, always-on-top, transparent, resizable
+- **Double-click** clock -> returns to main window
+- **Right-click** -> native OS menu (countdown options, transparent toggle, back to main)
+- **Mouse wheel** -> zoom in/out (0.6x to 2.5x)
+- Window config: 360x180, frameless, always-on-top, transparent, resizable
 - `public/todo-calendar.html` — Glass-style todo calendar with real-time clock, drag, task toggle
-- Triggered alongside clock when main window closes; switchable via tray/clock context menu
-- Window config: 380×500, frameless, always-on-top, transparent, resizable
 
 ### Build Notes
-- `build_tauri.py` runs `npx tauri build` → Vite build + Rust compile + frontend embedding
+- `build_tauri.py` runs `npx tauri build` -> Vite build + Rust compile + frontend embedding
 - `build_server.py` uses `--exclude-module` but **keeps** `httpx`/`httpcore` (required by openai)
 - Sidecar embedded via `include_bytes!()` — single-file distribution (~43MB)
 - PyInstaller hidden imports: `openai`, `anthropic`, `app.*`, `uvicorn.*`, `sqlalchemy.*`
@@ -134,7 +144,8 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
   - Knowledge: `/api/knowledge/cards`, `/api/knowledge/cards/{id}`, `/api/knowledge/import/{json,pdf,md}`
   - Chat: `/api/chat/stream` (SSE), `/api/chat/sessions`, `/api/chat/sessions/{id}/messages`
   - Models: `/api/models`, `/api/models/{id}` (GET, POST, PUT, DELETE)
-  - System: `/api/dashboard`, `/api/backup`
+  - System: `/api/dashboard`, `/api/backup`, `/api/backups/export-db`
+  - Rust IPC: `list_audio_files`, `read_file_base64`
 
 ## Theme System
 
@@ -142,67 +153,113 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - `[data-theme="light"]`, `[data-theme="warm"]`, `[data-theme="dark"]`
 - Variables: `--bg-gradient`, `--glass-bg`, `--text-primary`, `--text-secondary`, `--text-muted`, `--accent-blue`, `--accent-green`, `--border-color`, `--hover-bg`, `--input-bg`
 
-### PySide6 (`app/ui/theme.py`)
-- `ThemeManager` singleton with `theme_changed` signal
-- QSS template functions: `BTN_PRIMARY_QSS()`, `INPUT_QSS()`, `TABLE_QSS()`
-
 ## Important Patterns
 
 - **Session management**: Every UI action calls `get_session()`, does work in `try/finally`, closes session
 - **Auto-save**: Task/experiment pages save on cell/text edit (no explicit save button)
-- **Streaming AI**: Uses `QThread` (PySide6) or `ReadableStream` (Tauri) for real-time output
-- **AI Tool Calling**: `router.py` supports OpenAI function calling + Anthropic tool use with agentic loop (max 3 rounds). SSE chunk types: `thinking`, `content`, `tool_call`, `tool_result`
-- **Web Search**: `app/ai/web_search.py` — 调用 open-webSearch 聚合搜索引擎（DuckDuckGo + Bing + Brave + Wikipedia + Arxiv），通过本地守护进程（端口 3210）提供服务，不可用时回退到 DuckDuckGo HTML 直接爬取
-- **Backup**: Runs on startup, keeps 1 monthly + 1 weekly + 6 daily backups in `data/backups/`
+- **Streaming AI**: Uses `ReadableStream` (Tauri) for real-time output
+- **AI Tool Calling**: `router.py` supports OpenAI function calling + Anthropic tool use with agentic loop (max 3 rounds). SSE chunk types: `thinking`, `content`, `tool_call`, `tool_result`. Intermediate tool-calling rounds suppress content from frontend.
+- **Web Search**: `app/ai/web_search.py` — proxy=None bypasses local proxy, 60s timeout, multi-engine aggregation
+- **Backup**: backup/restore handles .db + .db-wal + .db-shm, WAL checkpoint before backup
+- **Export**: ZIP export includes all three db files; import supports .db and .zip
+
+---
+
+## Development Lifecycle
+
+### Version Numbering
+
+| Change Type | Format | Example | Description |
+|-------------|--------|---------|-------------|
+| Major release | `vX.0.0` | v3.0.0 | Large feature set, architecture changes |
+| Minor update | `v*.x.0` | v2.3.0 | Feature enhancements, UI improvements |
+| Bug fix | `v*.*.x` | v2.2.2 | Bug fixes, debugging, performance |
+
+### Workflow
+
+```
+Requirements -> Development -> Release -> Iteration
+```
+
+#### 1. Requirements (Major vX.0.0)
+- User provides requirements
+- Claude Code writes PRD document (`docs/PRD-vX.md`)
+- Review and confirm before development
+
+#### 2. Development (Minor v*.x.0)
+- Feature development complete
+- User confirms, update release directory exe/dll version suffix
+- `git commit` + `git tag` + `git push`
+- `gh release create` to publish GitHub release
+
+#### 3. Release
+```bash
+# Build
+python build_server.py              # Build sidecar
+cd nexus-ui && npx tauri build      # Build Tauri app
+
+# Update release directory
+cp nexus-ui/src-tauri/target/release/nexus-ui.exe release/AI-Nexus-Assistant.exe
+cp nexus-ui/src-tauri/target/release/nexus_ui_lib.dll release/nexus_ui_lib.dll
+
+# Publish
+git tag vX.Y.Z && git push origin main && git push origin vX.Y.Z
+gh release create vX.Y.Z --title "vX.Y.Z - Title" --notes "..." \
+  release/AI-Nexus-Assistant.exe \
+  release/nexus_ui_lib.dll \
+  "bundle/nsis/...setup.exe" \
+  "bundle/msi/...msi"
+```
+
+#### 4. Iteration (Bug fix v*.*.x)
+- Based on user feedback / bug reports
+- Problem testing and localization -> debugging and fixing
+- Document development testing best practices (`docs/DEV-PRACTICES.md`)
+- Repeat Release phase
+
+### Project Structure
+
+```
+CLAUDE.md                   # This file (project guide + lifecycle)
+README.md                   # Project introduction
+CHANGELOG.md                # Version change log
+docs/PRD-v3.md              # Major version PRD document
+docs/DEV-PRACTICES.md       # Development testing best practices
+app/                        # Python backend
+nexus-ui/                   # Tauri frontend
+release/                    # Build artifacts
+  AI-Nexus-Assistant.exe    # Portable main program
+  nexus_ui_lib.dll          # WebView2 loader
+  data/                     # Data directory
+data/                       # Development environment data
+```
 
 ## Debugging Lessons Learned
 
-### Tauri 2 子窗口 IPC 问题
-- **问题**：子窗口（如时钟）的 `import('@tauri-apps/api/core')` 静默失败
-- **根因**：Tauri 2 子窗口不自动注入 JS 模块系统
-- **解决**：通过 `WebviewWindowBuilder::initialization_script()` 注入 `window.invoke`
-- **关键**：`capabilities/default.json` 的 `windows` 必须包含子窗口标签或 `"*"`
+### Tauri 2 Sub-window IPC
+- **Problem**: Sub-window JS imports silently fail
+- **Fix**: Inject `window.invoke` via `initialization_script()`
 
-### Tauri 2 参数名映射
-- JS 的 camelCase 自动转为 Rust 的 snake_case
-- JS: `{hasCd: true}` → Rust: `has_cd: bool`
-- 错误示例：`has_cd` 在 JS 中不匹配 Rust 的 `has_cd`
+### System Tray Backend Process Leak
+- **Problem**: `child.kill()` only kills direct child, not process tree
+- **Fix**: Use `taskkill /F /T /PID` to kill entire process tree
 
-### `-webkit-app-region: drag` 副作用
-- 设置在 body 上会**吞掉所有鼠标事件**（右键、双击、点击）
-- 解决：移除 body 的 drag，改用 JS `mousedown` + `getCurrentWindow().startDragging()`
+### SQLite WAL Backup Data Loss
+- **Problem**: Backup copies only `.db` file, WAL data lost
+- **Fix**: `PRAGMA wal_checkpoint(FULL)` before backup, copy all three files
 
-### 系统托盘窗口死锁
-- 在 `on_menu_event` 回调中调用 `close()`/`destroy()` 可能阻塞主线程
-- 解决：用 `std::thread::spawn` 将窗口操作放到新线程
+### httpx Proxy Causing 502
+- **Problem**: System proxy (Clash) intercepts localhost requests
+- **Fix**: `httpx.Client(proxy=None)` bypasses proxy
 
-### PyInstaller 动态导入
-- 函数内部的 `import openai` 不会被 PyInstaller 自动检测
-- 必须添加 `--hidden-import openai` 和 `--hidden-import anthropic`
-- `openai` 依赖 `httpx`，不能在 `--exclude-module` 中排除 `httpx`
+### AI Tool Calling Infinite Loop
+- **Problem**: Model retries search on failure, exhausts all rounds
+- **Fix**: At `MAX_TOOL_ROUNDS`, append "answer directly" prompt without tools
 
-### Windows Sidecar 无窗口启动
-- `std::process::Command::new().spawn()` 在 Windows 上会弹出控制台窗口
-- 解决：使用 `std::os::windows::process::CommandExt::creation_flags(0x08000000)`（CREATE_NO_WINDOW）
-- 用 `#[cfg(target_os = "windows")]` 条件编译保持跨平台兼容
+### Tauri WebView2 showDirectoryPicker Unavailable
+- **Problem**: File System Access API not supported in Tauri WebView2
+- **Fix**: Use `<input webkitdirectory>` + IndexedDB for ArrayBuffer storage
 
-### FastAPI 文件上传
-- `UploadFile = File(...)` 在某些情况下解析 multipart 失败
-- Tauri webview 中 `FormData + fetch` 有 CORS/协议限制
-- `base64 + JSON` 方案受 Starlette body 大小限制
-- **最终方案**：`Content-Type: application/octet-stream` + `X-Filename` 头部 + `request.body()` 接收原始字节
-
-### Tauri 2 原生菜单
-- HTML 菜单受窗口边界限制，无法超出窗口
-- 使用 Rust `Menu` + `MenuItem` 创建原生菜单，通过 `popup_menu()` 弹出
-- `on_menu_event` 注册全局事件处理器
-
-### CSS 变量驱动主题
-- 所有颜色使用 `var(--xxx)` 而非硬编码 Tailwind 类
-- `[data-theme="warm"]` 选择器定义暖色主题变量
-- `select.input-glass` 需要自定义下拉箭头 SVG（深色模式需切换颜色）
-
-### Chat 页面滚动隔离
-- `<main>` 在 chat 页面切换为 `overflow-hidden flex flex-col`（非 chat 用 `overflow-auto`）
-- `animate-fade-in` 容器需添加 `flex-1 flex flex-col min-h-0` 才能让子组件 `h-full` 生效
-- 高度链：`h-screen` → `main.flex-1` → `wrapper.flex-1` → `ChatPage.h-full` → 消息区 `flex-1.overflow-y-auto`
+### Clock Window State Loss
+- **Problem**: Clock window destroyed on return to main, playlist lost
+- **Fix**: `cw.hide()` instead of `cw.close()`, IndexedDB persistence

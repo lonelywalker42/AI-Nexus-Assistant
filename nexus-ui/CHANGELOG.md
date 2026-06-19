@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.2.2 (2026-06-19)
+
+### Bug 修复
+- 倒计时停止按钮：同时结束倒计时、回到时钟模式、恢复音乐播放
+- 倒计时结束时自动暂停音乐，播放提示音；停止提示音后自动恢复音乐
+- 文档更新：CLAUDE.md 新增开发维护全寿命周期体系
+
+## v2.2.1 (2026-06-19)
+
+### Bug 修复
+- 时钟音乐播放器改用 webkitdirectory + IndexedDB 存储 ArrayBuffer
+- 播放列表和提示音通过 IndexedDB 持久化，重启后自动恢复
+- 移除不可用的 showDirectoryPicker 和 tauri-plugin-dialog
+
 ## v2.2.0 (2026-06-18)
 
 ### 时钟窗口音乐播放器

@@ -308,8 +308,13 @@ function tick(){
     $('cdL').textContent='COUNTDOWN';$('cdL').className='cd-lbl'+(r<=10?' exp':'');
   }else{
     if(_prevCdDone || window._cdDone){
-      // 倒计时重置 → 停止提示音
+      // 倒计时重置 → 停止提示音 + 恢复音乐
       stopAlertSound();
+    }
+    // 倒计时被外部取消（如菜单）→ 也恢复音乐
+    if(_musicWasPlaying && !isPlaying && playlist.length > 0){
+      audioEl.play().then(function(){isPlaying=true;updatePlayBtn();}).catch(function(){});
+      _musicWasPlaying = false;
     }
     _prevCdDone = false;
     window._cdDone = false;
@@ -323,24 +328,44 @@ setInterval(tick,500);tick();
 var _alertSrc = null;
 var _alertFile = null;
 var _alertPlaying = false;
+var _musicWasPlaying = false; // 提示音播放前音乐是否在播放
 
 function playAlertSound(){
   var el = $('alertEl');
-  if(_alertSrc){
-    el.src = _alertSrc;
-    el.currentTime = 0;
-    el.play().then(function(){
-      _alertPlaying = true;
-      $('alertStop').style.display = 'flex';
-    }).catch(function(){});
+  if(!_alertSrc) return;
+  // 暂停音乐播放器
+  _musicWasPlaying = isPlaying;
+  if(isPlaying){
+    audioEl.pause();
+    isPlaying = false;
+    updatePlayBtn();
   }
+  el.src = _alertSrc;
+  el.currentTime = 0;
+  el.play().then(function(){
+    _alertPlaying = true;
+    $('alertStop').style.display = 'flex';
+  }).catch(function(){});
 }
+
 function stopAlertSound(){
   var el = $('alertEl');
   el.pause();
   el.currentTime = 0;
   _alertPlaying = false;
   $('alertStop').style.display = 'none';
+  // 结束倒计时，回到时钟模式
+  window._isCD = false;
+  window._cdDone = false;
+  _prevCdDone = false;
+  // 恢复音乐播放
+  if(_musicWasPlaying && playlist.length > 0){
+    audioEl.play().then(function(){
+      isPlaying = true;
+      updatePlayBtn();
+    }).catch(function(){});
+  }
+  _musicWasPlaying = false;
 }
 
 // ── 音乐播放器 ──
