@@ -708,37 +708,61 @@ class GameShooter {
 // ══════════════════════════════════════════════
 class GameWordHopper {
   constructor() {
-    // CET-6 word pools with Chinese definitions [word, definition]
+    // CET-6 word pools [word, part-of-speech, definition]
     this.wordPools = {
       easy: [
-        ['abstract','抽象的'],['academic','学术的'],['access','访问'],['achieve','实现'],['adequate','充足的'],
-        ['adjust','调整'],['admit','承认'],['adopt','采纳'],['advance','前进'],['advocate','提倡'],
-        ['affect','影响'],['afford','负担得起'],['agenda','议程'],['allocate','分配'],['alternative','替代'],
-        ['ambiguous','模糊的'],['analyse','分析'],['annual','年度的'],['anticipate','预期'],['apparent','明显的'],
-        ['appeal','呼吁'],['approach','方法'],['appropriate','适当的'],['assess','评估'],['assign','分配'],
-        ['assist','协助'],['assume','假设'],['attach','附加'],['attain','达到'],['attempt','尝试'],
+        ['abstract','adj.','抽象的'],['academic','adj.','学术的'],['access','n.','访问；通道'],
+        ['achieve','v.','实现；达到'],['adequate','adj.','充足的'],['adjust','v.','调整；适应'],
+        ['admit','v.','承认；准入'],['adopt','v.','采纳；收养'],['advance','v./n.','前进；进展'],
+        ['advocate','v./n.','提倡；倡导者'],['affect','v.','影响'],['afford','v.','负担得起'],
+        ['agenda','n.','议程'],['allocate','v.','分配'],['alternative','n./adj.','替代；可选的'],
+        ['ambiguous','adj.','模糊的'],['analyse','v.','分析'],['annual','adj.','年度的'],
+        ['anticipate','v.','预期'],['apparent','adj.','明显的'],['appeal','v./n.','呼吁；上诉'],
+        ['approach','v./n.','接近；方法'],['appropriate','adj.','适当的'],['assess','v.','评估'],
+        ['assign','v.','分配'],['assist','v.','协助'],['assume','v.','假设'],['attach','v.','附加'],
+        ['attain','v.','达到'],['attempt','v./n.','尝试'],
       ],
       medium: [
-        ['bargain','讨价还价'],['barrier','障碍'],['benefit','利益'],['bias','偏见'],['bond','纽带'],
-        ['boom','繁荣'],['boundary','边界'],['breach','违反'],['brief','简短的'],['budget','预算'],
-        ['burden','负担'],['campaign','运动'],['candidate','候选人'],['capacity','能力'],['capture','捕获'],
-        ['category','类别'],['cease','停止'],['challenge','挑战'],['channel','渠道'],['chapter','章节'],
-        ['circumstance','情况'],['civil','公民的'],['clarify','澄清'],['coincide','巧合'],['collapse','崩溃'],
-        ['colleague','同事'],['combine','结合'],['comment','评论'],['commission','委员会'],['commit','承诺'],
-        ['communicate','沟通'],['community','社区'],['compensate','补偿'],['compile','编译'],['complex','复杂的'],
-        ['component','组件'],['comprehensive','全面的'],['comprise','包含'],['compromise','妥协'],['conceive','构想'],
+        ['bargain','n./v.','讨价还价'],['barrier','n.','障碍'],['benefit','n./v.','利益；受益'],
+        ['bias','n.','偏见'],['bond','n.','纽带'],['boom','n./v.','繁荣'],
+        ['boundary','n.','边界'],['breach','n./v.','违反'],['brief','adj.','简短的'],
+        ['budget','n.','预算'],['burden','n.','负担'],['campaign','n.','运动；战役'],
+        ['candidate','n.','候选人'],['capacity','n.','能力；容量'],['capture','v.','捕获'],
+        ['category','n.','类别'],['cease','v.','停止'],['challenge','n./v.','挑战'],
+        ['channel','n.','渠道'],['chapter','n.','章节'],['circumstance','n.','情况'],
+        ['civil','adj.','公民的'],['clarify','v.','澄清'],['coincide','v.','巧合'],
+        ['collapse','v./n.','崩溃'],['colleague','n.','同事'],['combine','v.','结合'],
+        ['comment','n./v.','评论'],['commission','n.','委员会'],['commit','v.','承诺；犯(罪)'],
+        ['communicate','v.','沟通'],['community','n.','社区'],['compensate','v.','补偿'],
+        ['compile','v.','编译'],['complex','adj.','复杂的'],['component','n.','组件'],
+        ['comprehensive','adj.','全面的'],['comprise','v.','包含'],['compromise','n./v.','妥协'],
+        ['conceive','v.','构想'],
       ],
       hard: [
-        ['concentrate','集中'],['conclusion','结论'],['conduct','进行'],['conference','会议'],['confine','限制'],
-        ['confirm','确认'],['conflict','冲突'],['conform','遵守'],['confront','面对'],['conscious','有意识的'],
-        ['consensus','共识'],['consequence','后果'],['conserve','保存'],['considerable','相当大的'],['consist','由...组成'],
-        ['consistent','一致的'],['constant',' constant'],['constitute','构成'],['construct','构建'],['consult','咨询'],
-        ['consume','消耗'],['contemporary','当代的'],['contest','竞争'],['context','上下文'],['contract','合同'],
-        ['contradict','矛盾'],['contribute','贡献'],['controversial','有争议的'],['convention',' convention'],['convert','转换'],
-        ['convey','传达'],['cooperate','合作'],['cope','应对'],['core','核心'],['corporate','公司的'],
-        ['correspond','对应'],['crucial','关键的'],['currency','货币'],['curriculum','课程'],['debate','辩论'],
+        ['concentrate','v.','集中'],['conclusion','n.','结论'],['conduct','v./n.','进行；行为'],
+        ['conference','n.','会议'],['confine','v.','限制'],['confirm','v.','确认'],
+        ['conflict','n./v.','冲突'],['conform','v.','遵守'],['confront','v.','面对'],
+        ['conscious','adj.','有意识的'],['consensus','n.','共识'],['consequence','n.','后果'],
+        ['conserve','v.','保存'],['considerable','adj.','相当大的'],['consist','v.','由...组成'],
+        ['consistent','adj.','一致的'],['constant','adj.',' constant'],['constitute','v.','构成'],
+        ['construct','v.','构建'],['consult','v.','咨询'],['consume','v.','消耗'],
+        ['contemporary','adj.','当代的'],['contest','n./v.','竞争'],['context','n.','上下文'],
+        ['contract','n.','合同'],['contradict','v.','矛盾'],['contribute','v.','贡献'],
+        ['controversial','adj.','有争议的'],['convention','n.',' convention'],['convert','v.','转换'],
+        ['convey','v.','传达'],['cooperate','v.','合作'],['cope','v.','应对'],
+        ['core','n./adj.','核心'],['corporate','adj.','公司的'],['correspond','v.','对应'],
+        ['crucial','adj.','关键的'],['currency','n.','货币'],['curriculum','n.','课程'],
+        ['debate','n./v.','辩论'],
       ],
     };
+    // Shuffle each pool on init
+    Object.keys(this.wordPools).forEach(k => {
+      const arr = this.wordPools[k];
+      for(let i = arr.length - 1; i > 0; i--){
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    });
     this.activeWords = []; // {text, x, y, speed, typedIdx, targeted}
     this.targetWord = null;
     this.score = 0;
@@ -835,14 +859,14 @@ class GameWordHopper {
     else if (this.level <= 5) pool = this.wordPools.medium;
     else pool = this.wordPools.hard;
     const entry = pool[Math.floor(Math.random() * pool.length)];
-    return { text: entry[0], def: entry[1] };
+    return { text: entry[0], pos: entry[1], def: entry[2] };
   }
 
   spawnWord() {
-    const { text, def } = this.getWord();
+    const { text, pos, def } = this.getWord();
     const x = 60 + Math.random() * (W - 120);
     const speed = this.baseSpeed + (this.level - 1) * 0.08 + Math.random() * 0.2;
-    this.activeWords.push({ text, def, x, y: -20, speed, typedIdx: 0, targeted: false });
+    this.activeWords.push({ text, pos, def, x, y: -20, speed, typedIdx: 0, targeted: false });
   }
 
   key(e) {
@@ -1033,12 +1057,13 @@ class GameWordHopper {
       }
       ctx.shadowBlur = 0;
 
-      // Show definition below the word
+      // Show POS + definition below the word
       if (w.def) {
-        ctx.font = '11px Consolas, monospace';
-        ctx.fillStyle = isTarget ? C.cyan : 'rgba(255,255,255,0.25)';
+        ctx.font = '13px Consolas, monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(w.def, w.x, w.y + 16);
+        var posDef = (w.pos ? w.pos + ' ' : '') + w.def;
+        ctx.fillStyle = isTarget ? C.cyan : 'rgba(255,255,255,0.3)';
+        ctx.fillText(posDef, w.x, w.y + 18);
       }
 
       // Target indicator

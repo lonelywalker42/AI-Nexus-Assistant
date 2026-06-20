@@ -291,26 +291,25 @@ export default function MusicPage() {
         bc.postMessage({ type: 'main-resuming' });
         bc.close();
       } catch {}
-      // Check if clock was playing — resume in main window
+      // Read clock state and resume immediately
       try {
         const state = JSON.parse(localStorage.getItem('nexus-music-state') || 'null');
         if (state && state.clockPlaying && state.trackName) {
+          const savedTime = state.currentTime || 0;
           const trackIdx = tracks.findIndex(t => t.name === state.trackName);
           if (trackIdx >= 0) {
-            // Resume playback at the clock's position
             loadAndPlay(trackIdx);
-            // Seek to clock's position after audio loads
+            // Seek to clock's position immediately and after load
             const audio = audioRef.current;
-            if (audio && state.currentTime) {
+            if (audio) {
+              if (audio.readyState >= 1 && savedTime > 0) {
+                audio.currentTime = savedTime;
+              }
               const onLoaded = () => {
-                audio.currentTime = state.currentTime || 0;
+                if (savedTime > 0) audio.currentTime = savedTime;
                 audio.removeEventListener('loadedmetadata', onLoaded);
               };
               audio.addEventListener('loadedmetadata', onLoaded);
-              // Fallback: try setting after a short delay
-              setTimeout(() => {
-                if (audio.readyState >= 1) audio.currentTime = state.currentTime || 0;
-              }, 300);
             }
           }
         }
