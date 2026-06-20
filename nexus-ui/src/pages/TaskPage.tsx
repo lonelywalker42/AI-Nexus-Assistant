@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
 import { tasksApi, type Task } from "../api/client";
-
-const PRIORITY_COLORS: Record<string, string> = {
-  low: "#94a3b8", normal: "#60a5fa",
-  high: "#fbbf24", urgent: "#f87171",
-};
+import { getPriority, isOverdue } from "../constants/task";
 
 
 export default function TaskPage() {
@@ -228,7 +224,7 @@ export default function TaskPage() {
             const showDate = !isToday && !task.completed;
             return (
               <div key={task.id} className="glass-card px-4 py-3 flex items-start gap-3"
-                style={{ borderLeft: `3px solid ${isMain ? "#8b5cf6" : PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal}` }}
+                style={{ borderLeft: `3px solid ${isMain ? "#8b5cf6" : getPriority(task.priority).border}`, ...(isOverdue(task.date, task.completed) ? { background: "rgba(239,68,68,0.04)" } : {}) }}
               >
                 <button
                   onClick={() => handleToggle(task.id)}

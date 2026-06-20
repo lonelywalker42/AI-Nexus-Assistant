@@ -87,6 +87,8 @@ export const tasksApi = {
   create: (data: { date: string; content: string; priority?: string; category?: string }) =>
     request<Task>("/api/tasks", { method: "POST", body: JSON.stringify(data) }),
   toggle: (id: string) => request<Task>(`/api/tasks/${id}/toggle`, { method: "POST" }),
+  update: (id: string, data: Partial<Task>) =>
+    request<Task>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/api/tasks/${id}`, { method: "DELETE" }),
   dates: (year: number, month: number) =>
     request<Record<string, string>>(`/api/tasks/dates?year=${year}&month=${month}`),

@@ -1,20 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { tasksApi, dashboardApi, type Task, type DashboardData } from "../api/client";
 import { IconPlus, IconCheck, IconSun, IconEdit, IconChevronRight } from "../components/Icons";
-
-const PRIORITY_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  urgent: { bg: "rgba(239,68,68,0.12)", text: "#ef4444", label: "紧急" },
-  high: { bg: "rgba(245,158,11,0.12)", text: "#f59e0b", label: "高" },
-  normal: { bg: "rgba(59,130,246,0.08)", text: "var(--text-secondary)", label: "普通" },
-  low: { bg: "rgba(148,163,184,0.1)", text: "var(--text-muted)", label: "低" },
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  general: "日常",
-  main: "核心",
-  literature: "文献",
-  experiment: "试验",
-};
+import { PRIORITIES, CATEGORIES, getPriority, getCategory, isOverdue } from "../constants/task";
 
 export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) => void }) {
   const today = new Date().toISOString().split("T")[0];
@@ -22,9 +9,12 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [newTask, setNewTask] = useState("");
   const [newPriority, setNewPriority] = useState("normal");
+  const [newCategory, setNewCategory] = useState("general");
   const [loading, setLoading] = useState(true);
   const [workLog, setWorkLog] = useState("");
   const [logSaved, setLogSaved] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [now, setNow] = useState(new Date());
 
@@ -64,7 +54,7 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
         date: today,
         content: newTask.trim(),
         priority: newPriority,
-        category: "general",
+        category: newCategory,
       });
       setTasks(prev => [...prev, task]);
       setNewTask("");
@@ -76,8 +66,15 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
 
   const handleToggle = async (id: string) => {
     try {
+      const task = tasks.find(t => t.id === id);
       const updated = await tasksApi.toggle(id);
       setTasks(prev => prev.map(t => t.id === id ? updated : t));
+      // Task-to-worklog bridge: auto-append completed task to work log
+      if (task && !task.completed && updated.completed) {
+        const cat = getCategory(task.category);
+        const entry = `\n- [x] ${task.content} (${cat.label})`;
+        setWorkLog(prev => prev ? prev + entry : `## 今日完成${entry}`);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -87,6 +84,18 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
     try {
       await tasksApi.delete(id);
       setTasks(prev => prev.filter(t => t.id !== id));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleEditTask = async (id: string) => {
+    if (!editContent.trim()) return;
+    try {
+      await tasksApi.update(id, { content: editContent.trim() });
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, content: editContent.trim() } : t));
+      setEditingId(null);
+      setEditContent("");
     } catch (err) {
       console.error(err);
     }
@@ -187,8 +196,17 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
                 value={newPriority}
                 onChange={e => setNewPriority(e.target.value)}
               >
-                {Object.entries(PRIORITY_COLORS).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
+                {PRIORITIES.map(p => (
+                  <option key={p.key} value={p.key}>{p.label}</option>
+                ))}
+              </select>
+              <select
+                className="input-glass text-xs py-2 px-2"
+                value={newCategory}
+                onChange={e => setNewCategory(e.target.value)}
+              >
+                {CATEGORIES.map(c => (
+                  <option key={c.key} value={c.key}>{c.icon} {c.label}</option>
                 ))}
               </select>
               <button
@@ -207,7 +225,7 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
                 待完成 · {incompleteTasks.length}
               </p>
               {incompleteTasks.map(task => (
-                <TaskItem key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} />
+                <TaskItem key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} onStartEdit={(id, content) => { setEditingId(id); setEditContent(content); }} />
               ))}
             </div>
           )}
@@ -219,7 +237,7 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
                 已完成 · {completedTasks.length}
               </p>
               {completedTasks.map(task => (
-                <TaskItem key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} />
+                <TaskItem key={task.id} task={task} onToggle={handleToggle} onDelete={handleDelete} onStartEdit={(id, content) => { setEditingId(id); setEditContent(content); }} />
               ))}
             </div>
           )}
@@ -230,6 +248,41 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
               <IconCheck size={32} style={{ color: "var(--text-muted)", margin: "0 auto" }} />
               <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>今天还没有任务</p>
               <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>在上方添加任务，或前往「任务与日程」安排日程</p>
+            </div>
+          )}
+
+          {/* 逾期任务提醒 */}
+          {(() => {
+            const overdueTasks = tasks.filter(t => isOverdue(t.date, t.completed));
+            if (overdueTasks.length === 0) return null;
+            return (
+              <div className="glass-card p-3 flex items-center gap-3" style={{ borderLeft: "3px solid #ef4444" }}>
+                <span className="text-sm" style={{ color: "#ef4444" }}>⚠️</span>
+                <div className="flex-1">
+                  <p className="text-xs font-semibold" style={{ color: "#ef4444" }}>
+                    {overdueTasks.length} 项任务已逾期
+                  </p>
+                  <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    {overdueTasks.slice(0, 3).map(t => t.content).join("、")}
+                    {overdueTasks.length > 3 ? "..." : ""}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 内联编辑 */}
+          {editingId && (
+            <div className="glass-card p-3 space-y-2 animate-fade-in">
+              <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>编辑任务</p>
+              <div className="flex gap-2">
+                <input className="input-glass flex-1 text-sm" value={editContent}
+                  onChange={e => setEditContent(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleEditTask(editingId); if (e.key === "Escape") { setEditingId(null); setEditContent(""); } }}
+                  autoFocus />
+                <button className="btn-ghost text-xs" onClick={() => handleEditTask(editingId)}>保存</button>
+                <button className="btn-ghost text-xs" onClick={() => { setEditingId(null); setEditContent(""); }}>取消</button>
+              </div>
             </div>
           )}
 
@@ -248,12 +301,13 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
             <textarea
               className="input-glass text-sm"
               rows={5}
-              placeholder="记录今天的工作内容、遇到的问题、明日计划..."
+              placeholder="记录今天的工作内容、遇到的问题、明日计划...&#10;&#10;提示：完成任务后会自动追加到日志中"
               value={workLog}
               onChange={e => setWorkLog(e.target.value)}
+              onBlur={saveWorkLog}
               style={{ resize: "vertical", minHeight: "100px" }}
             />
-            <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>日志保存在本地浏览器，按日期自动归档</p>
+            <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>日志保存在本地浏览器，按日期自动归档 · 完成任务自动追加</p>
           </div>
         </div>
 
@@ -289,15 +343,21 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
   );
 }
 
-function TaskItem({ task, onToggle, onDelete }: { task: Task; onToggle: (id: string) => void; onDelete: (id: string) => void }) {
+function TaskItem({ task, onToggle, onDelete, onStartEdit }: {
+  task: Task; onToggle: (id: string) => void; onDelete: (id: string) => void; onStartEdit: (id: string, content: string) => void
+}) {
   const [hovered, setHovered] = useState(false);
-  const pri = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal;
-  const cat = CATEGORY_LABELS[task.category] || task.category;
+  const pri = getPriority(task.priority);
+  const cat = getCategory(task.category);
+  const overdue = isOverdue(task.date, task.completed);
 
   return (
     <div
       className="glass-card flex items-center gap-3 px-4 py-3 cursor-pointer transition-all duration-150"
-      style={task.completed ? { opacity: 0.6 } : {}}
+      style={{
+        ...(task.completed ? { opacity: 0.6 } : {}),
+        ...(overdue ? { borderLeft: `3px solid #ef4444` } : {}),
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={() => onToggle(task.id)}
@@ -306,27 +366,38 @@ function TaskItem({ task, onToggle, onDelete }: { task: Task; onToggle: (id: str
         className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200"
         style={task.completed
           ? { background: "var(--accent-green)", border: "2px solid var(--accent-green)" }
-          : { border: "2px solid var(--border-color)" }
+          : { border: `2px solid ${overdue ? "#ef4444" : "var(--border-color)"}` }
         }
       >
         {task.completed && <IconCheck size={12} style={{ color: "#fff" }} />}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm" style={{
-          color: task.completed ? "var(--text-muted)" : "var(--text-primary)",
+          color: task.completed ? "var(--text-muted)" : overdue ? "#ef4444" : "var(--text-primary)",
           textDecoration: task.completed ? "line-through" : "none",
+          fontWeight: overdue ? 600 : 400,
         }}>
           {task.content}
         </p>
+        {overdue && !task.completed && (
+          <p className="text-[10px] mt-0.5" style={{ color: "#ef4444" }}>已逾期</p>
+        )}
       </div>
-      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0" style={{ background: pri.bg, color: pri.text }}>{pri.label}</span>
-      <span className="px-1.5 py-0.5 rounded text-[10px] flex-shrink-0" style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>{cat}</span>
+      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0" style={{ background: pri.bg, color: pri.color }}>{pri.shortLabel}</span>
+      <span className="px-1.5 py-0.5 rounded text-[10px] flex-shrink-0" style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>{cat.icon} {cat.label}</span>
       {hovered && (
-        <button className="text-xs flex-shrink-0 cursor-pointer transition-colors" style={{ color: "var(--text-muted)" }}
-          onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
-          onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
-          onClick={e => { e.stopPropagation(); onDelete(task.id); }}
-        >✕</button>
+        <div className="flex gap-1 flex-shrink-0">
+          <button className="text-xs cursor-pointer transition-colors" style={{ color: "var(--text-muted)" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-blue)")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+            onClick={e => { e.stopPropagation(); onStartEdit(task.id, task.content); }}
+          >✎</button>
+          <button className="text-xs cursor-pointer transition-colors" style={{ color: "var(--text-muted)" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+            onClick={e => { e.stopPropagation(); onDelete(task.id); }}
+          >✕</button>
+        </div>
       )}
     </div>
   );
