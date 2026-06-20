@@ -13,6 +13,8 @@ export default function TaskPage() {
   const [priority, setPriority] = useState("normal");
   const [category, setCategory] = useState("general");
   const [marks, setMarks] = useState<Record<string, string>>({});
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
+  const [weekTasksCache, setWeekTasksCache] = useState<Record<string, { id: string; content: string; completed: boolean; priority: string; category: string }[]>>({});
 
   const loadTasks = () => tasksApi.list(selectedDate).then(setTasks).catch(console.error);
   const loadMainTasks = () => tasksApi.listMain().then(setMainTasks).catch(console.error);
@@ -25,6 +27,19 @@ export default function TaskPage() {
   useEffect(() => { loadTasks(); }, [selectedDate]);
   useEffect(() => { loadMainTasks(); loadIncompleteTasks(); }, []);
   useEffect(() => { loadMarks(); }, [selectedDate]);
+
+  // Load week tasks for hover preview
+  useEffect(() => {
+    const d = new Date(selectedDate);
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - d.getDay() + 1);
+    const start = monday.toISOString().split("T")[0];
+    tasksApi.weekTasks(start).then(setWeekTasksCache).catch(() => {});
+  }, [selectedDate]);
+
+  const handleDateHover = (ds: string) => {
+    setHoveredDate(ds);
+  };
 
   const handleAdd = async () => {
     if (!newTask.trim()) return;
@@ -110,6 +125,8 @@ export default function TaskPage() {
               const mark = marks[ds];
               const isSelected = ds === selectedDate;
               const isToday = ds === today;
+              const isHovered = ds === hoveredDate;
+              const dayTasks = weekTasksCache[ds] || [];
               return (
                 <button
                   key={day}
@@ -121,13 +138,40 @@ export default function TaskPage() {
                       ? { background: "var(--hover-bg)", color: "var(--accent-blue)", fontWeight: 600 }
                       : { color: "var(--text-primary)" }
                   }
-                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--hover-bg)"; }}
-                  onMouseLeave={e => { if (!isSelected && !isToday) e.currentTarget.style.background = "transparent"; }}
+                  onMouseEnter={e => {
+                    if (!isSelected) e.currentTarget.style.background = "var(--hover-bg)";
+                    handleDateHover(ds);
+                  }}
+                  onMouseLeave={e => {
+                    if (!isSelected && !isToday) e.currentTarget.style.background = "transparent";
+                    setHoveredDate(null);
+                  }}
                 >
                   {day}
                   {mark && (
                     <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
                       style={{ background: mark === "pending" ? "#fbbf24" : "#10b981" }} />
+                  )}
+                  {/* Hover tooltip */}
+                  {isHovered && dayTasks.length > 0 && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-20 pointer-events-none">
+                      <div className="glass-card p-2 min-w-[120px] max-w-[180px] text-left shadow-lg animate-fade-in">
+                        <p className="text-[10px] font-semibold mb-1" style={{ color: "var(--text-muted)" }}>
+                          {ds} · {dayTasks.length} 项
+                        </p>
+                        {dayTasks.slice(0, 4).map(t => (
+                          <p key={t.id} className="text-[10px] truncate" style={{
+                            color: t.completed ? "var(--text-muted)" : "var(--text-primary)",
+                            textDecoration: t.completed ? "line-through" : "none",
+                          }}>
+                            {t.completed ? "✓" : "○"} {t.content}
+                          </p>
+                        ))}
+                        {dayTasks.length > 4 && (
+                          <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>+{dayTasks.length - 4} 更多</p>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </button>
               );

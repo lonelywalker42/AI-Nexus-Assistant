@@ -89,9 +89,36 @@ export const tasksApi = {
   toggle: (id: string) => request<Task>(`/api/tasks/${id}/toggle`, { method: "POST" }),
   update: (id: string, data: Partial<Task>) =>
     request<Task>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  completeWithDate: (id: string, date: string) =>
+    request<{ id: string; completed: boolean; completed_at: string }>(`/api/tasks/${id}/complete-with-date`, {
+      method: "POST", body: JSON.stringify({ date }),
+    }),
   delete: (id: string) => request<{ ok: boolean }>(`/api/tasks/${id}`, { method: "DELETE" }),
   dates: (year: number, month: number) =>
     request<Record<string, string>>(`/api/tasks/dates?year=${year}&month=${month}`),
+  weekTasks: (start?: string) =>
+    request<Record<string, { id: string; content: string; completed: boolean; priority: string; category: string }[]>>(
+      `/api/tasks/week${start ? `?start=${start}` : ""}`),
+};
+
+// ── Weekly Plans ──────────────────────────────────────────
+
+export interface WeeklyPlan {
+  exists: boolean;
+  id?: string;
+  week_start?: string;
+  week_end?: string;
+  tasks?: { id: string; date: string; content: string; completed: boolean; priority: string; category: string; sort_order: number }[];
+  total?: number;
+  done?: number;
+}
+
+export const plansApi = {
+  current: () => request<WeeklyPlan>("/api/plans/current"),
+  create: (data?: { week_start?: string; tasks?: { date: string; content: string; priority?: string; category?: string }[] }) =>
+    request<{ id: string; week_start: string }>("/api/plans", { method: "POST", body: JSON.stringify(data || {}) }),
+  copy: (planId: string) =>
+    request<{ id: string; week_start: string }>(`/api/plans/${planId}/copy`, { method: "POST" }),
 };
 
 // ── Search ─────────────────────────────────────────────────

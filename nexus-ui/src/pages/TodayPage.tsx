@@ -15,6 +15,8 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
   const [logSaved, setLogSaved] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
+  const [confirmDate, setConfirmDate] = useState<string | null>(null);
+  const [confirmTaskId, setConfirmTaskId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [now, setNow] = useState(new Date());
 
@@ -65,12 +67,31 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
   };
 
   const handleToggle = async (id: string) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    // If completing (not undoing), show date confirmation dialog
+    if (!task.completed) {
+      setConfirmTaskId(id);
+      setConfirmDate(today);
+      return;
+    }
+    // Undo completion
     try {
-      const task = tasks.find(t => t.id === id);
       const updated = await tasksApi.toggle(id);
       setTasks(prev => prev.map(t => t.id === id ? updated : t));
-      // Task-to-worklog bridge: auto-append completed task to work log
-      if (task && !task.completed && updated.completed) {
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleConfirmComplete = async () => {
+    if (!confirmTaskId || !confirmDate) return;
+    try {
+      const task = tasks.find(t => t.id === confirmTaskId);
+      const updated = await tasksApi.completeWithDate(confirmTaskId, confirmDate);
+      setTasks(prev => prev.map(t => t.id === confirmTaskId ? { ...t, completed: true, completed_at: updated.completed_at } : t));
+      // Task-to-worklog bridge
+      if (task) {
         const cat = getCategory(task.category);
         const entry = `\n- [x] ${task.content} (${cat.label})`;
         setWorkLog(prev => prev ? prev + entry : `## 今日完成${entry}`);
@@ -78,6 +99,8 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
     } catch (err) {
       console.error(err);
     }
+    setConfirmTaskId(null);
+    setConfirmDate(null);
   };
 
   const handleDelete = async (id: string) => {
@@ -339,6 +362,25 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
           </div>
         </div>
       </div>
+
+      {/* 完成日期确认对话框 */}
+      {confirmTaskId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
+          onClick={() => { setConfirmTaskId(null); setConfirmDate(null); }}>
+          <div className="glass-card p-5 space-y-3 max-w-sm animate-fade-in" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>确认完成日期</h3>
+            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              选择此任务的实际完成日期：
+            </p>
+            <input type="date" className="input-glass text-sm w-full" value={confirmDate || today}
+              onChange={e => setConfirmDate(e.target.value)} />
+            <div className="flex gap-2 justify-end">
+              <button className="btn-ghost text-xs" onClick={() => { setConfirmTaskId(null); setConfirmDate(null); }}>取消</button>
+              <button className="btn-gradient btn-click text-xs" onClick={handleConfirmComplete}>确认完成</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

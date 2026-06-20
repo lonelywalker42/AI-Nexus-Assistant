@@ -323,6 +323,136 @@ def _task_to_dict(t: Task) -> dict:
     }
 
 
+# ── 周计划 API ──
+
+@app.get("/api/plans/current")
+def get_current_plan():
+    """获取当前周计划"""
+    from app.services.task_service import get_current_plan as _get_current
+    db = get_session()
+    try:
+        plan = _get_current(db)
+        if not plan:
+            return {"exists": False}
+        tasks = [{
+            "id": t.id, "date": t.date, "content": t.content,
+            "completed": t.completed, "priority": t.priority,
+            "category": t.category, "sort_order": t.sort_order,
+        } for t in sorted(plan.tasks, key=lambda t: (t.sort_order, t.created_at))]
+        return {
+            "exists": True,
+            "id": plan.id,
+            "week_start": plan.week_start.isoformat(),
+            "week_end": plan.week_end.isoformat(),
+            "tasks": tasks,
+            "total": len(tasks),
+            "done": sum(1 for t in plan.tasks if t.completed),
+        }
+    finally:
+        db.close()
+
+
+@app.post("/api/plans")
+def create_plan(data: dict):
+    """创建周计划"""
+    from app.services.task_service import create_plan as _create
+    db = get_session()
+    try:
+        week_start_str = data.get("week_start")
+        if week_start_str:
+            week_start = date.fromisoformat(week_start_str)
+        else:
+            today = date.today()
+            week_start = today - timedelta(days=today.weekday())
+        tasks_data = data.get("tasks", [])
+        plan = _create(db, week_start, tasks_data if tasks_data else None)
+        return {"id": plan.id, "week_start": plan.week_start.isoformat()}
+    finally:
+        db.close()
+
+
+@app.post("/api/plans/{plan_id}/copy")
+def copy_plan(plan_id: str):
+    """复制周计划到下一周"""
+    from app.services.task_service import copy_plan_to_next_week
+    db = get_session()
+    try:
+        new_plan = copy_plan_to_next_week(db, plan_id)
+        if not new_plan:
+            return {"error": "Plan not found"}
+        return {"id": new_plan.id, "week_start": new_plan.week_start.isoformat()}
+    finally:
+        db.close()
+
+
+@app.post("/api/tasks/{task_id}/complete-with-date")
+def complete_task_with_date(task_id: str, data: dict):
+    """用指定日期完成任务（确认完成日期）"""
+    db = get_session()
+    try:
+        task = db.get(Task, task_id)
+        if not task:
+            return {"error": "Task not found"}
+        complete_date = data.get("date", date.today().isoformat())
+        task.completed = True
+        task.completed_at = datetime.fromisoformat(complete_date + "T00:00:00") if isinstance(complete_date, str) else datetime.now()
+        db.commit()
+        db.refresh(task)
+        return {
+            "id": task.id, "completed": task.completed,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+        }
+    finally:
+        db.close()
+
+
+@app.patch("/api/tasks/{task_id}")
+def update_task(task_id: str, data: dict):
+    """更新任务字段"""
+    db = get_session()
+    try:
+        task = db.get(Task, task_id)
+        if not task:
+            return {"error": "Task not found"}
+        for key in ["content", "priority", "category", "completed", "date"]:
+            if key in data:
+                setattr(task, key, data[key])
+        db.commit()
+        db.refresh(task)
+        return {
+            "id": task.id, "date": task.date, "content": task.content,
+            "completed": task.completed, "priority": task.priority,
+            "category": task.category or "general",
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/tasks/week")
+def get_week_tasks(start: str = ""):
+    """获取一周的任务（用于日历悬停预览）"""
+    db = get_session()
+    try:
+        if not start:
+            today = date.today()
+            start_date = today - timedelta(days=today.weekday())
+        else:
+            start_date = date.fromisoformat(start)
+        dates = [(start_date + timedelta(days=i)).isoformat() for i in range(7)]
+        result = {}
+        for d in dates:
+            tasks = task_service.get_all_todos_by_date(db, d)
+            result[d] = [{
+                "id": t.id, "content": t.content, "completed": t.completed,
+                "priority": t.priority, "category": t.category,
+            } for t in tasks]
+        return result
+    finally:
+        db.close()
+
+
 # ══════════════════════════════════════════════════════════════
 #  文献搜索
 # ══════════════════════════════════════════════════════════════
