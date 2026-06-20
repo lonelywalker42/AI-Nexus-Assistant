@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden;font-family:Consolas,'Courier New',monospace;user-select:none}
+canvas{image-rendering:pixelated;display:block}
+.scanlines{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;background:repeating-linear-gradient(to bottom,transparent 0px,transparent 2px,rgba(0,0,0,0.12) 2px,rgba(0,0,0,0.12) 4px)}
+.crt-screen{border-radius:8px;box-shadow:inset 0 0 40px rgba(0,0,0,0.5),0 0 20px rgba(0,255,65,0.08)}
+</style>
+</head>
+<body>
+<canvas id="game" class="crt-screen"></canvas>
+<div class="scanlines"></div>
+<script>
+// ══════════════════════════════════════════════
+//  RETRO ARCADE — 2048 / Tetris / Shooter
+// ══════════════════════════════════════════════
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 640;
+canvas.width = W; canvas.height = H;
+
+// ── CRT Color Palette ──
+const C = {
+  bg: '#0a0a0a', green: '#00ff41', dim: '#008f11', dark: '#003b00',
+  amber: '#ffb000', red: '#ff3333', cyan: '#00ffff', white: '#e0e0e0',
+  yellow: '#ffd700', magenta: '#ff00ff', blue: '#4488ff',
+};
+
+// ── State ──
+let currentGame = null; // null = menu
+let gameInstance = null;
+let animFrame = null;
+
+// ══════════════════════════════════════════════
+//  MENU
+// ══════════════════════════════════════════════
+function drawMenu() {
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = C.green;
+  ctx.font = '28px Consolas, monospace';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = C.green;
+  ctx.shadowBlur = 12;
+  ctx.fillText('RETRO ARCADE', W/2, 100);
+  ctx.shadowBlur = 0;
+
+  // Subtitle
+  ctx.fillStyle = C.dim;
+  ctx.font = '12px Consolas, monospace';
+  ctx.fillText('SELECT A GAME', W/2, 130);
+
+  // Game buttons
+  const games = [
+    { name: '2048', key: '2048', desc: 'SLIDE & MERGE' },
+    { name: 'TETRIS', key: 'tetris', desc: 'STACK BLOCKS' },
+    { name: 'SHOOTER', key: 'shooter', desc: 'DESTROY ALL' },
+  ];
+
+  games.forEach((g, i) => {
+    const y = 200 + i * 120;
+    const x = W/2 - 140;
+    const bw = 280, bh = 80;
+
+    // Button border
+    ctx.strokeStyle = currentGame === g.key ? C.amber : C.dim;
+    ctx.lineWidth = currentGame === g.key ? 2 : 1;
+    ctx.strokeRect(x, y, bw, bh);
+
+    // Glow on hover
+    if (currentGame === g.key) {
+      ctx.fillStyle = 'rgba(0,255,65,0.05)';
+      ctx.fillRect(x+1, y+1, bw-2, bh-2);
+    }
+
+    // Name
+    ctx.fillStyle = currentGame === g.key ? C.amber : C.green;
+    ctx.font = '20px Consolas, monospace';
+    ctx.fillText(g.name, W/2, y + 35);
+
+    // Description
+    ctx.fillStyle = C.dim;
+    ctx.font = '11px Consolas, monospace';
+    ctx.fillText(g.desc, W/2, y + 58);
+  });
+
+  // Controls hint
+  ctx.fillStyle = C.dark;
+  ctx.font = '10px Consolas, monospace';
+  ctx.fillText('↑↓ SELECT  ·  ENTER START  ·  ESC MENU', W/2, H - 40);
+}
+
+let menuIdx = 0;
+const GAME_KEYS = ['2048', 'tetris', 'shooter'];
+
+function menuKey(e) {
+  if (e.key === 'ArrowUp') { menuIdx = (menuIdx + 2) % 3; currentGame = GAME_KEYS[menuIdx]; drawMenu(); }
+  else if (e.key === 'ArrowDown') { menuIdx = (menuIdx + 1) % 3; currentGame = GAME_KEYS[menuIdx]; drawMenu(); }
+  else if (e.key === 'Enter') startGame(GAME_KEYS[menuIdx]);
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  if (currentGame !== null && gameInstance) return;
+  const rect = canvas.getBoundingClientRect();
+  const my = (e.clientY - rect.top) * (H / rect.height);
+  const mx = (e.clientX - rect.left) * (W / rect.width);
+  let hovered = null;
+  GAME_KEYS.forEach((k, i) => {
+    const y = 200 + i * 120;
+    if (mx > W/2-140 && mx < W/2+140 && my > y && my < y+80) hovered = k;
+  });
+  if (hovered && hovered !== currentGame) { currentGame = hovered; menuIdx = GAME_KEYS.indexOf(hovered); drawMenu(); }
+});
+
+canvas.addEventListener('click', (e) => {
+  if (gameInstance) return;
+  const rect = canvas.getBoundingClientRect();
+  const my = (e.clientY - rect.top) * (H / rect.height);
+  GAME_KEYS.forEach((k, i) => {
+    const y = 200 + i * 120;
+    if (my > y && my < y+80) startGame(k);
+  });
+});
+
+function startGame(key) {
+  currentGame = key;
+  document.removeEventListener('keydown', menuKey);
+  if (animFrame) cancelAnimationFrame(animFrame);
+  if (key === '2048') gameInstance = new Game2048();
+  else if (key === 'tetris') gameInstance = new GameTetris();
+  else if (key === 'shooter') gameInstance = new GameShooter();
+  gameInstance.init();
+}
+
+function backToMenu() {
+  if (gameInstance) { gameInstance.destroy(); gameInstance = null; }
+  currentGame = null;
+  document.addEventListener('keydown', menuKey);
+  drawMenu();
+}
+
+// ══════════════════════════════════════════════
+//  2048
+// ══════════════════════════════════════════════
+class Game2048 {
+  constructor() { this.grid = []; this.score = 0; this.over = false; this.won = false; }
+
+  init() {
+    this.grid = Array.from({length:4}, () => Array(4).fill(0));
+    this.score = 0; this.over = false; this.won = false;
+    this.spawn(); this.spawn();
+    this.draw();
+    this._keyH = (e) => this.key(e);
+    document.addEventListener('keydown', this._keyH);
+  }
+
+  destroy() { document.removeEventListener('keydown', this._keyH); }
+
+  spawn() {
+    const empty = [];
+    for (let r=0;r<4;r++) for (let c=0;c<4;c++) if (!this.grid[r][c]) empty.push([r,c]);
+    if (!empty.length) return;
+    const [r,c] = empty[Math.floor(Math.random()*empty.length)];
+    this.grid[r][c] = Math.random() < 0.9 ? 2 : 4;
+  }
+
+  slide(row) {
+    let f = row.filter(v=>v);
+    for (let i=0;i<f.length-1;i++) { if(f[i]===f[i+1]){f[i]*=2;this.score+=f[i];f.splice(i+1,1);if(f[i]===2048)this.won=true;} }
+    while(f.length<4) f.push(0);
+    return f;
+  }
+
+  move(dir) {
+    let moved = false;
+    const g = this.grid;
+    const rot = (g) => g[0].map((_,c)=>g.map(r=>r[c]).reverse());
+    let b = g.map(r=>[...r]);
+    for (let i=0;i<dir;i++) b = rot(b);
+    b = b.map(r=>this.slide(r));
+    for (let i=0;i<(4-dir)%4;i++) b = rot(b);
+    for (let r=0;r<4;r++) for(let c=0;c<4;c++) if(b[r][c]!==g[r][c]) moved=true;
+    if (moved) { this.grid=b; this.spawn(); }
+    if (!this.canMove()) this.over = true;
+    this.draw();
+  }
+
+  canMove() {
+    for (let r=0;r<4;r++) for(let c=0;c<4;c++){
+      if(!this.grid[r][c]) return true;
+      if(c<3&&this.grid[r][c]===this.grid[r][c+1]) return true;
+      if(r<3&&this.grid[r][c]===this.grid[r+1][c]) return true;
+    }
+    return false;
+  }
+
+  key(e) {
+    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault();
+    if (this.over && e.key==='r') { this.init(); return; }
+    if (e.key==='Escape') { backToMenu(); return; }
+    if (this.over) return;
+    const map = {ArrowLeft:0,ArrowDown:1,ArrowRight:2,ArrowUp:3};
+    if (map[e.key]!==undefined) this.move(map[e.key]);
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0,0,W,H);
+
+    // Title
+    ctx.fillStyle = C.green; ctx.font = '24px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.shadowColor = C.green; ctx.shadowBlur = 8;
+    ctx.fillText('2 0 4 8', W/2, 60); ctx.shadowBlur = 0;
+
+    // Score
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    ctx.fillText('SCORE: '+this.score, W/2, 90);
+
+    // Grid
+    const ox = W/2 - 180, oy = 120, cs = 82, gap = 6;
+    ctx.fillStyle = '#1a1a2a'; ctx.fillRect(ox-gap, oy-gap, cs*4+gap*5, cs*4+gap*5);
+
+    const colors = {0:'#1a1a2a',2:'#eee4da',4:'#ede0c8',8:'#f2b179',16:'#f59563',32:'#f67c5f',64:'#f65e3b',128:'#edcf72',256:'#edcc61',512:'#edc850',1024:'#edc53f',2048:'#edc22e'};
+    for (let r=0;r<4;r++) for(let c=0;c<4;c++){
+      const v=this.grid[r][c];
+      const x=ox+c*(cs+gap), y=oy+r*(cs+gap);
+      ctx.fillStyle = colors[v]||'#3a3a5a';
+      ctx.fillRect(x,y,cs,cs);
+      if(v){
+        ctx.fillStyle = v<=4?'#776e65':'#f9f6f2';
+        ctx.font = v>=1024?'22px':v>=128?'26px':'30px Consolas, monospace';
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(v, x+cs/2, y+cs/2+2);
+      }
+    }
+
+    // Game over / Won
+    if (this.over || this.won) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle = this.won ? C.yellow : C.red;
+      ctx.font = '28px Consolas, monospace'; ctx.textAlign = 'center';
+      ctx.fillText(this.won ? 'YOU WIN!' : 'GAME OVER', W/2, H/2 - 20);
+      ctx.fillStyle = C.dim; ctx.font = '14px Consolas, monospace';
+      ctx.fillText('Press R to restart · ESC for menu', W/2, H/2 + 20);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  TETRIS
+// ══════════════════════════════════════════════
+class GameTetris {
+  constructor() {
+    this.COLS=10; this.ROWS=20; this.board=[]; this.score=0; this.lines=0;
+    this.level=1; this.over=false; this.paused=false; this.dropTimer=0;
+    this.piece=null; this.next=null;
+    this.SHAPES = [
+      {shape:[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],color:C.cyan},
+      {shape:[[1,1],[1,1]],color:C.yellow},
+      {shape:[[0,1,0],[1,1,1],[0,0,0]],color:C.magenta},
+      {shape:[[0,1,1],[1,1,0],[0,0,0]],color:C.green},
+      {shape:[[1,1,0],[0,1,1],[0,0,0]],color:C.red},
+      {shape:[[1,0,0],[1,1,1],[0,0,0]],color:C.blue},
+      {shape:[[0,0,1],[1,1,1],[0,0,0]],color:C.amber},
+    ];
+  }
+
+  init() {
+    this.board = Array.from({length:this.ROWS},()=>Array(this.COLS).fill(0));
+    this.score=0; this.lines=0; this.level=1; this.over=false; this.paused=false;
+    this.next = this.randomPiece();
+    this.spawn();
+    this.lastTime = performance.now();
+    this._keyH = (e)=>this.key(e);
+    document.addEventListener('keydown', this._keyH);
+    this.loop();
+  }
+
+  destroy() { document.removeEventListener('keydown',this._keyH); if(this._raf)cancelAnimationFrame(this._raf); }
+
+  randomPiece() {
+    const s = this.SHAPES[Math.floor(Math.random()*this.SHAPES.length)];
+    return {shape:s.shape.map(r=>[...r]),color:s.color,x:Math.floor((this.COLS-s.shape[0].length)/2),y:0};
+  }
+
+  spawn() {
+    this.piece = this.next;
+    this.next = this.randomPiece();
+    if (!this.valid(this.piece.shape,this.piece.x,this.piece.y)) this.over=true;
+  }
+
+  valid(shape,ox,oy) {
+    for(let r=0;r<shape.length;r++) for(let c=0;c<shape[r].length;c++){
+      if(!shape[r][c]) continue;
+      const x=ox+c,y=oy+r;
+      if(x<0||x>=this.COLS||y>=this.ROWS) return false;
+      if(y>=0&&this.board[y][x]) return false;
+    }
+    return true;
+  }
+
+  rotate(shape) {
+    const N=shape.length;
+    const r = Array.from({length:N},()=>Array(N).fill(0));
+    for(let i=0;i<N;i++) for(let j=0;j<N;j++) r[j][N-1-i]=shape[i][j];
+    return r;
+  }
+
+  lock() {
+    const p=this.piece;
+    for(let r=0;r<p.shape.length;r++) for(let c=0;c<p.shape[r].length;c++){
+      if(p.shape[r][c]&&p.y+r>=0) this.board[p.y+r][p.x+c]=p.color;
+    }
+    this.clearLines();
+    this.spawn();
+  }
+
+  clearLines() {
+    let cleared=0;
+    for(let r=this.ROWS-1;r>=0;r--){
+      if(this.board[r].every(c=>c)){this.board.splice(r,1);this.board.unshift(Array(this.COLS).fill(0));cleared++;r++;}
+    }
+    if(cleared){this.lines+=cleared;this.score+=[0,100,300,500,800][cleared]*this.level;this.level=Math.floor(this.lines/10)+1;}
+  }
+
+  loop() {
+    if(this.over){this.draw();return;}
+    if(this.paused){this._raf=requestAnimationFrame(()=>this.loop());return;}
+    const now=performance.now();
+    const dt=now-this.lastTime;
+    this.lastTime=now;
+    this.dropTimer+=dt;
+    const speed=Math.max(50,500-this.level*50);
+    if(this.dropTimer>=speed){this.dropTimer=0;this.drop();}
+    this.draw();
+    this._raf=requestAnimationFrame(()=>this.loop());
+  }
+
+  drop() {
+    if(this.valid(this.piece.shape,this.piece.x,this.piece.y+1)) this.piece.y++;
+    else this.lock();
+  }
+
+  key(e) {
+    if(e.key==='Escape'){backToMenu();return;}
+    if(e.key==='p'){this.paused=!this.paused;if(!this.paused)this.lastTime=performance.now();this.draw();return;}
+    if(this.over||this.paused) return;
+    const p=this.piece;
+    if(e.key==='ArrowLeft'&&this.valid(p.shape,p.x-1,p.y)){e.preventDefault();p.x--;}
+    else if(e.key==='ArrowRight'&&this.valid(p.shape,p.x+1,p.y)){e.preventDefault();p.x++;}
+    else if(e.key==='ArrowDown'){e.preventDefault();this.drop();}
+    else if(e.key==='ArrowUp'){e.preventDefault();const r=this.rotate(p.shape);if(this.valid(r,p.x,p.y))p.shape=r;}
+    else if(e.key===' '){e.preventDefault();while(this.valid(p.shape,p.x,p.y+1))p.y++;this.lock();}
+    this.draw();
+  }
+
+  draw() {
+    ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+
+    // Title
+    ctx.fillStyle=C.green;ctx.font='24px Consolas,monospace';ctx.textAlign='center';
+    ctx.shadowColor=C.green;ctx.shadowBlur=8;ctx.fillText('T E T R I S',W/2,45);ctx.shadowBlur=0;
+
+    // Stats
+    ctx.fillStyle=C.amber;ctx.font='12px Consolas,monospace';ctx.textAlign='left';
+    ctx.fillText('SCORE '+this.score,30,80);
+    ctx.fillText('LINES '+this.lines,30,98);
+    ctx.fillText('LEVEL '+this.level,30,116);
+
+    // Next piece
+    ctx.fillStyle=C.dim;ctx.font='11px Consolas,monospace';ctx.textAlign='center';
+    ctx.fillText('NEXT',W-70,80);
+    const ns=this.next.shape;
+    for(let r=0;r<ns.length;r++) for(let c=0;c<ns[r].length;c++){
+      if(ns[r][c]){ctx.fillStyle=this.next.color;ctx.fillRect(W-90+c*18,92+r*18,16,16);}
+    }
+
+    // Board
+    const ox=140,oy=70,bs=24;
+    ctx.fillStyle='#111118';ctx.fillRect(ox-2,oy-2,this.COLS*bs+4,this.ROWS*bs+4);
+    for(let r=0;r<this.ROWS;r++) for(let c=0;c<this.COLS;c++){
+      if(this.board[r][c]){ctx.fillStyle=this.board[r][c];ctx.fillRect(ox+c*bs,oy+r*bs,bs-1,bs-1);}
+    }
+
+    // Current piece
+    const p=this.piece;
+    if(p) for(let r=0;r<p.shape.length;r++) for(let c=0;c<p.shape[r].length;c++){
+      if(p.shape[r][c]&&p.y+r>=0){ctx.fillStyle=p.color;ctx.fillRect(ox+(p.x+c)*bs,oy+(p.y+r)*bs,bs-1,bs-1);}
+    }
+
+    // Paused
+    if(this.paused){ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,0,W,H);ctx.fillStyle=C.amber;ctx.font='28px Consolas,monospace';ctx.textAlign='center';ctx.fillText('PAUSED',W/2,H/2);}
+
+    // Game over
+    if(this.over){ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,0,W,H);ctx.fillStyle=C.red;ctx.font='28px Consolas,monospace';ctx.textAlign='center';ctx.fillText('GAME OVER',W/2,H/2-20);ctx.fillStyle=C.dim;ctx.font='14px Consolas,monospace';ctx.fillText('ESC for menu',W/2,H/2+20);}
+  }
+}
+
+// ══════════════════════════════════════════════
+//  SHOOTER — Fighter Jet Edition
+// ══════════════════════════════════════════════
+class GameShooter {
+  constructor() {
+    this.player={x:W/2,y:H-60,w:28,h:32};
+    this.bullets=[];this.enemies=[];this.particles=[];this.powerups=[];
+    this.score=0;this.over=false;this.spawnTimer=0;this.powerTimer=0;
+    this.hp=3;this.maxHp=3;this.survivalTime=0;
+    this.bulletPower=1;
+    this.invulnerable=0;
+    this.showHelp=true; // 显示操作说明
+    this.stars=Array.from({length:80},()=>({x:Math.random()*W,y:Math.random()*H,s:Math.random()*2+0.5,sp:Math.random()*80+20}));
+    this.keys={};
+  }
+
+  init() {
+    this.invulnerable=3;
+    this.showHelp=true;
+    this._keyD=(e)=>{
+      this.keys[e.key]=true;
+      if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();
+      if(e.key==='Escape')backToMenu();
+      if(this.showHelp&&(e.key==='Enter'||e.key===' '))this.showHelp=false;
+    };
+    this._keyU=(e)=>{this.keys[e.key]=false;};
+    document.addEventListener('keydown',this._keyD);
+    document.addEventListener('keyup',this._keyU);
+    this.lastTime=performance.now();
+    this.loop();
+  }
+
+  destroy(){document.removeEventListener('keydown',this._keyD);document.removeEventListener('keyup',this._keyU);if(this._raf)cancelAnimationFrame(this._raf);}
+
+  loop(){
+    if(this.over){this.draw();return;}
+    if(this.showHelp){this.draw();this._raf=requestAnimationFrame(()=>this.loop());return;}
+    const now=performance.now();const dt=Math.min((now-this.lastTime)/1000,0.05);this.lastTime=now;
+    this.survivalTime+=dt;
+    this.update(dt);this.draw();
+    this._raf=requestAnimationFrame(()=>this.loop());
+  }
+
+  update(dt){
+    const p=this.player;
+    if(this.keys['ArrowLeft']&&p.x>20)p.x-=300*dt;
+    if(this.keys['ArrowRight']&&p.x<W-20)p.x+=300*dt;
+    if(this.keys['ArrowUp']&&p.y>40)p.y-=300*dt;
+    if(this.keys['ArrowDown']&&p.y<H-40)p.y+=300*dt;
+
+    // Shoot
+    const shootCD = this.bulletPower>=3 ? 80 : this.bulletPower>=2 ? 100 : 120;
+    if(this.keys[' ']&&this.bullets.length<30){
+      if(!this._shootCD||Date.now()-this._shootCD>shootCD){
+        if(this.bulletPower>=3){
+          this.bullets.push({x:p.x,y:p.y-16,w:3,h:12,sp:600});
+          this.bullets.push({x:p.x-8,y:p.y-12,w:2,h:10,sp:550,dx:-30});
+          this.bullets.push({x:p.x+8,y:p.y-12,w:2,h:10,sp:550,dx:30});
+        }else if(this.bulletPower>=2){
+          this.bullets.push({x:p.x-6,y:p.y-16,w:3,h:12,sp:550});
+          this.bullets.push({x:p.x+6,y:p.y-16,w:3,h:12,sp:550});
+        }else{
+          this.bullets.push({x:p.x,y:p.y-16,w:3,h:12,sp:500});
+        }
+        this._shootCD=Date.now();
+      }
+    }
+
+    // Stars
+    this.stars.forEach(s=>{s.y=(s.y+s.sp*dt)%H;});
+
+    // Bullets
+    this.bullets.forEach(b=>{b.y-=b.sp*dt;if(b.dx)b.x+=b.dx*dt;});
+    this.bullets=this.bullets.filter(b=>b.y>-10&&b.x>0&&b.x<W);
+
+    // Enemies (spawn rate increases with survival time)
+    this.spawnTimer+=dt;
+    const spawnInterval=Math.max(0.25,1.5-this.survivalTime*0.02);
+    if(this.spawnTimer>spawnInterval){
+      this.spawnTimer=0;
+      const baseSpeed=50+this.survivalTime*2;
+      this.enemies.push({x:Math.random()*(W-40)+20,y:-20,w:20,h:20,sp:baseSpeed+Math.random()*40,hp:1});
+      // Extra enemies after 30s
+      if(this.survivalTime>30&&Math.random()<0.3){
+        this.enemies.push({x:Math.random()*(W-40)+20,y:-30,w:16,h:16,sp:baseSpeed+30+Math.random()*30,hp:1});
+      }
+    }
+
+    this.enemies.forEach(e=>{e.y+=e.sp*dt;});
+    this.enemies=this.enemies.filter(e=>e.y<H+20);
+
+    // Power-ups spawn (must have w/h for collision detection)
+    this.powerTimer+=dt;
+    if(this.powerTimer>8){
+      this.powerTimer=0;
+      this.powerups.push({x:Math.random()*(W-60)+30,y:-20,w:20,h:20,sp:60,type:Math.random()<0.5?'power':'range'});
+    }
+
+    this.powerups.forEach(p=>{p.y+=p.sp*dt;});
+    this.powerups=this.powerups.filter(p=>p.y<H+20);
+
+    // Collision: bullet vs enemy
+    for(let i=this.bullets.length-1;i>=0;i--){
+      for(let j=this.enemies.length-1;j>=0;j--){
+        const b=this.bullets[i],e=this.enemies[j];
+        if(b&&e&&this.overlap(b,e)){
+          this.bullets.splice(i,1);
+          e.hp--;
+          if(e.hp<=0){
+            this.enemies.splice(j,1);
+            this.score+=10;
+            for(let k=0;k<8;k++) this.particles.push({x:e.x,y:e.y,dx:(Math.random()-0.5)*200,dy:(Math.random()-0.5)*200,life:0.6,max:0.6,color:C.amber});
+          }
+          break;
+        }
+      }
+    }
+
+    // Collision: player vs powerup
+    for(let i=this.powerups.length-1;i>=0;i--){
+      const pu=this.powerups[i];
+      if(this.overlap(p,pu)){
+        this.powerups.splice(i,1);
+        if(pu.type==='power'&&this.bulletPower<3) this.bulletPower++;
+        if(pu.type==='range'&&this.bulletRange<2) this.bulletRange+=0.3;
+        // Heal
+        if(this.hp<this.maxHp) this.hp++;
+        for(let k=0;k<10;k++) this.particles.push({x:pu.x,y:pu.y,dx:(Math.random()-0.5)*150,dy:(Math.random()-0.5)*150,life:0.8,max:0.8,color:pu.type==='power'?C.cyan:C.green});
+      }
+    }
+
+    // Collision: player vs enemy (with invulnerability)
+    if(this.invulnerable>0){this.invulnerable-=dt;}else{
+      for(let i=this.enemies.length-1;i>=0;i--){
+        if(this.overlap(p,this.enemies[i])){
+          this.enemies.splice(i,1);
+          this.hp--;
+          this.invulnerable=2;
+          // Lose power-ups on hit
+          if(this.bulletPower>1) this.bulletPower--;
+          for(let k=0;k<12;k++) this.particles.push({x:p.x,y:p.y,dx:(Math.random()-0.5)*200,dy:(Math.random()-0.5)*200,life:0.8,max:0.8,color:C.red});
+          if(this.hp<=0) this.over=true;
+          break;
+        }
+      }
+    }
+
+    // Particles (cap at 200 to prevent render issues)
+    this.particles.forEach(pt=>{pt.x+=pt.dx*dt;pt.y+=pt.dy*dt;pt.life-=dt;});
+    this.particles=this.particles.filter(pt=>pt.life>0);
+    if(this.particles.length>200) this.particles=this.particles.slice(-200);
+  }
+
+  overlap(a,b){
+    const ax=a.x-(a.w||0)/2,ay=a.y-(a.h||0)/2;
+    const bx=b.x-(b.w||0)/2,by=b.y-(b.h||0)/2;
+    return ax<bx+b.w&&ax+a.w>bx&&ay<by+b.h&&ay+a.h>by;
+  }
+
+  drawFighter(x,y,flash){
+    if(flash&&Math.floor(this.invulnerable*10)%2===0) return;
+    ctx.save();
+    ctx.translate(x,y);
+    // Fuselage
+    ctx.fillStyle='#c0c0c0';
+    ctx.beginPath();ctx.moveTo(0,-16);ctx.lineTo(-4,-8);ctx.lineTo(-4,10);ctx.lineTo(4,10);ctx.lineTo(4,-8);ctx.closePath();ctx.fill();
+    // Wings
+    ctx.fillStyle='#808080';
+    ctx.beginPath();ctx.moveTo(-4,2);ctx.lineTo(-16,10);ctx.lineTo(-14,12);ctx.lineTo(-4,8);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(4,2);ctx.lineTo(16,10);ctx.lineTo(14,12);ctx.lineTo(4,8);ctx.closePath();ctx.fill();
+    // Tail
+    ctx.fillStyle='#606060';
+    ctx.beginPath();ctx.moveTo(-3,10);ctx.lineTo(-8,14);ctx.lineTo(8,14);ctx.lineTo(3,10);ctx.closePath();ctx.fill();
+    // Cockpit
+    ctx.fillStyle='#00d2ff';
+    ctx.beginPath();ctx.moveTo(0,-14);ctx.lineTo(-2,-8);ctx.lineTo(2,-8);ctx.closePath();ctx.fill();
+    // Engine glow
+    ctx.fillStyle='#ff6600';ctx.globalAlpha=0.6+Math.random()*0.4;
+    ctx.beginPath();ctx.moveTo(-2,12);ctx.lineTo(0,18+Math.random()*4);ctx.lineTo(2,12);ctx.closePath();ctx.fill();
+    ctx.globalAlpha=1;
+    ctx.restore();
+  }
+
+  draw(){
+    ctx.fillStyle='#06060e';ctx.fillRect(0,0,W,H);
+
+    // Stars
+    this.stars.forEach(s=>{ctx.fillStyle=`rgba(255,255,255,${s.s/3})`;ctx.fillRect(s.x,s.y,s.s,s.s);});
+
+    // Player fighter jet
+    const p=this.player;
+    this.drawFighter(p.x,p.y,this.invulnerable>0);
+
+    // Bullets
+    this.bullets.forEach(b=>{
+      ctx.fillStyle=this.bulletPower>=2?C.cyan:C.green;
+      ctx.fillRect(b.x-b.w/2,b.y,b.w,b.h);
+    });
+
+    // Enemies (red diamonds)
+    this.enemies.forEach(e=>{
+      ctx.save();ctx.translate(e.x,e.y);ctx.rotate(Math.PI/4);
+      ctx.fillStyle='#cc0000';ctx.fillRect(-e.w/2,-e.h/2,e.w,e.h);
+      ctx.fillStyle='#ff3333';ctx.fillRect(-3,-3,6,6);
+      ctx.restore();
+    });
+
+    // Power-ups
+    this.powerups.forEach(pu=>{
+      ctx.save();ctx.translate(pu.x,pu.y);
+      const glow=0.5+Math.sin(Date.now()/200)*0.3;
+      if(pu.type==='power'){
+        ctx.fillStyle=`rgba(0,210,255,${glow})`;
+        ctx.beginPath();ctx.moveTo(0,-10);ctx.lineTo(8,0);ctx.lineTo(0,10);ctx.lineTo(-8,0);ctx.closePath();ctx.fill();
+        ctx.fillStyle='#fff';ctx.font='10px Consolas';ctx.textAlign='center';ctx.fillText('P',0,4);
+      }else{
+        ctx.fillStyle=`rgba(0,255,65,${glow})`;
+        ctx.beginPath();ctx.arc(0,0,8,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#fff';ctx.font='10px Consolas';ctx.textAlign='center';ctx.fillText('R',0,4);
+      }
+      ctx.restore();
+    });
+
+    // Particles
+    this.particles.forEach(pt=>{
+      ctx.fillStyle=pt.color;ctx.globalAlpha=pt.life/pt.max;
+      ctx.fillRect(pt.x-2,pt.y-2,4,4);
+    });
+    ctx.globalAlpha=1;
+
+    // HUD
+    ctx.textAlign='left';
+
+    // Hearts (HP)
+    for(let i=0;i<this.maxHp;i++){
+      const hx=20+i*22;
+      ctx.fillStyle=i<this.hp?C.red:'#333';
+      ctx.font='16px Consolas';
+      ctx.fillText('♥',hx,24);
+    }
+
+    // Score
+    ctx.fillStyle=C.amber;ctx.font='14px Consolas,monospace';
+    ctx.fillText('SCORE '+this.score,W-160,24);
+
+    // Survival time
+    const mins=Math.floor(this.survivalTime/60);
+    const secs=Math.floor(this.survivalTime%60);
+    ctx.fillStyle=C.cyan;ctx.font='12px Consolas,monospace';
+    ctx.fillText(`TIME ${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`,W-160,44);
+
+    // Power level
+    ctx.fillStyle=C.dim;ctx.font='11px Consolas,monospace';
+    ctx.fillText(`ATK:${'■'.repeat(this.bulletPower)}${'□'.repeat(3-this.bulletPower)}`,20,44);
+
+    // Help overlay
+    if(this.showHelp){
+      ctx.fillStyle='rgba(0,0,0,0.85)';ctx.fillRect(0,0,W,H);
+      ctx.textAlign='center';
+      ctx.fillStyle=C.green;ctx.font='22px Consolas,monospace';ctx.fillText('FIGHTER JET',W/2,100);
+      ctx.fillStyle=C.amber;ctx.font='13px Consolas,monospace';ctx.fillText('HOW TO PLAY',W/2,135);
+      const hLines=[
+        ['↑ ↓ ← →','Move your fighter jet'],
+        ['SPACE','Fire weapons'],
+        ['ESC','Back to menu'],
+        ['',''],
+        ['♥ Hearts','3 lives - lose one when hit'],
+        ['◆ Power (P)','Upgrade firepower (3 levels)'],
+        ['● Recovery (R)','Restore 1 heart'],
+        ['',''],
+        ['Enemies increase over time!', ''],
+      ];
+      ctx.textAlign='left';
+      let ly=170;
+      hLines.forEach(l=>{
+        if(l[0]&&l[1]){
+          ctx.fillStyle=C.cyan;ctx.font='12px Consolas,monospace';ctx.fillText(l[0],W/2-140,ly);
+          ctx.fillStyle=C.white;ctx.font='12px Consolas,monospace';ctx.fillText(l[1],W/2+10,ly);
+        }else if(l[0]){
+          ctx.fillStyle=C.dim;ctx.font='11px Consolas,monospace';ctx.textAlign='center';ctx.fillText(l[0],W/2,ly);ctx.textAlign='left';
+        }
+        ly+=24;
+      });
+      ctx.textAlign='center';ctx.fillStyle=C.amber;ctx.font='14px Consolas,monospace';ctx.fillText('Press ENTER or SPACE to start',W/2,H-60);
+      return;
+    }
+
+    // Game over
+    if(this.over){
+      ctx.fillStyle='rgba(0,0,0,0.75)';ctx.fillRect(0,0,W,H);
+      ctx.textAlign='center';
+      ctx.fillStyle=C.red;ctx.font='28px Consolas,monospace';ctx.fillText('GAME OVER',W/2,H/2-40);
+      ctx.fillStyle=C.amber;ctx.font='16px Consolas,monospace';ctx.fillText('Score: '+this.score,W/2,H/2);
+      const m=Math.floor(this.survivalTime/60);const s=Math.floor(this.survivalTime%60);
+      ctx.fillStyle=C.cyan;ctx.font='14px Consolas,monospace';ctx.fillText(`Survived: ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`,W/2,H/2+25);
+      ctx.fillStyle=C.dim;ctx.font='12px Consolas,monospace';ctx.fillText('ESC for menu',W/2,H/2+55);
+    }
+  }
+}
+
+// ── Start ──
+document.addEventListener('keydown', menuKey);
+drawMenu();
+</script>
+</body>
+</html>

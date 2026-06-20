@@ -9,7 +9,10 @@ async function loadEpub() {
     const mod = await import("epubjs");
     ePub = mod.default || mod;
     return ePub;
-  } catch { return null; }
+  } catch (err) {
+    console.error("Failed to load epubjs:", err);
+    return null;
+  }
 }
 
 interface Book {
@@ -26,46 +29,61 @@ interface Book {
 
 type ViewMode = "shelf" | "detail" | "reader";
 
-// IndexedDB helpers
+// IndexedDB helpers — Promise-based, lazy loading
 const DB_NAME = "nexus-books";
 const DB_VER = 1;
+const META_KEY = "nexus-books-meta";
 
-function openDB(cb: (db: IDBDatabase | null) => void) {
-  const req = indexedDB.open(DB_NAME, DB_VER);
-  req.onupgradeneeded = (e) => {
-    const d = (e.target as IDBOpenDBRequest).result;
-    if (!d.objectStoreNames.contains("books")) d.createObjectStore("books", { keyPath: "name" });
-  };
-  req.onsuccess = (e) => cb((e.target as IDBOpenDBRequest).result);
-  req.onerror = () => cb(null);
-}
-
-function saveBooksToDB(books: Book[]) {
-  openDB((db) => {
-    if (!db) return;
-    const tx = db.transaction("books", "readwrite");
-    const store = tx.objectStore("books");
-    store.clear();
-    books.forEach((b) => {
-      b.file.arrayBuffer().then((buf) => {
-        store.put({ name: b.name, type: b.type, size: b.size, data: buf });
-      });
-    });
+function getDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = (e) => {
+      const d = (e.target as IDBOpenDBRequest).result;
+      if (!d.objectStoreNames.contains("books")) d.createObjectStore("books", { keyPath: "name" });
+    };
+    req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
+    req.onerror = () => reject(req.error);
   });
 }
 
-function loadBooksFromDB(cb: (books: Book[]) => void) {
-  openDB((db) => {
-    if (!db) { cb([]); return; }
-    const tx = db.transaction("books", "readonly");
-    const req = tx.objectStore("books").getAll();
+async function saveBooksToDB(books: Book[]) {
+  const entries = await Promise.all(books.map(async (b) => ({
+    name: b.name, type: b.type, size: b.size, data: await b.file.arrayBuffer(),
+  })));
+  const db = await getDB();
+  const tx = db.transaction("books", "readwrite");
+  const store = tx.objectStore("books");
+  store.clear();
+  for (const entry of entries) {
+    store.put(entry);
+  }
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(new Error("transaction aborted"));
+  });
+  // Save metadata to localStorage for fast mount
+  const meta = books.map(b => ({ name: b.name, type: b.type, size: b.size }));
+  localStorage.setItem(META_KEY, JSON.stringify(meta));
+}
+
+// Fast load: metadata from localStorage (no ArrayBuffer)
+function loadBookMetaFromStorage(): Array<{name: string; type: string; size: number}> {
+  try { return JSON.parse(localStorage.getItem(META_KEY) || "[]"); } catch { return []; }
+}
+
+// Load single book's file from IndexedDB (on-demand)
+async function loadBookFile(name: string): Promise<File | null> {
+  const db = await getDB();
+  const tx = db.transaction("books", "readonly");
+  const store = tx.objectStore("books");
+  return new Promise((resolve) => {
+    const req = store.get(name);
     req.onsuccess = () => {
-      const items = (req.result || []).map((e: any) => ({
-        name: e.name, file: new File([e.data], e.name, { type: e.type }), type: e.type, size: e.size,
-      } as Book)).sort((a: Book, b: Book) => a.name.localeCompare(b.name, "zh"));
-      cb(items);
+      const e = req.result;
+      resolve(e ? new File([e.data], e.name, { type: e.type }) : null);
     };
-    req.onerror = () => cb([]);
+    req.onerror = () => resolve(null);
   });
 }
 
@@ -117,24 +135,16 @@ export default function BookshelfPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const readerRef = useRef<HTMLDivElement>(null);
 
-  // Load from IndexedDB on mount
+  // Load book metadata from localStorage on mount (fast)
   useEffect(() => {
-    loadBooksFromDB((items) => {
-      if (items.length > 0) {
-        setBooks(items);
-        items.forEach((book, i) => {
-          extractBookMetadata(book).then((meta) => {
-            setBooks((prev) => prev.map((b, j) => j === i ? { ...b, ...meta } : b));
-          });
-        });
-      }
-    });
+    const meta = loadBookMetaFromStorage();
+    if (meta.length > 0) {
+      const placeholderBooks: Book[] = meta.map(m => ({
+        name: m.name, file: null as any, type: m.type, size: m.size,
+      }));
+      setBooks(placeholderBooks);
+    }
   }, []);
-
-  // Cleanup rendition on unmount
-  useEffect(() => {
-    return () => { if (rendition) rendition.destroy(); };
-  }, [rendition]);
 
   const handleFolderLoad = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -154,53 +164,135 @@ export default function BookshelfPage() {
     e.target.value = "";
   };
 
-  const openDetail = (book: Book) => {
+  const openDetail = async (book: Book) => {
+    // Load file from IndexedDB if placeholder
+    if (!book.file) {
+      const file = await loadBookFile(book.name);
+      if (file) {
+        book = { ...book, file };
+        setBooks(prev => prev.map(b => b.name === book.name ? book : b));
+      }
+    }
     setSelectedBook(book);
     setViewMode("detail");
   };
 
-  const openReader = async () => {
+  const openReader = () => {
     if (!selectedBook) return;
     if (!selectedBook.name.toLowerCase().endsWith(".epub")) {
       alert("Only EPUB format is supported for the built-in reader.");
       return;
     }
     setViewMode("reader");
-
-    // Wait for DOM update
-    setTimeout(async () => {
-      if (!readerRef.current) return;
-      const epubLib = await loadEpub();
-      if (!epubLib) return;
-
-      const url = URL.createObjectURL(selectedBook.file);
-      const book = epubLib(url);
-
-      const rend = book.renderTo(readerRef.current, {
-        width: "100%",
-        height: "100%",
-        spread: "none",
-      });
-
-      // Restore saved position
-      const savedCfi = localStorage.getItem(`book-progress-${selectedBook.name}`);
-      if (savedCfi) {
-        await rend.display(savedCfi);
-      } else {
-        await rend.display();
-      }
-
-      // Track position
-      rend.on("relocated", (location: any) => {
-        if (location?.start?.cfi) {
-          localStorage.setItem(`book-progress-${selectedBook.name}`, location.start.cfi);
-          setCurrentPage(location.start.displayed?.page || "");
-        }
-      });
-
-      setRendition(rend);
-    }, 100);
   };
+
+  // Initialize EPUB reader when viewMode changes to "reader"
+  useEffect(() => {
+    if (viewMode !== "reader" || !selectedBook || !selectedBook.file) return;
+    let active = true;
+    let rend: any = null;
+    let resizeObs: ResizeObserver | null = null;
+
+    const initReader = async () => {
+      // Step 1: Wait for container to have stable dimensions via ResizeObserver
+      const container = readerRef.current;
+      if (!container) return;
+
+      await new Promise<void>((resolve) => {
+        if (container.offsetWidth > 100 && container.offsetHeight > 50) {
+          resolve();
+          return;
+        }
+        resizeObs = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.contentRect.width > 100 && entry.contentRect.height > 50) {
+              resizeObs?.disconnect();
+              resizeObs = null;
+              resolve();
+            }
+          }
+        });
+        resizeObs.observe(container);
+        // Timeout fallback
+        setTimeout(() => { resizeObs?.disconnect(); resizeObs = null; resolve(); }, 3000);
+      });
+
+      if (!active || !readerRef.current) return;
+
+      // Step 2: Load epubjs library
+      const epubLib = await loadEpub();
+      if (!epubLib) {
+        if (readerRef.current) {
+          readerRef.current.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);"><p>Failed to load EPUB library</p></div>';
+        }
+        return;
+      }
+      if (!active || !readerRef.current) return;
+
+      // Step 3: Create book from ArrayBuffer directly (avoids blob URL iframe issues in Tauri)
+      try {
+        const buf = await selectedBook.file.arrayBuffer();
+        if (!active) return;
+
+        const book = epubLib(buf);
+        const c = readerRef.current;
+        const w = c.offsetWidth || 600;
+        const h = c.offsetHeight || 500;
+
+        // Step 4: Render with paginated flow and auto spread
+        rend = book.renderTo(c, { width: w, height: h, spread: "auto" });
+
+        // Apply theme to make text readable and adaptive
+        rend.themes.default({
+          "body": {
+            "color": "var(--text-primary, #1e293b)",
+            "font-family": "'Open Sans', system-ui, -apple-system, sans-serif",
+            "line-height": "1.7",
+            "padding": "0 16px",
+          },
+          "p": { "margin": "0.5em 0" },
+          "a": { "color": "var(--accent-blue, #3b82f6)" },
+        });
+
+        const savedCfi = localStorage.getItem(`book-progress-${selectedBook.name}`);
+        await rend.display(savedCfi || undefined);
+
+        rend.on("relocated", (location: any) => {
+          if (location?.start?.cfi) {
+            localStorage.setItem(`book-progress-${selectedBook.name}`, location.start.cfi);
+            setCurrentPage(location.start.displayed?.page || "");
+          }
+        });
+
+        // Resize rendition when container resizes
+        const resizeHandler = () => {
+          if (rend && c.offsetWidth > 0) {
+            rend.resize(c.offsetWidth, c.offsetHeight);
+          }
+        };
+        window.addEventListener("resize", resizeHandler);
+        if (active) setRendition(rend);
+      } catch (err) {
+        console.error("EPUB render error:", err);
+        // Fallback: show error message in the container
+        if (readerRef.current) {
+          readerRef.current.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);"><p>Failed to load EPUB: ${err}</p></div>`;
+        }
+      }
+    };
+
+    // Use requestAnimationFrame to ensure DOM is painted before measuring
+    const raf = requestAnimationFrame(() => {
+      setTimeout(initReader, 50);
+    });
+
+    return () => {
+      active = false;
+      cancelAnimationFrame(raf);
+      if (resizeObs) resizeObs.disconnect();
+      if (rend) { try { rend.destroy(); } catch {} setRendition(null); }
+    };
+  }, [viewMode, selectedBook]);
 
   const closeReader = () => {
     if (rendition) {
@@ -334,9 +426,9 @@ export default function BookshelfPage() {
 
       {viewMode === "reader" && (
         /* EPUB Reader */
-        <div className="flex-1 flex flex-col min-h-0">
-          <div ref={readerRef} className="flex-1 glass-card overflow-hidden" />
-          <div className="flex items-center justify-between py-2">
+        <div className="flex-1 flex flex-col min-h-0 gap-2">
+          <div ref={readerRef} className="flex-1 rounded-2xl overflow-hidden" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)", minHeight: "400px" }} />
+          <div className="flex items-center justify-between py-1">
             <button className="btn-ghost text-xs py-1.5" onClick={() => rendition?.prev()}>
               <IconChevronLeft size={14} /> Prev
             </button>

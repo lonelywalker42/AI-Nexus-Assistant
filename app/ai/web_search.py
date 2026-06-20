@@ -143,6 +143,14 @@ TOOL_DEFINITION_ANTHROPIC = {
 }
 
 
+def is_search_error(result: str) -> bool:
+    """检查搜索结果是否为错误（未获得有效数据）"""
+    return any(kw in result for kw in [
+        "未获得有效结果", "未启动", "不可用", "搜索失败", "未找到",
+        "错误：", "搜索服务",
+    ])
+
+
 def execute_tool_call(arguments: str | dict) -> str:
     """执行工具调用，返回格式化的搜索结果文本"""
     if isinstance(arguments, str):

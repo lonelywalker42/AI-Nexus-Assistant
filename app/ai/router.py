@@ -13,7 +13,7 @@ from app.db import get_session
 from app.models.model_config import ModelConfig
 from app.ai.web_search import (
     TOOL_DEFINITION_OPENAI, TOOL_DEFINITION_ANTHROPIC,
-    execute_tool_call,
+    execute_tool_call, is_search_error,
 )
 from app.ai.tools import (
     init_tools, get_all_openai_tools, get_all_anthropic_tools,
@@ -290,6 +290,41 @@ class AIRouter:
                     yield {"type": "tool_result", "data": json.dumps({
                         "name": tool_name, "query": query, "result": result[:5000]
                     }, ensure_ascii=False)}
+
+                    # 搜索服务不可用时短路，避免浪费工具调用轮次
+                    if tool_name == "web_search" and is_search_error(result):
+                        # 构建完整的消息历史
+                        all_tool_calls = tool_calls_for_msg + [{
+                            "id": tc["id"], "type": "function",
+                            "function": {"name": tool_name, "arguments": tc["arguments"]}
+                        }]
+                        current_messages.append({
+                            "role": "assistant",
+                            "content": text_content if text_content else "",
+                            "tool_calls": all_tool_calls,
+                        })
+                        current_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+                        current_messages.append({
+                            "role": "user",
+                            "content": "搜索服务暂时不可用。请直接基于你的知识回答用户的问题，不要尝试搜索。"
+                        })
+                        # 发起不带 tools 的最终调用
+                        try:
+                            final_stream = client.chat.completions.create(
+                                model=model.model_name, messages=current_messages,
+                                temperature=kwargs.get("temperature", 0.7),
+                                max_tokens=kwargs.get("max_tokens", 4096), stream=True,
+                            )
+                            for chunk in final_stream:
+                                if not chunk.choices: continue
+                                delta = chunk.choices[0].delta
+                                if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                                    yield {"type": "thinking", "data": delta.reasoning_content}
+                                if delta.content:
+                                    yield {"type": "content", "data": delta.content}
+                        except Exception as e:
+                            yield {"type": "content", "data": f"\n\n❌ {e}"}
+                        return
 
                     tool_calls_for_msg.append({
                         "id": tc["id"],

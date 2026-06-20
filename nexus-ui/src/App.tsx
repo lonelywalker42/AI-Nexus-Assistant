@@ -129,6 +129,15 @@ function App() {
       case "chat": return <ChatPage />;
       case "music": return <MusicPage />;
       case "bookshelf": return <BookshelfPage />;
+      case "materials": return (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="glass-card p-12 text-center space-y-4">
+            <IconImage size={48} style={{ color: "var(--text-muted)", margin: "0 auto" }} />
+            <p className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>素材库</p>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>即将推出</p>
+          </div>
+        </div>
+      );
       case "settings": return <SettingsPage />;
       default: return <Dashboard onNavigate={setActivePage} />;
     }

@@ -266,9 +266,11 @@ fn build_context_menu(app: &tauri::AppHandle, has_cd: bool, is_trans: bool) -> t
     let bg_text = if is_trans { "🎨 切换黑色背景" } else { "🎨 切换透明背景" };
     let mbg = MenuItem::with_id(app, "bg", bg_text, true, None::<&str>)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
+    let mgames = MenuItem::with_id(app, "games", "🎮 游戏机模式", true, None::<&str>)?;
     let mtodo = MenuItem::with_id(app, "todo", "📋 显示待办日历", true, None::<&str>)?;
+    let sep4 = PredefinedMenuItem::separator(app)?;
     let mback = MenuItem::with_id(app, "back", "↩ 返回主窗口", true, None::<&str>)?;
-    menu.append_items(&[&m15, &m30, &m45, &m60, &m90, &sep1, &mcustom, &sep2, &mcancel, &mbg, &sep3, &mtodo, &mback])?;
+    menu.append_items(&[&m15, &m30, &m45, &m60, &m90, &sep1, &mcustom, &sep2, &mcancel, &mbg, &sep3, &mgames, &mtodo, &sep4, &mback])?;
     Ok(menu)
 }
 
@@ -397,6 +399,49 @@ fn do_create_todo(app: &tauri::AppHandle) {
     .build();
 }
 
+/// 创建游戏窗口（复古像素游戏机）
+fn create_games_window(app: &tauri::AppHandle) {
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        let label = "games";
+        // 如果已有窗口，聚焦
+        if let Some(gw) = app_handle.get_webview_window(label) {
+            let _ = gw.show();
+            let _ = gw.set_focus();
+            return;
+        }
+
+        let ipc_script = r#"
+            (function() {
+                function setup() {
+                    if (window.__TAURI_INTERNALS__ && !window.__nexus_ipc) {
+                        window.__nexus_ipc = true;
+                        window.invoke = window.__TAURI_INTERNALS__.invoke;
+                        console.log('[nexus-games] IPC ready');
+                    }
+                }
+                setup();
+                if (!window.__nexus_ipc) {
+                    var t = setInterval(function(){setup();if(window.__nexus_ipc)clearInterval(t);},50);
+                    setTimeout(function(){clearInterval(t);},5000);
+                }
+            })();
+        "#;
+
+        let _ = tauri::WebviewWindowBuilder::new(
+            &app_handle, label, WebviewUrl::App("games.html".into()),
+        )
+        .title("Retro Arcade")
+        .inner_size(480.0, 640.0)
+        .resizable(false)
+        .decorations(true)
+        .always_on_top(false)
+        .initialization_script(ipc_script)
+        .center()
+        .build();
+    });
+}
+
 /// 创建自定义倒计时输入窗口
 fn create_input_window(app: &tauri::AppHandle) {
     if let Some(iw) = app.get_webview_window(INPUT_LABEL) {
@@ -513,6 +558,7 @@ pub fn run() {
                     "cancel" => { cancel_countdown(app.clone()); }
                     "bg" => { toggle_bg(app.clone()); }
                     // 共享菜单项
+                    "games" => { create_games_window(app); }
                     "todo" => { create_todo_window(app); }
                     "back" => { show_main_window(app.clone()); }
                     // 托盘菜单

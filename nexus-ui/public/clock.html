@@ -199,79 +199,86 @@ window._trans = false;
 
 function $(id){return document.getElementById(id)}
 
-// ── IndexedDB 持久化（存储文件 ArrayBuffer）──
+// ── IndexedDB 持久化（Promise-based，确保事务存活）──
 var DB_NAME = 'nexus-clock-audio';
 var DB_VER = 1;
 
-function openDB(cb){
-  var req = indexedDB.open(DB_NAME, DB_VER);
-  req.onupgradeneeded = function(e){
-    var d = e.target.result;
-    if(!d.objectStoreNames.contains('tracks')) d.createObjectStore('tracks', {keyPath:'name'});
-    if(!d.objectStoreNames.contains('alert')) d.createObjectStore('alert', {keyPath:'key'});
-  };
-  req.onsuccess = function(e){cb(e.target.result)};
-  req.onerror = function(){cb(null)};
-}
-
-// 保存播放列表到 IndexedDB
-function savePlaylistToDB(files){
-  openDB(function(db){
-    if(!db)return;
-    var tx = db.transaction('tracks','readwrite');
-    var store = tx.objectStore('tracks');
-    store.clear();
-    var pending = files.length;
-    if(pending===0) return;
-    files.forEach(function(item){
-      var f = item.file || item;
-      f.arrayBuffer().then(function(buf){
-        store.put({name:item.name, type:item.type||f.type, size:item.size||f.size, data:buf});
-        pending--;
-      });
-    });
+function getDB(){
+  return new Promise(function(resolve, reject){
+    var req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = function(e){
+      var d = e.target.result;
+      if(!d.objectStoreNames.contains('tracks')) d.createObjectStore('tracks', {keyPath:'name'});
+      if(!d.objectStoreNames.contains('alert')) d.createObjectStore('alert', {keyPath:'key'});
+    };
+    req.onsuccess = function(e){resolve(e.target.result)};
+    req.onerror = function(){reject(req.error)};
   });
 }
 
-// 从 IndexedDB 加载播放列表
-function loadPlaylistFromDB(cb){
-  openDB(function(db){
-    if(!db){cb([]);return}
-    var tx = db.transaction('tracks','readonly');
-    var req = tx.objectStore('tracks').getAll();
+async function savePlaylistToDB(files){
+  // 先收集所有 ArrayBuffer
+  var entries = [];
+  for(var i=0;i<files.length;i++){
+    var item = files[i];
+    var f = item.file || item;
+    var buf = await f.arrayBuffer();
+    entries.push({name:item.name, type:item.type||f.type, size:item.size||f.size, data:buf});
+  }
+  // 再开事务同步 put
+  var db = await getDB();
+  var tx = db.transaction('tracks','readwrite');
+  var store = tx.objectStore('tracks');
+  store.clear();
+  for(var j=0;j<entries.length;j++){
+    store.put(entries[j]);
+  }
+  await new Promise(function(resolve,reject){
+    tx.oncomplete=resolve; tx.onerror=function(){reject(tx.error)}; tx.onabort=function(){reject(new Error('aborted'))};
+  });
+}
+
+async function loadPlaylistFromDB(){
+  var db = await getDB();
+  var tx = db.transaction('tracks','readonly');
+  var store = tx.objectStore('tracks');
+  return new Promise(function(resolve){
+    var req = store.getAll();
     req.onsuccess = function(){
       var items = (req.result||[]).map(function(e){
         return {name:e.name, file:new File([e.data],e.name,{type:e.type}), type:e.type, size:e.size};
       }).sort(function(a,b){return a.name.localeCompare(b.name,'zh')});
-      cb(items);
+      resolve(items);
     };
-    req.onerror = function(){cb([])};
+    req.onerror = function(){resolve([])};
   });
 }
 
-// 保存提示音到 IndexedDB
-function saveAlertToDB(file){
-  openDB(function(db){
-    if(!db)return;
-    var tx = db.transaction('alert','readwrite');
-    file.arrayBuffer().then(function(buf){
-      tx.objectStore('alert').put({key:'alert', name:file.name, type:file.type, data:buf});
-    });
+async function saveAlertToDB(file){
+  var buf = await file.arrayBuffer();
+  var db = await getDB();
+  var tx = db.transaction('alert','readwrite');
+  var store = tx.objectStore('alert');
+  store.put({key:'alert', name:file.name, type:file.type, data:buf});
+  await new Promise(function(resolve,reject){
+    tx.oncomplete=resolve; tx.onerror=function(){reject(tx.error)};
   });
 }
 
-// 从 IndexedDB 加载提示音
-function loadAlertFromDB(cb){
-  openDB(function(db){
-    if(!db){cb(null);return}
-    var req = db.transaction('alert','readonly').objectStore('alert').get('alert');
+async function loadAlertFromDB(){
+  var db = await getDB();
+  var tx = db.transaction('alert','readonly');
+  var store = tx.objectStore('alert');
+  return new Promise(function(resolve){
+    var req = store.get('alert');
     req.onsuccess = function(){
       var e = req.result;
-      cb(e ? new File([e.data],e.name,{type:e.type}) : null);
+      resolve(e ? new File([e.data],e.name,{type:e.type}) : null);
     };
-    req.onerror = function(){cb(null)};
+    req.onerror = function(){resolve(null)};
   });
 }
+
 var D={h1:$('h1'),h2:$('h2'),m1:$('m1'),m2:$('m2'),s1:$('s1'),s2:$('s2')};
 var C=[$('c1'),$('c2'),$('c3'),$('c4')];
 var blink=true;
@@ -456,7 +463,7 @@ resizeCanvas();
 drawSpectrum();
 
 // ── 从 IndexedDB 恢复播放列表和提示音 ──
-loadPlaylistFromDB(function(items){
+loadPlaylistFromDB().then(function(items){
   if(items.length > 0){
     playlist = items;
     currentIdx = -1;
@@ -464,7 +471,7 @@ loadPlaylistFromDB(function(items){
     $('trackInfo').className = 'track-info active';
   }
 });
-loadAlertFromDB(function(file){
+loadAlertFromDB().then(function(file){
   if(file){
     _alertSrc = URL.createObjectURL(file);
     _alertFile = file;
@@ -472,6 +479,93 @@ loadAlertFromDB(function(file){
     $('alertLabel').title = '提示音: ' + file.name;
   }
 });
+
+// 播放列表同步：定期检查 localStorage 变化并从 IndexedDB 加载
+// storage 事件在 Tauri 跨窗口不可靠，改用轮询
+var _lastPlaylistHash = localStorage.getItem('nexus-music-updated') || '';
+
+function checkPlaylistUpdate(){
+  var currentHash = localStorage.getItem('nexus-music-updated') || '';
+  if(currentHash !== _lastPlaylistHash){
+    _lastPlaylistHash = currentHash;
+    reloadPlaylist();
+  }
+}
+
+function reloadPlaylist(){
+  loadPlaylistFromDB().then(function(items){
+    if(items.length > 0){
+      playlist = items;
+      currentIdx = -1;
+      $('trackInfo').textContent = items.length + ' 首音乐已加载';
+      $('trackInfo').className = 'track-info active';
+    }
+  });
+}
+
+// 每 3 秒检查一次播放列表更新
+setInterval(checkPlaylistUpdate, 3000);
+
+// 窗口获得焦点时也检查
+window.addEventListener('focus', checkPlaylistUpdate);
+
+// 每 1 秒读取 MusicPage 播放状态并同步
+var _musicPageActive = false;
+setInterval(function(){
+  try{
+    var state = JSON.parse(localStorage.getItem('nexus-music-state')||'null');
+    if(!state || !state.trackName){ _musicPageActive = false; return; }
+
+    var name = state.trackName.replace(/\.[^.]+$/,'');
+
+    if(state.isPlaying){
+      // MusicPage 正在播放 → 停止 clock 自己的音频，仅显示进度
+      _musicPageActive = true;
+      if(isPlaying && audioEl && !audioEl.paused){
+        audioEl.pause();
+        isPlaying = false;
+        updatePlayBtn();
+      }
+      var ct = state.currentTime || 0;
+      var dur = state.duration || 0;
+      var m = Math.floor(ct/60);
+      var s = Math.floor(ct%60);
+      var pct = dur > 0 ? Math.round(ct/dur*100) : 0;
+      $('trackInfo').textContent = '♪ ' + name + '  ' + m + ':' + String(s).padStart(2,'0') + '  ' + pct + '%';
+      $('trackInfo').className = 'track-info active';
+    }else if(state.pausedByWindow){
+      // MusicPage 因窗口隐藏而暂停 → clock 续放
+      _musicPageActive = false;
+      if(playlist.length > 0){
+        // 找到同一首歌在 clock 播放列表中的索引
+        var matchIdx = playlist.findIndex(function(t){return t.name === state.trackName});
+        if(matchIdx >= 0 && (!isPlaying || currentIdx !== matchIdx)){
+          currentIdx = matchIdx;
+          var item = playlist[matchIdx];
+          var url = URL.createObjectURL(item.file);
+          audioEl.src = url;
+          audioEl.currentTime = state.currentTime || 0;
+          audioEl.volume = isMuted ? 0 : volume;
+          audioEl.play().then(function(){
+            initAudio();
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            isPlaying = true;
+            updatePlayBtn();
+          }).catch(function(){});
+          $('trackInfo').textContent = '♪ ' + name;
+          $('trackInfo').className = 'track-info active';
+          // 清除标记防止重复触发
+          state.pausedByWindow = false;
+          localStorage.setItem('nexus-music-state', JSON.stringify(state));
+        }
+      }
+    }else if(!state.isPlaying && _musicPageActive){
+      // MusicPage 手动暂停
+      _musicPageActive = false;
+      $('trackInfo').textContent = '⏸ ' + name + '  已暂停';
+    }
+  }catch(e){}
+}, 1000);
 
 // 播放控制 — playlist 项为 {name, file:File, type:string}
 function loadAndPlay(idx){

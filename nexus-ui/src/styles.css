@@ -460,3 +460,81 @@ select.input-glass {
   border-radius: 0 0 4px 4px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
+
+/* ── Toast 通知 ── */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-8px) scale(0.96); }
+}
+
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  animation: toastIn 0.25s ease forwards;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  max-width: 360px;
+  word-break: break-word;
+}
+
+.toast.removing {
+  animation: toastOut 0.2s ease forwards;
+}
+
+.toast-success {
+  background: rgba(16, 185, 129, 0.9);
+  color: #fff;
+}
+
+.toast-error {
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+}
+
+.toast-info {
+  background: var(--glass-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+/* ── 页面过渡 ── */
+.animate-fade-in {
+  animation: fadeIn 0.2s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Loading 骨架屏 ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--hover-bg) 25%, var(--glass-bg) 50%, var(--hover-bg) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}

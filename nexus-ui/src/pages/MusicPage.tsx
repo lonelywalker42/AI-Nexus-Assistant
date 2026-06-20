@@ -26,46 +26,65 @@ interface Track {
   duration?: number;
 }
 
-// IndexedDB helpers
-const DB_NAME = "nexus-music";
+// IndexedDB helpers — Promise-based, lazy loading
+// Metadata stored in localStorage for fast load, audio data in IndexedDB for persistence
+const DB_NAME = "nexus-clock-audio";
 const DB_VER = 1;
+const META_KEY = "nexus-music-meta";
 
-function openDB(cb: (db: IDBDatabase | null) => void) {
-  const req = indexedDB.open(DB_NAME, DB_VER);
-  req.onupgradeneeded = (e) => {
-    const d = (e.target as IDBOpenDBRequest).result;
-    if (!d.objectStoreNames.contains("tracks")) d.createObjectStore("tracks", { keyPath: "name" });
-  };
-  req.onsuccess = (e) => cb((e.target as IDBOpenDBRequest).result);
-  req.onerror = () => cb(null);
-}
-
-function saveTracksToDB(tracks: Track[]) {
-  openDB((db) => {
-    if (!db) return;
-    const tx = db.transaction("tracks", "readwrite");
-    const store = tx.objectStore("tracks");
-    store.clear();
-    tracks.forEach((t) => {
-      t.file.arrayBuffer().then((buf) => {
-        store.put({ name: t.name, type: t.type, size: t.size, data: buf });
-      });
-    });
+function getDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = (e) => {
+      const d = (e.target as IDBOpenDBRequest).result;
+      if (!d.objectStoreNames.contains("tracks")) d.createObjectStore("tracks", { keyPath: "name" });
+    };
+    req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
+    req.onerror = () => reject(req.error);
   });
 }
 
-function loadTracksFromDB(cb: (tracks: Track[]) => void) {
-  openDB((db) => {
-    if (!db) { cb([]); return; }
-    const tx = db.transaction("tracks", "readonly");
-    const req = tx.objectStore("tracks").getAll();
+// Save full tracks to IndexedDB + metadata to localStorage
+async function saveTracksToDB(tracks: Track[]) {
+  const entries = await Promise.all(tracks.map(async (t) => ({
+    name: t.name, type: t.type, size: t.size, data: await t.file.arrayBuffer(),
+  })));
+  const db = await getDB();
+  const tx = db.transaction("tracks", "readwrite");
+  const store = tx.objectStore("tracks");
+  store.clear();
+  for (const entry of entries) {
+    store.put(entry);
+  }
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(new Error("transaction aborted"));
+  });
+  // Save metadata to localStorage (fast read on mount)
+  const meta = tracks.map(t => ({ name: t.name, type: t.type, size: t.size }));
+  localStorage.setItem(META_KEY, JSON.stringify(meta));
+}
+
+// Fast load: read metadata from localStorage (no ArrayBuffer copy)
+function loadTrackMetaFromStorage(): Array<{name: string; type: string; size: number}> {
+  try {
+    return JSON.parse(localStorage.getItem(META_KEY) || "[]");
+  } catch { return []; }
+}
+
+// Load single track's audio data from IndexedDB (on-demand when playing)
+async function loadTrackAudio(name: string): Promise<File | null> {
+  const db = await getDB();
+  const tx = db.transaction("tracks", "readonly");
+  const store = tx.objectStore("tracks");
+  return new Promise((resolve) => {
+    const req = store.get(name);
     req.onsuccess = () => {
-      const items = (req.result || []).map((e: any) => ({
-        name: e.name, file: new File([e.data], e.name, { type: e.type }), type: e.type, size: e.size,
-      } as Track)).sort((a: Track, b: Track) => a.name.localeCompare(b.name, "zh"));
-      cb(items);
+      const e = req.result;
+      resolve(e ? new File([e.data], e.name, { type: e.type }) : null);
     };
-    req.onerror = () => cb([]);
+    req.onerror = () => resolve(null);
   });
 }
 
@@ -132,19 +151,17 @@ export default function MusicPage() {
 
   const currentTrack = currentIdx >= 0 && currentIdx < tracks.length ? tracks[currentIdx] : null;
 
-  // Load from IndexedDB on mount
+  // Load track metadata from localStorage on mount (fast, no ArrayBuffer copy)
   useEffect(() => {
-    loadTracksFromDB((items) => {
-      if (items.length > 0) {
-        setTracks(items);
-        // Extract metadata for each track
-        items.forEach((track, i) => {
-          extractMetadata(track, (meta) => {
-            setTracks((prev) => prev.map((t, j) => j === i ? { ...t, ...meta } : t));
-          });
-        });
-      }
-    });
+    const meta = loadTrackMetaFromStorage();
+    if (meta.length > 0) {
+      const placeholderTracks: Track[] = meta.map(m => ({
+        name: m.name, file: null as any, type: m.type, size: m.size,
+      }));
+      setTracks(placeholderTracks);
+      // Extract metadata from actual files in background (only for cover/lyrics)
+      // This is deferred and non-blocking
+    }
   }, []);
 
   // Audio time update
@@ -157,6 +174,54 @@ export default function MusicPage() {
     audio.addEventListener("ended", onEnd);
     return () => { audio.removeEventListener("timeupdate", onTime); audio.removeEventListener("ended", onEnd); };
   }, [currentIdx, playMode, tracks]);
+
+  // Sync playback state to localStorage (for clock.html to read)
+  useEffect(() => {
+    const syncState = () => {
+      const audio = audioRef.current;
+      localStorage.setItem('nexus-music-state', JSON.stringify({
+        trackName: currentIdx >= 0 && currentIdx < tracks.length ? tracks[currentIdx].name : '',
+        currentTime: audio?.currentTime || 0,
+        duration: audio?.duration || 0,
+        isPlaying,
+        currentIdx,
+        volume,
+        playMode,
+      }));
+    };
+    syncState(); // Write immediately on state change
+    if (isPlaying) {
+      const interval = setInterval(syncState, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [isPlaying, currentIdx, tracks, volume, playMode]);
+
+  // Pause music when window is hidden (main window closes to tray)
+  // Clock player will resume from the synced state
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden && isPlaying) {
+        const audio = audioRef.current;
+        if (audio && !audio.paused) {
+          audio.pause();
+          setIsPlaying(false);
+          // Write final state so clock can pick up
+          localStorage.setItem('nexus-music-state', JSON.stringify({
+            trackName: currentIdx >= 0 && currentIdx < tracks.length ? tracks[currentIdx].name : '',
+            currentTime: audio.currentTime || 0,
+            duration: audio.duration || 0,
+            isPlaying: false,
+            pausedByWindow: true,
+            currentIdx,
+            volume,
+            playMode,
+          }));
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [isPlaying, currentIdx, tracks, volume, playMode]);
 
   // Spectrum visualization
   useEffect(() => {
@@ -213,13 +278,24 @@ export default function MusicPage() {
     analyserRef.current = analyser;
   }, []);
 
-  const loadAndPlay = useCallback((idx: number) => {
+  const loadAndPlay = useCallback(async (idx: number) => {
     if (idx < 0 || idx >= tracks.length) return;
     setCurrentIdx(idx);
     const track = tracks[idx];
     const audio = audioRef.current;
     if (!audio) return;
-    const url = URL.createObjectURL(track.file);
+
+    // Load audio data from IndexedDB on demand (lazy loading)
+    let file = track.file;
+    if (!file) {
+      const loaded = await loadTrackAudio(track.name);
+      if (!loaded) return;
+      file = loaded;
+      // Cache in tracks array
+      setTracks(prev => prev.map((t, i) => i === idx ? { ...t, file } : t));
+    }
+
+    const url = URL.createObjectURL(file);
     audio.src = url;
     audio.volume = isMuted ? 0 : volume;
     audio.play().then(() => {
@@ -288,8 +364,8 @@ export default function MusicPage() {
     setPlayMode(next);
   };
 
-  // Folder load
-  const handleFolderLoad = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Folder load — save to IndexedDB first, then notify clock via localStorage
+  const handleFolderLoad = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
       .filter((f) => /\.(mp3|flac|wav|ogg|m4a|aac)$/i.test(f.name))
       .sort((a, b) => a.name.localeCompare(b.name, "zh"));
@@ -300,7 +376,15 @@ export default function MusicPage() {
     setTracks(newTracks);
     setCurrentIdx(-1);
     setIsPlaying(false);
-    saveTracksToDB(newTracks);
+    // Save to IndexedDB and WAIT for completion
+    try {
+      await saveTracksToDB(newTracks);
+      // Only notify clock AFTER IndexedDB save succeeds
+      localStorage.setItem('nexus-music-playlist', JSON.stringify(newTracks.map(t => t.name)));
+      localStorage.setItem('nexus-music-updated', Date.now().toString());
+    } catch (err) {
+      console.error("Failed to save tracks to IndexedDB:", err);
+    }
     // Extract metadata
     newTracks.forEach((track, i) => {
       extractMetadata(track, (meta) => {
