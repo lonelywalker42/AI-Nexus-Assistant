@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.4.1 (2026-06-21) — 播放同步 + Word Hopper + Bug修复
+
+### 修复
+- 主窗口→时钟首次续播失败(添加_pendingResume机制+localStorage直接检查)
+- 时钟→主窗口播放同步(读取clockPlaying状态+seek到正确位置)
+- 时钟→主窗口延迟优化(立即读取currentTime)
+- 主窗口播放器页面切换丢失(global audio singleton跨页面持久化)
+- Word Hopper retry后键盘无响应(改用destroy+new重建)
+- 游戏机模式语法错误(draw()缺少闭合大括号)
+
+### 改进
+- Word Hopper: 完整CET-6词汇库(A-Z共600+词)
+- Word Hopper: 释义字体增大(15px bold)+词性标注(n./v./adj.)
+- Word Hopper: Fisher-Yates随机洗牌+按长度分级
+- 音乐播放器双向同步(BroadcastChannel+localStorage)
+- 主窗口隐藏使用Tauri自定义事件(WebView2不支持visibilitychange)
+
 ## v3.4.0 (2026-06-20) — 讨论导出 + README生成 + 归档 + 模板
 
 ### 新增

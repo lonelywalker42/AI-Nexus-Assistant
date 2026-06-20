@@ -473,10 +473,19 @@ loadPlaylistFromDB().then(function(items){
   if(items.length > 0){
     playlist = items;
     currentIdx = -1;
-    // Check for pending resume immediately after playlist loads
+    // Check for pending resume from BroadcastChannel
     if(_pendingResume){
       resumeFromState(_pendingResume);
     }else{
+      // Also check localStorage directly for pausedByWindow state
+      // (covers case where BroadcastChannel message arrived before playlist loaded)
+      try{
+        var state = JSON.parse(localStorage.getItem('nexus-music-state')||'null');
+        if(state && state.pausedByWindow && state.trackName){
+          resumeFromState(state);
+          return;
+        }
+      }catch(e){}
       $('trackInfo').textContent = items.length + ' 首音乐已加载';
       $('trackInfo').className = 'track-info active';
     }
@@ -684,6 +693,15 @@ setInterval(function(){
   // Check for pending resume from IndexedDB load
   if(_pendingResume && playlist.length > 0){
     resumeFromState(_pendingResume);
+  }
+  // Fallback: check localStorage directly for pausedByWindow
+  if(!isPlaying && playlist.length > 0 && !_pendingResume){
+    try{
+      var checkState = JSON.parse(localStorage.getItem('nexus-music-state')||'null');
+      if(checkState && checkState.pausedByWindow && checkState.trackName){
+        resumeFromState(checkState);
+      }
+    }catch(e){}
   }
   try{
     var state = JSON.parse(localStorage.getItem('nexus-music-state')||'null');
