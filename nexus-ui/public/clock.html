@@ -637,6 +637,23 @@ function resumeFromState(state){
   }
 }
 
+// Write clock's own playing state to localStorage (for main window to read on return)
+setInterval(function(){
+  if(isPlaying && currentIdx >= 0 && currentIdx < playlist.length){
+    localStorage.setItem('nexus-music-state', JSON.stringify({
+      trackName: playlist[currentIdx].name,
+      currentTime: audioEl.currentTime || 0,
+      duration: audioEl.duration || 0,
+      isPlaying: false, // false = not from MusicPage
+      clockPlaying: true, // flag: clock is the one playing
+      currentIdx: currentIdx,
+      volume: volume,
+      playMode: playMode,
+      pausedByWindow: false,
+    }));
+  }
+}, 500);
+
 // 每 500ms 读取 MusicPage 播放状态并同步 (faster than before)
 var _musicPageActive = false;
 setInterval(function(){
@@ -700,6 +717,8 @@ function loadAndPlay(idx){
   audioEl.play().then(function(){
     isPlaying = true;
     updatePlayBtn();
+    // Notify main window that clock is playing
+    if(_bc) try{ _bc.postMessage({type:'clock-playing'}); }catch(e){}
   }).catch(function(){});
 }
 

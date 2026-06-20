@@ -210,14 +210,18 @@ export default function MusicPage() {
     }
   }, [isPlaying, currentIdx, tracks, volume, playMode]);
 
-  // Listen for BroadcastChannel from clock when it transfers playback back
+  // Listen for BroadcastChannel from clock
   useEffect(() => {
     let bc: BroadcastChannel | null = null;
     try {
       bc = new BroadcastChannel('nexus-music-sync');
       bc.onmessage = (e) => {
         if (e.data?.type === 'clock-playing') {
-          // Clock took over playback, update our state
+          // Clock took over playback — stop our audio and update state
+          const audio = audioRef.current;
+          if (audio && !audio.paused) {
+            audio.pause();
+          }
           setIsPlaying(false);
         }
       };
@@ -256,6 +260,30 @@ export default function MusicPage() {
 
     const resumeFromClock = () => {
       hiddenRef.current = false;
+      // Check if clock was playing — resume in main window
+      try {
+        const state = JSON.parse(localStorage.getItem('nexus-music-state') || 'null');
+        if (state && state.clockPlaying && state.trackName) {
+          const trackIdx = tracks.findIndex(t => t.name === state.trackName);
+          if (trackIdx >= 0) {
+            // Resume playback at the clock's position
+            loadAndPlay(trackIdx);
+            // Seek to clock's position after audio loads
+            const audio = audioRef.current;
+            if (audio && state.currentTime) {
+              const onLoaded = () => {
+                audio.currentTime = state.currentTime || 0;
+                audio.removeEventListener('loadedmetadata', onLoaded);
+              };
+              audio.addEventListener('loadedmetadata', onLoaded);
+              // Fallback: try setting after a short delay
+              setTimeout(() => {
+                if (audio.readyState >= 1) audio.currentTime = state.currentTime || 0;
+              }, 300);
+            }
+          }
+        }
+      } catch {}
     };
 
     // Listen for Tauri custom events
