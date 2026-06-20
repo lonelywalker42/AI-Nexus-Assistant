@@ -607,6 +607,104 @@ def generate_experiment_analysis(exp_id: str):
         db.close()
 
 
+@app.get("/api/experiments/{exp_id}/git/status")
+def experiment_git_status(exp_id: str):
+    """获取试验项目的 Git 状态"""
+    import subprocess
+    db = get_session()
+    try:
+        exp = db.get(Experiment, exp_id)
+        if not exp:
+            return {"error": "Experiment not found"}
+        local_path = exp.local_path or ""
+        if not local_path or not os.path.isdir(local_path):
+            return {"has_git": False, "reason": "项目路径不存在"}
+
+        try:
+            # Check if it's a git repo
+            subprocess.run(["git", "rev-parse", "--git-dir"],
+                          cwd=local_path, capture_output=True, check=True, timeout=5)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return {"has_git": False, "reason": "不是Git仓库"}
+
+        try:
+            # Get branch
+            branch_result = subprocess.run(["git", "branch", "--show-current"],
+                                          cwd=local_path, capture_output=True, text=True, timeout=5)
+            branch = branch_result.stdout.strip() or "detached"
+
+            # Get last commit
+            log_result = subprocess.run(["git", "log", "-1", "--format=%H%n%h%n%s%n%ai"],
+                                       cwd=local_path, capture_output=True, text=True, timeout=5)
+            commit_lines = log_result.stdout.strip().split("\n") if log_result.stdout.strip() else []
+            commit_hash = commit_lines[0] if len(commit_lines) > 0 else ""
+            commit_short = commit_lines[1] if len(commit_lines) > 1 else ""
+            commit_msg = commit_lines[2] if len(commit_lines) > 2 else ""
+            commit_date = commit_lines[3] if len(commit_lines) > 3 else ""
+
+            # Get dirty status
+            status_result = subprocess.run(["git", "status", "--porcelain"],
+                                          cwd=local_path, capture_output=True, text=True, timeout=5)
+            dirty_files = len(status_result.stdout.strip().split("\n")) if status_result.stdout.strip() else 0
+
+            return {
+                "has_git": True,
+                "branch": branch,
+                "commit_hash": commit_hash,
+                "commit_short": commit_short,
+                "commit_message": commit_msg,
+                "commit_date": commit_date,
+                "dirty_files": dirty_files,
+            }
+        except Exception as e:
+            return {"has_git": False, "reason": str(e)}
+    finally:
+        db.close()
+
+
+@app.post("/api/experiments/{exp_id}/results/{result_id}/snapshot")
+def snapshot_result(exp_id: str, result_id: str):
+    """为试验结果关联当前 Git commit"""
+    import subprocess
+    db = get_session()
+    try:
+        exp = db.get(Experiment, exp_id)
+        if not exp:
+            return {"error": "Experiment not found"}
+        result = db.get(ExperimentResult, result_id)
+        if not result:
+            return {"error": "Result not found"}
+
+        local_path = exp.local_path or ""
+        if not local_path or not os.path.isdir(local_path):
+            return {"error": "项目路径不存在"}
+
+        try:
+            log_result = subprocess.run(["git", "log", "-1", "--format=%H%n%h%n%s"],
+                                       cwd=local_path, capture_output=True, text=True, timeout=5)
+            lines = log_result.stdout.strip().split("\n")
+            commit_hash = lines[0] if len(lines) > 0 else ""
+            commit_short = lines[1] if len(lines) > 1 else ""
+            commit_msg = lines[2] if len(lines) > 2 else ""
+
+            # Store in code_snippets as a git_snapshot entry
+            snippets = json.loads(result.code_snippets or "[]")
+            snippets.append({
+                "type": "git_snapshot",
+                "commit_hash": commit_hash,
+                "commit_short": commit_short,
+                "commit_message": commit_msg,
+            })
+            result.code_snippets = json.dumps(snippets, ensure_ascii=False)
+            db.commit()
+
+            return {"commit_short": commit_short, "commit_message": commit_msg}
+        except Exception as e:
+            return {"error": str(e)}
+    finally:
+        db.close()
+
+
 # ══════════════════════════════════════════════════════════════
 #  知识库
 # ══════════════════════════════════════════════════════════════
@@ -621,17 +719,36 @@ class CardCreate(BaseModel):
 
 
 @app.get("/api/knowledge/cards")
-def list_cards(search: str = "", category: str = "", tag: str = "", source_type: str = ""):
+def list_cards(search: str = "", category: str = "", tag: str = "", source_type: str = "",
+               sort_by: str = "updated_at", sort_order: str = "desc", star_min: int = 0):
     db = get_session()
     try:
         cards = knowledge_service.get_cards(db, search, category, tag, source_type)
-        return [{
-            "id": c.id, "title": c.title, "summary": c.summary,
-            "key_points": json.loads(c.key_points) if c.key_points else [],
-            "source_type": c.source_type, "category_path": c.category_path,
-            "star_rating": c.star_rating, "user_notes": c.user_notes,
-            "created_at": c.created_at.isoformat(),
-        } for c in cards]
+        # Apply star rating filter
+        if star_min > 0:
+            cards = [c for c in cards if (c.star_rating or 0) >= star_min]
+        # Apply sorting
+        reverse = sort_order == "desc"
+        if sort_by == "title":
+            cards.sort(key=lambda c: c.title or "", reverse=reverse)
+        elif sort_by == "star_rating":
+            cards.sort(key=lambda c: c.star_rating or 0, reverse=reverse)
+        else:  # updated_at or created_at
+            cards.sort(key=lambda c: getattr(c, sort_by, c.updated_at) or c.updated_at, reverse=reverse)
+        # Get tags for each card
+        result = []
+        for c in cards:
+            card_tags = knowledge_service.get_card_tags(db, c.id)
+            result.append({
+                "id": c.id, "title": c.title, "summary": c.summary,
+                "key_points": json.loads(c.key_points) if c.key_points else [],
+                "source_type": c.source_type, "category_path": c.category_path,
+                "star_rating": c.star_rating, "user_notes": c.user_notes,
+                "tags": [t.tag_name for t in card_tags],
+                "created_at": c.created_at.isoformat(),
+                "updated_at": c.updated_at.isoformat() if c.updated_at else c.created_at.isoformat(),
+            })
+        return result
     finally:
         db.close()
 

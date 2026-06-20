@@ -172,6 +172,13 @@ export const experimentsApi = {
     request<{ experiment_id: string; param_keys: string[]; rows: Array<{ result_id: string; version: number; description: string; params: Record<string, unknown>; result_data: string; conclusion: string; created_at: string }> }>(`/api/experiments/${expId}/params-table`),
   aiAnalysis: (expId: string) =>
     request<{ analysis: string }>(`/api/experiments/${expId}/ai-analysis`, { method: "POST" }),
+  gitStatus: (expId: string) =>
+    request<{ has_git: boolean; branch?: string; commit_hash?: string; commit_short?: string;
+      commit_message?: string; commit_date?: string; dirty_files?: number; reason?: string }>(
+      `/api/experiments/${expId}/git/status`),
+  gitSnapshot: (expId: string, resultId: string) =>
+    request<{ commit_short?: string; commit_message?: string; error?: string }>(
+      `/api/experiments/${expId}/results/${resultId}/snapshot`, { method: "POST" }),
 };
 
 // ── Knowledge ──────────────────────────────────────────────
@@ -185,16 +192,22 @@ export interface KnowledgeCard {
   category_path: string;
   star_rating: number;
   user_notes: string;
+  tags?: string[];
   created_at: string;
+  updated_at?: string;
 }
 
 export const knowledgeApi = {
-  listCards: (params?: { search?: string; category?: string; tag?: string; source_type?: string }) => {
+  listCards: (params?: { search?: string; category?: string; tag?: string; source_type?: string;
+    sort_by?: string; sort_order?: string; star_min?: number }) => {
     const p = new URLSearchParams();
     if (params?.search) p.set("search", params.search);
     if (params?.category) p.set("category", params.category);
     if (params?.tag) p.set("tag", params.tag);
     if (params?.source_type) p.set("source_type", params.source_type);
+    if (params?.sort_by) p.set("sort_by", params.sort_by);
+    if (params?.sort_order) p.set("sort_order", params.sort_order);
+    if (params?.star_min) p.set("star_min", String(params.star_min));
     return request<KnowledgeCard[]>(`/api/knowledge/cards?${p}`);
   },
   getCard: (id: string) => request<KnowledgeCard>(`/api/knowledge/cards/${id}`),

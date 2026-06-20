@@ -30,8 +30,31 @@ export default function KnowledgePage() {
   const [quickTitle, setQuickTitle] = useState("");
   const [quickContent, setQuickContent] = useState("");
 
-  const loadCards = () => knowledgeApi.listCards({ search }).then(setCards).catch(console.error);
-  useEffect(() => { loadCards(); }, [search]);
+  // 增强搜索
+  const [sortBy, setSortBy] = useState("updated_at");
+  const [sortOrder, setSortOrder] = useState("desc");
+  const [starMin, setStarMin] = useState(0);
+  const [tagFilter, setTagFilter] = useState("");
+  const [allTags, setAllTags] = useState<{ name: string; usage_count: number }[]>([]);
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+
+  // 防抖搜索
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const loadCards = () => knowledgeApi.listCards({
+    search: debouncedSearch, sort_by: sortBy, sort_order: sortOrder,
+    star_min: starMin || undefined, tag: tagFilter || undefined,
+  }).then(setCards).catch(console.error);
+  useEffect(() => { loadCards(); }, [debouncedSearch, sortBy, sortOrder, starMin, tagFilter]);
+
+  // 加载标签
+  useEffect(() => {
+    knowledgeApi.listTags().then(setAllTags).catch(() => {});
+  }, []);
 
   const categoryCounts = CATEGORIES.map(cat => ({
     ...cat,
@@ -341,10 +364,55 @@ export default function KnowledgePage() {
         </div>
       )}
 
-      {/* 搜索 */}
+      {/* 搜索 + 筛选 */}
       {view !== "categories" && (
-        <div className="flex gap-3">
-          <input className="input-glass flex-1 text-sm" placeholder="搜索知识卡片..." value={search} onChange={e => setSearch(e.target.value)} />
+        <div className="space-y-2">
+          <div className="flex gap-2 items-center">
+            <input className="input-glass flex-1 text-sm" placeholder="搜索知识卡片..." value={search} onChange={e => setSearch(e.target.value)} />
+            <select className="input-glass text-xs py-1.5" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+              <option value="updated_at">最近更新</option>
+              <option value="created_at">创建时间</option>
+              <option value="title">标题</option>
+              <option value="star_rating">评分</option>
+            </select>
+            <select className="input-glass text-xs py-1.5" value={sortOrder} onChange={e => setSortOrder(e.target.value)}>
+              <option value="desc">降序</option>
+              <option value="asc">升序</option>
+            </select>
+            <select className="input-glass text-xs py-1.5" value={starMin} onChange={e => setStarMin(Number(e.target.value))}>
+              <option value={0}>全部评分</option>
+              <option value={1}>≥1星</option>
+              <option value={3}>≥3星</option>
+              <option value={5}>5星</option>
+            </select>
+            <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background: "var(--hover-bg)" }}>
+              <button className="p-1.5 rounded-md cursor-pointer transition-all"
+                style={viewMode === "list" ? { background: "var(--glass-bg)" } : {}}
+                onClick={() => setViewMode("list")}>
+                <span className="text-xs" style={{ color: viewMode === "list" ? "var(--accent-blue)" : "var(--text-muted)" }}>☰</span>
+              </button>
+              <button className="p-1.5 rounded-md cursor-pointer transition-all"
+                style={viewMode === "grid" ? { background: "var(--glass-bg)" } : {}}
+                onClick={() => setViewMode("grid")}>
+                <span className="text-xs" style={{ color: viewMode === "grid" ? "var(--accent-blue)" : "var(--text-muted)" }}>⊞</span>
+              </button>
+            </div>
+          </div>
+          {/* 标签筛选 */}
+          {allTags.length > 0 && (
+            <div className="flex gap-1 flex-wrap">
+              <button className="px-2 py-0.5 rounded text-[10px] cursor-pointer transition-colors"
+                style={!tagFilter ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" } : { color: "var(--text-muted)" }}
+                onClick={() => setTagFilter("")}>全部</button>
+              {allTags.slice(0, 15).map(t => (
+                <button key={t.name} className="px-2 py-0.5 rounded text-[10px] cursor-pointer transition-colors"
+                  style={tagFilter === t.name ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" } : { color: "var(--text-muted)" }}
+                  onClick={() => setTagFilter(tagFilter === t.name ? "" : t.name)}>
+                  {t.name} ({t.usage_count})
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -375,8 +443,8 @@ export default function KnowledgePage() {
         </div>
       )}
 
-      {/* 卡片列表 */}
-      {view === "list" && (
+      {/* 卡片列表 / 网格 */}
+      {view === "list" && viewMode === "list" && (
         <div className="space-y-2">
           {filteredCards.length === 0 ? (
             <div className="glass-card p-8 text-center">
@@ -396,22 +464,69 @@ export default function KnowledgePage() {
                   </span>
                 </div>
                 <p className="text-xs line-clamp-2" style={{ color: "var(--text-secondary)" }}>{card.summary || "无摘要"}</p>
-                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{new Date(card.created_at).toLocaleDateString()}</span>
+                {card.tags && card.tags.length > 0 && (
+                  <div className="flex gap-1 mt-1 flex-wrap">
+                    {card.tags.slice(0, 5).map(t => (
+                      <span key={t} className="text-[9px] px-1.5 py-0.5 rounded"
+                        style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>{t}</span>
+                    ))}
+                  </div>
+                )}
+                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{new Date(card.updated_at || card.created_at).toLocaleDateString()}</span>
               </div>
               <div className="flex flex-col gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                {card.source_type === "note" && (
-                  <button onClick={(e) => { e.stopPropagation(); handleChatFromCard(card); }}
-                    className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
-                    style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}
-                    title="AI 对话分析此想法"
-                  ><IconChat size={12} /></button>
-                )}
+                <button onClick={(e) => { e.stopPropagation(); handleChatFromCard(card); }}
+                  className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                  style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}
+                  title="AI 对话分析"
+                ><IconChat size={12} /></button>
                 <button onClick={(e) => handleDelete(card.id, e)}
                   className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
                   style={{ color: "var(--text-muted)" }}
                   onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
                   onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
                 >删除</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 网格视图 */}
+      {view === "list" && viewMode === "grid" && (
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {filteredCards.length === 0 ? (
+            <div className="col-span-full glass-card p-8 text-center">
+              <p style={{ color: "var(--text-muted)" }}>该分类下暂无卡片</p>
+            </div>
+          ) : filteredCards.map(card => (
+            <div key={card.id}
+              className="glass-card p-3 cursor-pointer glass-card-hover group flex flex-col gap-2"
+              onClick={() => handleCardClick(card)}>
+              <h3 className="text-sm font-semibold line-clamp-2" style={{ color: "var(--text-primary)" }}>{card.title}</h3>
+              <p className="text-xs line-clamp-3 flex-1" style={{ color: "var(--text-secondary)" }}>{card.summary || "无摘要"}</p>
+              {card.tags && card.tags.length > 0 && (
+                <div className="flex gap-1 flex-wrap">
+                  {card.tags.slice(0, 3).map(t => (
+                    <span key={t} className="text-[9px] px-1 py-0.5 rounded"
+                      style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>{t}</span>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="flex gap-0.5" style={{ color: "#fbbf24" }}>
+                  {Array.from({length: 5}, (_, i) => <IconStar key={i} size={10} filled={i < card.star_rating} />)}
+                </span>
+                <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{new Date(card.updated_at || card.created_at).toLocaleDateString()}</span>
+              </div>
+              {/* Hover actions */}
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={(e) => { e.stopPropagation(); handleChatFromCard(card); }}
+                  className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer"
+                  style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>AI</button>
+                <button onClick={(e) => handleDelete(card.id, e)}
+                  className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer"
+                  style={{ color: "var(--text-muted)" }}>删除</button>
               </div>
             </div>
           ))}

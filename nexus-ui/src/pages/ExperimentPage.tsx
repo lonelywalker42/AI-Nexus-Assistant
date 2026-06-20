@@ -36,6 +36,14 @@ export default function ExperimentPage() {
   // AI 分析
   const [analyzing, setAnalyzing] = useState(false);
 
+  // Git 状态
+  const [gitStatus, setGitStatus] = useState<{ has_git: boolean; branch?: string; commit_short?: string;
+    commit_message?: string; commit_date?: string; dirty_files?: number } | null>(null);
+  const [snapshotting, setSnapshotting] = useState(false);
+
+  // 结构化参数编辑
+  const [paramEntries, setParamEntries] = useState<{ key: string; value: string }[]>([{ key: "", value: "" }]);
+
   const loadExperiments = () => experimentsApi.list(search, statusFilter).then(setExperiments).catch(console.error);
   useEffect(() => { loadExperiments(); }, [search, statusFilter]);
 
@@ -61,6 +69,13 @@ export default function ExperimentPage() {
     setShowResultForm(false);
     setShowParamTable(false);
     setShowProjectInfo(false);
+    setGitStatus(null);
+    // Load Git status
+    if (activeId) {
+      experimentsApi.gitStatus(activeId).then(s => {
+        if (s.has_git) setGitStatus(s as any);
+      }).catch(() => {});
+    }
   }, [activeId]);
 
   const handleCreate = async () => {
@@ -95,8 +110,14 @@ export default function ExperimentPage() {
   // 结果操作
   const handleAddResult = async () => {
     if (!activeId) return;
+    // Convert paramEntries to JSON if available
     let params = {};
-    try { params = JSON.parse(resultForm.parameters); } catch { alert("参数格式错误（需为 JSON）"); return; }
+    const validEntries = paramEntries.filter(e => e.key.trim());
+    if (validEntries.length > 0 && resultForm.parameters === "{}") {
+      params = Object.fromEntries(validEntries.map(e => [e.key.trim(), e.value]));
+    } else {
+      try { params = JSON.parse(resultForm.parameters); } catch { alert("参数格式错误（需为 JSON）"); return; }
+    }
     if (editingResultId) {
       await experimentsApi.updateResult(editingResultId, {
         description: resultForm.description,
@@ -133,6 +154,22 @@ export default function ExperimentPage() {
     if (!confirm("确定删除此结果？")) return;
     await experimentsApi.deleteResult(resultId);
     loadExperiments();
+  };
+
+  const handleSnapshot = async (resultId: string) => {
+    if (!activeId) return;
+    setSnapshotting(true);
+    try {
+      const res = await experimentsApi.gitSnapshot(activeId, resultId);
+      if (res.error) {
+        alert("快照失败: " + res.error);
+      } else {
+        loadExperiments();
+      }
+    } catch (err) {
+      alert("快照失败: " + err);
+    }
+    setSnapshotting(false);
   };
 
   // 参数表格
@@ -312,6 +349,26 @@ export default function ExperimentPage() {
                   )}
                 </div>
               )}
+
+              {/* Git 状态 */}
+              {gitStatus && (
+                <div className="flex items-center gap-3 pt-2 mt-2" style={{ borderTop: "1px solid var(--border-color)" }}>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-mono"
+                    style={{ background: "rgba(16,185,129,0.1)", color: "#10b981" }}>
+                    {gitStatus.branch}
+                  </span>
+                  {gitStatus.commit_short && (
+                    <span className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>
+                      {gitStatus.commit_short} — {gitStatus.commit_message}
+                    </span>
+                  )}
+                  {(gitStatus.dirty_files ?? 0) > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}>
+                      {gitStatus.dirty_files} 未提交
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 试验结果 */}
@@ -341,11 +398,44 @@ export default function ExperimentPage() {
                   <input className="input-glass" placeholder="描述" value={resultForm.description}
                     onChange={e => setResultForm(f => ({ ...f, description: e.target.value }))} />
                   <div>
-                    <label className="text-xs" style={{ color: "var(--text-muted)" }}>参数 (JSON)</label>
-                    <textarea className="input-glass mt-1 font-mono text-xs" rows={3}
-                      placeholder='{"learning_rate": 0.001, "batch_size": 32}'
-                      value={resultForm.parameters}
-                      onChange={e => setResultForm(f => ({ ...f, parameters: e.target.value }))} />
+                    <label className="text-xs" style={{ color: "var(--text-muted)" }}>参数</label>
+                    {/* 结构化参数编辑器 */}
+                    <div className="mt-1 space-y-1.5">
+                      {paramEntries.map((entry, i) => (
+                        <div key={i} className="flex gap-1.5 items-center">
+                          <input className="input-glass flex-1 text-xs py-1" placeholder="参数名"
+                            value={entry.key}
+                            onChange={e => {
+                              const next = [...paramEntries];
+                              next[i] = { ...next[i], key: e.target.value };
+                              setParamEntries(next);
+                            }} />
+                          <input className="input-glass flex-1 text-xs py-1" placeholder="值"
+                            value={entry.value}
+                            onChange={e => {
+                              const next = [...paramEntries];
+                              next[i] = { ...next[i], value: e.target.value };
+                              setParamEntries(next);
+                            }} />
+                          {paramEntries.length > 1 && (
+                            <button className="text-[10px] cursor-pointer" style={{ color: "var(--text-muted)" }}
+                              onClick={() => setParamEntries(paramEntries.filter((_, j) => j !== i))}>✕</button>
+                          )}
+                        </div>
+                      ))}
+                      <button className="text-[10px] cursor-pointer" style={{ color: "var(--accent-blue)" }}
+                        onClick={() => setParamEntries([...paramEntries, { key: "", value: "" }])}>
+                        + 添加参数
+                      </button>
+                    </div>
+                    {/* JSON 预览 */}
+                    <details className="mt-1">
+                      <summary className="text-[10px] cursor-pointer" style={{ color: "var(--text-muted)" }}>JSON 预览</summary>
+                      <textarea className="input-glass mt-1 font-mono text-xs" rows={2}
+                        placeholder='{"learning_rate": 0.001}'
+                        value={resultForm.parameters}
+                        onChange={e => setResultForm(f => ({ ...f, parameters: e.target.value }))} />
+                    </details>
                   </div>
                   <div>
                     <label className="text-xs" style={{ color: "var(--text-muted)" }}>结果数据</label>
@@ -377,6 +467,16 @@ export default function ExperimentPage() {
                       <span className="text-sm font-bold" style={{ color: "var(--accent-blue)" }}>v{r.version}</span>
                       <span className="text-sm flex-1" style={{ color: "var(--text-primary)" }}>{r.description}</span>
                       <span className="text-xs" style={{ color: "var(--text-muted)" }}>{new Date(r.created_at).toLocaleDateString()}</span>
+                      {/* Git 快照 */}
+                      {gitStatus?.has_git && (
+                        <button className="text-[10px] px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                          style={{ background: "rgba(16,185,129,0.08)", color: "#10b981" }}
+                          onClick={() => handleSnapshot(r.id)}
+                          disabled={snapshotting}
+                          title="关联当前Git commit">
+                          {snapshotting ? "..." : "快照"}
+                        </button>
+                      )}
                       <button className="text-xs transition-colors" style={{ color: "var(--text-muted)" }}
                         onClick={() => handleEditResult(r)}
                         onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-blue)")}
@@ -400,6 +500,25 @@ export default function ExperimentPage() {
                     )}
                     {r.result_data && <p className="text-xs" style={{ color: "var(--text-secondary)" }}>数据: {r.result_data.slice(0, 200)}</p>}
                     {r.conclusion && <p className="text-xs" style={{ color: "var(--text-secondary)" }}>结论: {r.conclusion}</p>}
+                    {/* Git 快照信息 */}
+                    {(() => {
+                      const snippets = (r as any).code_snippets;
+                      if (!snippets) return null;
+                      try {
+                        const parsed = typeof snippets === 'string' ? JSON.parse(snippets) : snippets;
+                        const snapshot = parsed.find((s: any) => s.type === 'git_snapshot');
+                        if (!snapshot) return null;
+                        return (
+                          <div className="flex items-center gap-2 pt-1 mt-1" style={{ borderTop: "1px solid var(--border-color)" }}>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                              style={{ background: "rgba(16,185,129,0.08)", color: "#10b981" }}>
+                              {snapshot.commit_short}
+                            </span>
+                            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{snapshot.commit_message}</span>
+                          </div>
+                        );
+                      } catch { return null; }
+                    })()}
                   </div>
                 ))}
                 {active.results.length === 0 && (
