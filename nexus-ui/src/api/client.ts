@@ -179,6 +179,10 @@ export const experimentsApi = {
   gitSnapshot: (expId: string, resultId: string) =>
     request<{ commit_short?: string; commit_message?: string; error?: string }>(
       `/api/experiments/${expId}/results/${resultId}/snapshot`, { method: "POST" }),
+  generateReadme: (expId: string) =>
+    request<{ readme: string }>(`/api/experiments/${expId}/generate-readme`, { method: "POST" }),
+  archive: (expId: string) =>
+    request<{ archive: Record<string, unknown> }>(`/api/experiments/${expId}/archive`, { method: "POST" }),
 };
 
 // ── Knowledge ──────────────────────────────────────────────
@@ -246,6 +250,8 @@ export const chatApi = {
     }),
   deleteSession: (id: string) => request<{ ok: boolean }>(`/api/chat/sessions/${id}`, { method: "DELETE" }),
   getMessages: (sessionId: string) => request<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`),
+  exportSession: (sessionId: string) =>
+    request<{ content: string; title: string }>(`/api/chat/sessions/${sessionId}/export`, { method: "POST" }),
   addMessage: (sessionId: string, content: string) =>
     request<ChatMessage>(`/api/chat/sessions/${sessionId}/messages`, {
       method: "POST",

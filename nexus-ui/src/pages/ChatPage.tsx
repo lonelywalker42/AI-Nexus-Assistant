@@ -446,10 +446,26 @@ export default function ChatPage() {
           })}
         </div>
         {activeSession && (
-          <button className="text-xs py-2 transition-colors" style={{ color: "var(--text-muted)" }}
-            onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
-            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
-            onClick={handleDeleteSession}>删除当前对话</button>
+          <div className="flex gap-2">
+            <button className="text-xs py-2 transition-colors flex-1" style={{ color: "var(--text-muted)" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-blue)")}
+              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+              onClick={async () => {
+                if (!activeSession) return;
+                try {
+                  const res = await chatApi.exportSession(activeSession);
+                  const blob = new Blob([res.content], { type: "text/markdown" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url; a.download = `${res.title || "export"}.md`; a.click();
+                  URL.revokeObjectURL(url);
+                } catch (err) { alert("导出失败: " + err); }
+              }}>导出MD</button>
+            <button className="text-xs py-2 transition-colors flex-1" style={{ color: "var(--text-muted)" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
+              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+              onClick={handleDeleteSession}>删除</button>
+          </div>
         )}
       </div>
 

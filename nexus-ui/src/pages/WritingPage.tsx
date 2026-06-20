@@ -18,6 +18,124 @@ const AI_OPERATIONS = [
   { key: "latex", label: "LaTeX", desc: "转换为LaTeX格式" },
 ];
 
+// 写作模板
+const WRITING_TEMPLATES = [
+  {
+    key: "aiaa",
+    label: "AIAA 论文",
+    content: `# Title
+
+## Abstract
+
+[Your abstract here]
+
+## Nomenclature
+
+| Symbol | Description |
+|--------|-------------|
+| $x$    | State variable |
+
+## 1. Introduction
+
+Background and motivation...
+
+## 2. Methodology
+
+### 2.1 Problem Formulation
+
+### 2.2 Proposed Approach
+
+## 3. Results and Discussion
+
+### 3.1 Simulation Setup
+
+### 3.2 Comparison with Baseline
+
+## 4. Conclusions
+
+## References
+
+`,
+  },
+  {
+    key: "ieee",
+    label: "IEEE 论文",
+    content: `# Title
+
+**Abstract—** [Your abstract here]
+
+**Index Terms—** keyword1, keyword2, keyword3
+
+## I. Introduction
+
+## II. Related Work
+
+## III. Proposed Method
+
+### A. Problem Definition
+
+### B. Algorithm Design
+
+## IV. Experiments
+
+### A. Dataset
+
+### B. Results
+
+## V. Conclusion
+
+## References
+
+`,
+  },
+  {
+    key: "report",
+    label: "研究报告",
+    content: `# 报告标题
+
+> 日期: ${new Date().toLocaleDateString()}
+
+## 1. 研究背景
+
+## 2. 研究目标
+
+## 3. 研究方法
+
+## 4. 实验结果
+
+## 5. 结论与展望
+
+## 参考文献
+
+`,
+  },
+  {
+    key: "review",
+    label: "文献综述",
+    content: `# 综述标题
+
+## 摘要
+
+## 1. 引言
+
+## 2. 研究现状
+
+### 2.1 方法一
+
+### 2.2 方法二
+
+## 3. 方法对比
+
+## 4. 研究趋势
+
+## 5. 结论
+
+## 参考文献
+
+`,
+  },
+];
+
 export default function WritingPage() {
   const [documents, setDocuments] = useState<WritingDocument[]>([]);
   const [activeDoc, setActiveDoc] = useState<WritingDocument | null>(null);
@@ -83,24 +201,27 @@ export default function WritingPage() {
     setWordCount(content.length);
   }, [content]);
 
-  const handleNewDocument = async () => {
+  const handleNewDocument = async (templateKey?: string) => {
+    const template = templateKey ? WRITING_TEMPLATES.find(t => t.key === templateKey) : null;
+    const docTitle = template ? template.label + " - 新文档" : "无标题文档";
+    const docContent = template ? template.content : "";
     try {
-      const res = await writingApi.create({ title: "无标题文档" });
+      const res = await writingApi.create({ title: docTitle, content: docContent });
       const newDoc: WritingDocument = {
         id: (res as any).id,
-        title: "无标题文档",
-        content: "",
+        title: docTitle,
+        content: docContent,
         outline: [],
         linked_paper_ids: [],
         document_type: "paper",
-        word_count: 0,
+        word_count: docContent.length,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
       setDocuments(prev => [newDoc, ...prev]);
       setActiveDoc(newDoc);
-      setTitle("无标题文档");
-      setContent("");
+      setTitle(docTitle);
+      setContent(docContent);
     } catch (err) {
       console.error("Failed to create document:", err);
     }
@@ -227,13 +348,24 @@ export default function WritingPage() {
       <div className="w-60 flex-shrink-0 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>写作工作台</h3>
-          <button className="w-6 h-6 rounded-lg flex items-center justify-center cursor-pointer transition-colors"
-            style={{ color: "var(--accent-blue)" }}
-            onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-            onClick={handleNewDocument}>
-            <IconPlus size={14} />
-          </button>
+          <div className="flex gap-1">
+            <select className="text-[10px] bg-transparent border-none outline-none cursor-pointer"
+              style={{ color: "var(--text-muted)" }}
+              value=""
+              onChange={e => { if (e.target.value) handleNewDocument(e.target.value); e.target.value = ""; }}>
+              <option value="" disabled>模板</option>
+              {WRITING_TEMPLATES.map(t => (
+                <option key={t.key} value={t.key}>{t.label}</option>
+              ))}
+            </select>
+            <button className="w-6 h-6 rounded-lg flex items-center justify-center cursor-pointer transition-colors"
+              style={{ color: "var(--accent-blue)" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              onClick={() => handleNewDocument()}>
+              <IconPlus size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Document List */}
@@ -402,7 +534,7 @@ export default function WritingPage() {
               <IconBook size={48} style={{ color: "var(--text-muted)", margin: "0 auto" }} />
               <p className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>写作工作台</p>
               <p className="text-sm" style={{ color: "var(--text-muted)" }}>选择或创建一个文档开始写作</p>
-              <button className="btn-gradient btn-click text-xs" onClick={handleNewDocument}>
+              <button className="btn-gradient btn-click text-xs" onClick={() => handleNewDocument()}>
                 新建文档
               </button>
             </div>

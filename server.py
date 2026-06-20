@@ -705,6 +705,129 @@ def snapshot_result(exp_id: str, result_id: str):
         db.close()
 
 
+@app.post("/api/experiments/{exp_id}/generate-readme")
+def generate_readme(exp_id: str):
+    """根据试验参数和结果自动生成 README.md"""
+    db = get_session()
+    try:
+        exp = db.get(Experiment, exp_id)
+        if not exp:
+            return {"error": "Experiment not found"}
+
+        results = db.query(ExperimentResult).filter(
+            ExperimentResult.experiment_id == exp_id
+        ).order_by(ExperimentResult.version).all()
+
+        # Build README
+        lines = [
+            f"# {exp.title}",
+            "",
+            "## 背景",
+            exp.background or "待补充",
+            "",
+            "## 目标",
+            exp.objective or "待补充",
+            "",
+            "## 实验设置",
+            exp.setup or "待补充",
+            "",
+            "## 试验结果",
+            "",
+            "| 版本 | 描述 | 参数 | 结论 |",
+            "|------|------|------|------|",
+        ]
+
+        for r in results:
+            params = json.loads(r.parameters) if r.parameters else {}
+            param_str = ", ".join(f"{k}={v}" for k, v in params.items()) if params else "-"
+            conclusion = (r.conclusion or "-")[:100]
+            lines.append(f"| v{r.version} | {r.description or '-'} | {param_str} | {conclusion} |")
+
+        if exp.ai_analysis:
+            lines.extend(["", "## AI 分析", exp.ai_analysis])
+
+        readme = "\n".join(lines)
+
+        # Save to experiment
+        exp.readme_content = readme
+        exp.updated_at = datetime.now()
+        db.commit()
+
+        return {"readme": readme}
+    finally:
+        db.close()
+
+
+@app.post("/api/experiments/{exp_id}/archive")
+def archive_experiment(exp_id: str):
+    """打包试验配置、参数、结果为可下载的JSON"""
+    db = get_session()
+    try:
+        exp = db.get(Experiment, exp_id)
+        if not exp:
+            return {"error": "Experiment not found"}
+
+        results = db.query(ExperimentResult).filter(
+            ExperimentResult.experiment_id == exp_id
+        ).order_by(ExperimentResult.version).all()
+
+        archive = {
+            "experiment": {
+                "title": exp.title,
+                "background": exp.background,
+                "objective": exp.objective,
+                "setup": exp.setup,
+                "status": exp.status,
+                "local_path": exp.local_path,
+                "repo_url": exp.repo_url,
+                "created_at": exp.created_at.isoformat(),
+            },
+            "results": [{
+                "version": r.version,
+                "description": r.description,
+                "parameters": json.loads(r.parameters) if r.parameters else {},
+                "result_data": r.result_data,
+                "conclusion": r.conclusion,
+                "code_snippets": json.loads(r.code_snippets) if r.code_snippets else [],
+                "created_at": r.created_at.isoformat(),
+            } for r in results],
+            "ai_analysis": exp.ai_analysis,
+            "exported_at": datetime.now().isoformat(),
+        }
+
+        return {"archive": archive}
+    finally:
+        db.close()
+
+
+@app.post("/api/chat/sessions/{session_id}/export")
+def export_chat_session(session_id: str):
+    """导出对话为研究笔记 Markdown"""
+    db = get_session()
+    try:
+        session = db.get(ChatSession, session_id)
+        if not session:
+            return {"error": "Session not found"}
+
+        messages = db.query(ChatMessage).filter(
+            ChatMessage.session_id == session_id
+        ).order_by(ChatMessage.created_at).all()
+
+        lines = [f"# {session.title}", f"\n> 导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"]
+
+        for msg in messages:
+            role = "**You**" if msg.role == "user" else "**AI**"
+            lines.append(f"## {role}\n")
+            if msg.thinking_content:
+                lines.append(f"<details><summary>Thinking</summary>\n\n{msg.thinking_content}\n\n</details>\n")
+            lines.append(f"{msg.content}\n")
+
+        content = "\n".join(lines)
+        return {"content": content, "title": session.title}
+    finally:
+        db.close()
+
+
 # ══════════════════════════════════════════════════════════════
 #  知识库
 # ══════════════════════════════════════════════════════════════

@@ -301,6 +301,14 @@ export default function ExperimentPage() {
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>项目信息</h3>
                 <div className="flex gap-2">
+                  <button className="btn-ghost text-xs" onClick={async () => {
+                    if (!activeId) return;
+                    try {
+                      const res = await experimentsApi.generateReadme(activeId);
+                      setProjectForm(f => ({ ...f, readme_content: res.readme }));
+                      loadExperiments();
+                    } catch (err) { alert("生成失败: " + err); }
+                  }} disabled={active.results.length === 0}>生成README</button>
                   <button className="btn-ghost text-xs" onClick={() => setShowProjectInfo(!showProjectInfo)}>
                     {showProjectInfo ? "收起" : "编辑"}
                   </button>
@@ -565,10 +573,23 @@ export default function ExperimentPage() {
             <div className="glass-card p-5 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>AI 分析</h3>
-                <button className="btn-gradient btn-click text-xs" onClick={handleAiAnalysis}
-                  disabled={analyzing || active.results.length === 0}>
-                  {analyzing ? "分析中..." : "生成分析"}
-                </button>
+                <div className="flex gap-2">
+                  <button className="btn-ghost text-xs" onClick={async () => {
+                    if (!activeId) return;
+                    try {
+                      const res = await experimentsApi.archive(activeId);
+                      const blob = new Blob([JSON.stringify(res.archive, null, 2)], { type: "application/json" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url; a.download = `${active.title || "experiment"}-archive.json`; a.click();
+                      URL.revokeObjectURL(url);
+                    } catch (err) { alert("打包失败: " + err); }
+                  }}>打包归档</button>
+                  <button className="btn-gradient btn-click text-xs" onClick={handleAiAnalysis}
+                    disabled={analyzing || active.results.length === 0}>
+                    {analyzing ? "分析中..." : "生成分析"}
+                  </button>
+                </div>
               </div>
               {active.ai_analysis ? (
                 <div className="text-sm markdown-body" style={{ color: "var(--text-secondary)" }}
