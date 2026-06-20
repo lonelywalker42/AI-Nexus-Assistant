@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献管理、试验管理、知识库、AI对话、音乐播放、电子书阅读的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v3.2.0-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v3.4.0-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -36,7 +36,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 | **文献检索** | 7源学术搜索(OpenAlex/arXiv/Semantic Scholar/CrossRef/PubMed/Google Scholar/Scopus)、布尔检索(AND/OR/NOT)、列表/网格视图切换、综述池FAB浮动按钮、AI综述生成(自定义章节结构)、批量导入文献库 |
 | **文献库** | PDF批量导入+AI元数据提取、引用格式(GB/T 7714/APA/IEEE/MLA/BibTeX)、AI摘要、批量操作、详情面板自适应 |
 | **IDEA** | 知识卡片CRUD、随手记(快速记录想法)、AI对话关联、标签系统、JSON/MD/PDF导入、网页链接导入 |
-| **试验管理** | 版本化结果记录、参数对比表、AI分析、Markdown导出 |
+| **试验管理** | 版本化结果记录、参数对比表、AI分析、Git集成(状态/快照)、结构化参数编辑、README自动生成、归档打包 |
 | **AI 对话** | 流式输出、工具调用(联网搜索)、thinking折叠、分类管理(通用/文献综述/IDEA/研究/选题讨论)、自动生成≤10字标题、@引用文献、研究讨论模板 |
 | **写作工作台** | 三栏布局(文档列表+关联文献 \| 编辑器+预览 \| AI助手)、Markdown编辑+实时预览、AI润色/翻译/扩写/精简/LaTeX转换、文献引用插入、自动保存 |
 
