@@ -708,11 +708,36 @@ class GameShooter {
 // ══════════════════════════════════════════════
 class GameWordHopper {
   constructor() {
-    // Word pools by difficulty
+    // CET-6 word pools with Chinese definitions [word, definition]
     this.wordPools = {
-      easy: ['the','and','for','are','but','not','you','all','can','had','her','was','one','our','out','day','get','has','him','his','how','its','may','new','now','old','see','way','who','boy','did','let','say','she','too','use','cat','dog','run','top','set','try','ask','own','put','end','big','few','red','blue','sun','moon','star','fish','bird','tree'],
-      medium: ['hand','high','keep','last','long','make','much','name','only','over','such','take','time','very','when','come','just','know','back','give','most','find','here','thing','work','year','live','home','read','each','right','think','small','place','great','still','every','found','study','earth','world','below','plant','water','river','music','light','color','shape','ocean','storm','flame'],
-      hard: ['space','dream','brave','swift','power','noble','quiet','rapid','vivid','solid','logic','cyber','pixel','turbo','laser','radar','sonic','vapor','nexus','alpha','delta','sigma','omega','prime','keyboard','practice','develop','program','function','variable','database','terminal','software','hardware','algorithm','framework','compiler','debugger','absolute','relative','abstract','interface']
+      easy: [
+        ['abstract','抽象的'],['academic','学术的'],['access','访问'],['achieve','实现'],['adequate','充足的'],
+        ['adjust','调整'],['admit','承认'],['adopt','采纳'],['advance','前进'],['advocate','提倡'],
+        ['affect','影响'],['afford','负担得起'],['agenda','议程'],['allocate','分配'],['alternative','替代'],
+        ['ambiguous','模糊的'],['analyse','分析'],['annual','年度的'],['anticipate','预期'],['apparent','明显的'],
+        ['appeal','呼吁'],['approach','方法'],['appropriate','适当的'],['assess','评估'],['assign','分配'],
+        ['assist','协助'],['assume','假设'],['attach','附加'],['attain','达到'],['attempt','尝试'],
+      ],
+      medium: [
+        ['bargain','讨价还价'],['barrier','障碍'],['benefit','利益'],['bias','偏见'],['bond','纽带'],
+        ['boom','繁荣'],['boundary','边界'],['breach','违反'],['brief','简短的'],['budget','预算'],
+        ['burden','负担'],['campaign','运动'],['candidate','候选人'],['capacity','能力'],['capture','捕获'],
+        ['category','类别'],['cease','停止'],['challenge','挑战'],['channel','渠道'],['chapter','章节'],
+        ['circumstance','情况'],['civil','公民的'],['clarify','澄清'],['coincide','巧合'],['collapse','崩溃'],
+        ['colleague','同事'],['combine','结合'],['comment','评论'],['commission','委员会'],['commit','承诺'],
+        ['communicate','沟通'],['community','社区'],['compensate','补偿'],['compile','编译'],['complex','复杂的'],
+        ['component','组件'],['comprehensive','全面的'],['comprise','包含'],['compromise','妥协'],['conceive','构想'],
+      ],
+      hard: [
+        ['concentrate','集中'],['conclusion','结论'],['conduct','进行'],['conference','会议'],['confine','限制'],
+        ['confirm','确认'],['conflict','冲突'],['conform','遵守'],['confront','面对'],['conscious','有意识的'],
+        ['consensus','共识'],['consequence','后果'],['conserve','保存'],['considerable','相当大的'],['consist','由...组成'],
+        ['consistent','一致的'],['constant',' constant'],['constitute','构成'],['construct','构建'],['consult','咨询'],
+        ['consume','消耗'],['contemporary','当代的'],['contest','竞争'],['context','上下文'],['contract','合同'],
+        ['contradict','矛盾'],['contribute','贡献'],['controversial','有争议的'],['convention',' convention'],['convert','转换'],
+        ['convey','传达'],['cooperate','合作'],['cope','应对'],['core','核心'],['corporate','公司的'],
+        ['correspond','对应'],['crucial','关键的'],['currency','货币'],['curriculum','课程'],['debate','辩论'],
+      ],
     };
     this.activeWords = []; // {text, x, y, speed, typedIdx, targeted}
     this.targetWord = null;
@@ -809,14 +834,15 @@ class GameWordHopper {
     if (this.level <= 2) pool = this.wordPools.easy;
     else if (this.level <= 5) pool = this.wordPools.medium;
     else pool = this.wordPools.hard;
-    return pool[Math.floor(Math.random() * pool.length)];
+    const entry = pool[Math.floor(Math.random() * pool.length)];
+    return { text: entry[0], def: entry[1] };
   }
 
   spawnWord() {
-    const text = this.getWord();
+    const { text, def } = this.getWord();
     const x = 60 + Math.random() * (W - 120);
     const speed = this.baseSpeed + (this.level - 1) * 0.08 + Math.random() * 0.2;
-    this.activeWords.push({ text, x, y: -20, speed, typedIdx: 0, targeted: false });
+    this.activeWords.push({ text, def, x, y: -20, speed, typedIdx: 0, targeted: false });
   }
 
   key(e) {
@@ -827,7 +853,12 @@ class GameWordHopper {
     }
 
     if (this.over) {
-      if (e.key === 'r') { Object.assign(this, new GameWordHopper()); this.init(); return; }
+      if (e.key === 'r') {
+        this.destroy();
+        gameInstance = new GameWordHopper();
+        gameInstance.init();
+        return;
+      }
       if (e.key === 'Escape') { backToMenu(); return; }
       return;
     }
@@ -1002,10 +1033,19 @@ class GameWordHopper {
       }
       ctx.shadowBlur = 0;
 
+      // Show definition below the word
+      if (w.def) {
+        ctx.font = '11px Consolas, monospace';
+        ctx.fillStyle = isTarget ? C.cyan : 'rgba(255,255,255,0.25)';
+        ctx.textAlign = 'center';
+        ctx.fillText(w.def, w.x, w.y + 16);
+      }
+
       // Target indicator
       if (isTarget) {
         ctx.strokeStyle = C.amber;
         ctx.lineWidth = 1;
+        ctx.font = '18px Consolas, monospace';
         const tw = ctx.measureText(w.text).width;
         ctx.strokeRect(w.x - tw/2 - 4, w.y - 18, tw + 8, 24);
       }

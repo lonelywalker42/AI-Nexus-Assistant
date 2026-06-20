@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { IconMusic, IconDisc, IconPlay, IconPause, IconSkipBack, IconSkipForward, IconShuffle, IconRepeat, IconVolume2, IconVolumeX, IconFolder, IconList } from "../components/Icons";
+import { getGlobalAudio, getGlobalAudioContext, getMusicState, setMusicState, subscribeMusicState } from "../hooks/useGlobalAudio";
 
 // jsmediatags for metadata extraction
 let jsmediatags: any = null;
@@ -142,7 +143,7 @@ export default function MusicPage() {
   const [duration, setDuration] = useState(0);
   const [showLyrics, setShowLyrics] = useState(false);
 
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(getGlobalAudio());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hiddenRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -151,6 +152,25 @@ export default function MusicPage() {
   const animFrameRef = useRef<number>(0);
 
   const currentTrack = currentIdx >= 0 && currentIdx < tracks.length ? tracks[currentIdx] : null;
+
+  // Restore playback state on mount (persists across page switches)
+  useEffect(() => {
+    const saved = getMusicState();
+    if (saved.currentIdx >= 0) {
+      setCurrentIdx(saved.currentIdx);
+      setIsPlaying(saved.isPlaying);
+      setVolume(saved.volume);
+      setIsMuted(saved.isMuted);
+      setPlayMode(saved.playMode);
+    }
+    // Subscribe to global state changes
+    const unsub = subscribeMusicState(() => {
+      const s = getMusicState();
+      setCurrentIdx(s.currentIdx);
+      setIsPlaying(s.isPlaying);
+    });
+    return unsub;
+  }, []);
 
   // Load track metadata from localStorage on mount (fast, no ArrayBuffer copy)
   useEffect(() => {
@@ -164,6 +184,11 @@ export default function MusicPage() {
       // This is deferred and non-blocking
     }
   }, []);
+
+  // Sync state to global store (for persistence across page switches)
+  useEffect(() => {
+    setMusicState({ currentIdx, isPlaying, volume, isMuted, playMode });
+  }, [currentIdx, isPlaying, volume, isMuted, playMode]);
 
   // Audio time update
   useEffect(() => {
@@ -260,6 +285,12 @@ export default function MusicPage() {
 
     const resumeFromClock = () => {
       hiddenRef.current = false;
+      // Tell clock to pause via BroadcastChannel
+      try {
+        const bc = new BroadcastChannel('nexus-music-sync');
+        bc.postMessage({ type: 'main-resuming' });
+        bc.close();
+      } catch {}
       // Check if clock was playing — resume in main window
       try {
         const state = JSON.parse(localStorage.getItem('nexus-music-state') || 'null');
@@ -345,17 +376,11 @@ export default function MusicPage() {
 
   const initAudioContext = useCallback(() => {
     if (audioCtxRef.current) return;
-    const audio = audioRef.current;
-    if (!audio) return;
-    const ctx = new AudioContext();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 128;
-    analyser.smoothingTimeConstant = 0.8;
-    const source = ctx.createMediaElementSource(audio);
-    source.connect(analyser);
-    analyser.connect(ctx.destination);
-    audioCtxRef.current = ctx;
-    analyserRef.current = analyser;
+    const result = getGlobalAudioContext();
+    if (result) {
+      audioCtxRef.current = result.ctx;
+      analyserRef.current = result.analyser;
+    }
   }, []);
 
   const loadAndPlay = useCallback(async (idx: number) => {
@@ -663,7 +688,7 @@ export default function MusicPage() {
         </div>
       )}
 
-      <audio ref={audioRef} preload="auto" />
+      {/* Audio element is global singleton — no DOM element needed */}
     </div>
   );
 }

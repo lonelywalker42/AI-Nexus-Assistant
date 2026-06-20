@@ -551,6 +551,16 @@ if(_bc){
         }
       }catch(err){}
     }
+    // Main window is resuming — pause clock playback
+    if(e.data && e.data.type === 'main-resuming'){
+      if(isPlaying && audioEl && !audioEl.paused){
+        audioEl.pause();
+        isPlaying = false;
+        updatePlayBtn();
+        $('trackInfo').textContent = '主窗口已恢复播放';
+        $('trackInfo').className = 'track-info';
+      }
+    }
   };
 }
 
