@@ -770,10 +770,10 @@ class GameWordHopper {
     // Instructions
     const instructions = [
       ['1.', 'Words scroll from right to left'],
-      ['2.', 'Type the word shown on an obstacle'],
-      ['3.', 'Press SPACE to jump when word is complete'],
-      ['4.', 'Jump through the gap to clear obstacles'],
-      ['5.', 'Miss the gap = Game Over!'],
+      ['2.', 'Type the full word to jump automatically'],
+      ['3.', 'Jump through the gap to clear obstacles'],
+      ['4.', 'Wrong key resets current word'],
+      ['5.', 'Game speeds up as you progress!'],
     ];
 
     instructions.forEach(([num, text], i) => {
@@ -788,8 +788,8 @@ class GameWordHopper {
     // Key hints
     ctx.textAlign = 'center';
     ctx.fillStyle = C.amber; ctx.font = '16px Consolas, monospace';
-    ctx.fillText('[ A-Z ] Type letters', W/2, 400);
-    ctx.fillText('[ SPACE ] Jump', W/2, 430);
+    ctx.fillText('[ A-Z ] Type letters to spell words', W/2, 400);
+    ctx.fillText('[ Backspace ] Reset current word', W/2, 430);
     ctx.fillText('[ ESC ] Back to menu', W/2, 460);
 
     // Start prompt
@@ -853,7 +853,18 @@ class GameWordHopper {
           this.typed += ch;
           this.totalChars++;
           if (this.typed === word) {
+            // Word complete — auto jump!
             this.flashAlpha = 1;
+            const jumpH = 100 + word.length * 8;
+            this.playerVY = -Math.sqrt(2 * this.gravity * jumpH);
+            this.isJumping = true;
+            this.combo++;
+            if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+            this.score += word.length * 10 * (1 + this.combo * 0.1);
+            this.hitLabel = this.combo >= 5 ? 'PERFECT!' : 'GOOD';
+            this.hitLabelTimer = 60;
+            this.typed = '';
+            this.targetObs = null;
           }
         } else {
           // Wrong key — reset typing
@@ -870,22 +881,6 @@ class GameWordHopper {
         this.typed = '';
         this.targetObs = null;
       }
-    }
-
-    // Jump when word is complete
-    if (e.key === ' ' && this.targetObs && this.typed === this.targetObs.word && !this.isJumping) {
-      e.preventDefault();
-      const jumpH = 100 + this.targetObs.word.length * 8;
-      this.playerVY = -Math.sqrt(2 * this.gravity * jumpH);
-      this.isJumping = true;
-      this.combo++;
-      if (this.combo > this.maxCombo) this.maxCombo = this.combo;
-      this.score += this.targetObs.word.length * 10 * (1 + this.combo * 0.1);
-      this.hitLabel = this.combo >= 5 ? 'PERFECT!' : 'GOOD';
-      this.hitLabelTimer = 60;
-      this.typed = '';
-      this.targetObs = null;
-      this.flashAlpha = 0;
     }
   }
 
@@ -906,23 +901,36 @@ class GameWordHopper {
 
     // Move obstacles
     this.obstacles.forEach(o => o.x -= this.speed);
-    this.obstacles = this.obstacles.filter(o => o.x > -100);
+    // Don't remove obstacles that are being typed
+    this.obstacles = this.obstacles.filter(o => o.x > -100 || this.targetObs === o);
 
     // Spawn
     if (this.obstacles.length === 0 || this.obstacles[this.obstacles.length-1].x < W - 200) {
       this.spawnObstacle();
     }
 
-    // Collision
+    // Reset target if obstacle is gone
+    if (this.targetObs && !this.obstacles.includes(this.targetObs)) {
+      this.targetObs = null;
+      this.typed = '';
+    }
+
+    // Collision — only check when obstacle reaches player
     this.obstacles.forEach(o => {
       if (o.cleared) return;
       const px = 80;
-      if (Math.abs(o.x - px) < 30) {
-        if (this.playerY < o.gapY || this.playerY > o.gapY + o.gapH) {
-          this.over = true;
-        } else if (!o.cleared) {
+      const dx = Math.abs(o.x - px);
+      // Obstacle is at player position
+      if (dx < 35) {
+        // If player is jumping/airborne and in the gap → clear it
+        if (this.isJumping && this.playerY >= o.gapY && this.playerY <= o.gapY + o.gapH) {
           o.cleared = true;
-          this.speed += 0.05;
+          this.speed += 0.03;
+        }
+        // If player is on ground or outside gap → game over
+        else if (!this.isJumping) {
+          // Player didn't jump → hit obstacle
+          this.over = true;
         }
       }
     });
@@ -1034,7 +1042,7 @@ class GameWordHopper {
       // Hint
       if (typed === word) {
         ctx.fillStyle = C.amber; ctx.font = '11px Consolas, monospace';
-        ctx.fillText('Press SPACE to jump!', W/2, H - 10);
+        ctx.fillText('Jumping...', W/2, H - 10);
       }
     } else {
       // Hint when no target
