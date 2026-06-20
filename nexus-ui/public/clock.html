@@ -506,6 +506,23 @@ function reloadPlaylist(){
 // 每 3 秒检查一次播放列表更新
 setInterval(checkPlaylistUpdate, 3000);
 
+// Resume AudioContext on any user interaction (autoplay policy workaround)
+document.addEventListener('click', function(){
+  if(audioCtx && audioCtx.state === 'suspended'){
+    audioCtx.resume().then(function(){
+      // Force spectrum redraw after resume
+      if(isPlaying && analyser) drawSpectrum();
+    });
+  }
+}, { once: false });
+
+// Also try to resume on focus (Tauri window focus is a form of user gesture)
+window.addEventListener('focus', function(){
+  if(audioCtx && audioCtx.state === 'suspended' && isPlaying){
+    audioCtx.resume();
+  }
+});
+
 // 窗口获得焦点时也检查
 window.addEventListener('focus', checkPlaylistUpdate);
 

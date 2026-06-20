@@ -61,12 +61,13 @@ function drawMenu() {
     { name: '2048', key: '2048', desc: 'SLIDE & MERGE' },
     { name: 'TETRIS', key: 'tetris', desc: 'STACK BLOCKS' },
     { name: 'SHOOTER', key: 'shooter', desc: 'DESTROY ALL' },
+    { name: 'WORD HOP', key: 'wordhopper', desc: 'TYPE & JUMP' },
   ];
 
   games.forEach((g, i) => {
-    const y = 200 + i * 120;
+    const y = 160 + i * 105;
     const x = W/2 - 140;
-    const bw = 280, bh = 80;
+    const bw = 280, bh = 75;
 
     // Button border
     ctx.strokeStyle = currentGame === g.key ? C.amber : C.dim;
@@ -97,11 +98,11 @@ function drawMenu() {
 }
 
 let menuIdx = 0;
-const GAME_KEYS = ['2048', 'tetris', 'shooter'];
+const GAME_KEYS = ['2048', 'tetris', 'shooter', 'wordhopper'];
 
 function menuKey(e) {
-  if (e.key === 'ArrowUp') { menuIdx = (menuIdx + 2) % 3; currentGame = GAME_KEYS[menuIdx]; drawMenu(); }
-  else if (e.key === 'ArrowDown') { menuIdx = (menuIdx + 1) % 3; currentGame = GAME_KEYS[menuIdx]; drawMenu(); }
+  if (e.key === 'ArrowUp') { menuIdx = (menuIdx + GAME_KEYS.length - 1) % GAME_KEYS.length; currentGame = GAME_KEYS[menuIdx]; drawMenu(); }
+  else if (e.key === 'ArrowDown') { menuIdx = (menuIdx + 1) % GAME_KEYS.length; currentGame = GAME_KEYS[menuIdx]; drawMenu(); }
   else if (e.key === 'Enter') startGame(GAME_KEYS[menuIdx]);
 }
 
@@ -112,8 +113,8 @@ canvas.addEventListener('mousemove', (e) => {
   const mx = (e.clientX - rect.left) * (W / rect.width);
   let hovered = null;
   GAME_KEYS.forEach((k, i) => {
-    const y = 200 + i * 120;
-    if (mx > W/2-140 && mx < W/2+140 && my > y && my < y+80) hovered = k;
+    const y = 160 + i * 105;
+    if (mx > W/2-140 && mx < W/2+140 && my > y && my < y+75) hovered = k;
   });
   if (hovered && hovered !== currentGame) { currentGame = hovered; menuIdx = GAME_KEYS.indexOf(hovered); drawMenu(); }
 });
@@ -123,8 +124,8 @@ canvas.addEventListener('click', (e) => {
   const rect = canvas.getBoundingClientRect();
   const my = (e.clientY - rect.top) * (H / rect.height);
   GAME_KEYS.forEach((k, i) => {
-    const y = 200 + i * 120;
-    if (my > y && my < y+80) startGame(k);
+    const y = 160 + i * 105;
+    if (my > y && my < y+75) startGame(k);
   });
 });
 
@@ -135,6 +136,7 @@ function startGame(key) {
   if (key === '2048') gameInstance = new Game2048();
   else if (key === 'tetris') gameInstance = new GameTetris();
   else if (key === 'shooter') gameInstance = new GameShooter();
+  else if (key === 'wordhopper') gameInstance = new GameWordHopper();
   gameInstance.init();
 }
 
@@ -697,6 +699,277 @@ class GameShooter {
       const m=Math.floor(this.survivalTime/60);const s=Math.floor(this.survivalTime%60);
       ctx.fillStyle=C.cyan;ctx.font='14px Consolas,monospace';ctx.fillText(`Survived: ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`,W/2,H/2+25);
       ctx.fillStyle=C.dim;ctx.font='12px Consolas,monospace';ctx.fillText('ESC for menu',W/2,H/2+55);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  WORD HOPPER — Type & Jump
+// ══════════════════════════════════════════════
+class GameWordHopper {
+  constructor() {
+    this.words = [
+      'the','and','for','are','but','not','you','all','can','had','her','was','one','our','out','day',
+      'get','has','him','his','how','its','may','new','now','old','see','way','who','boy','did','let',
+      'say','she','too','use','cat','dog','run','top','set','try','ask','own','put','end','big','few',
+      'hand','high','keep','last','long','make','much','name','only','over','such','take','time','very',
+      'when','come','just','know','back','give','most','find','here','thing','work','year','live','home',
+      'read','each','right','think','small','place','great','still','every','found','study','earth',
+      'world','below','plant','water','river','music','light','color','shape','ocean','storm','flame',
+      'space','dream','brave','swift','power','noble','quiet','rapid','vivid','solid','logic','cyber',
+      'pixel','turbo','laser','radar','sonic','vapor','nexus','alpha','delta','sigma','omega','prime',
+      'control','system','process','data','code','debug','stack','queue','array','logic','binary',
+      'python','rust','java','swift','react','node','html','css','web','app','api','git','docker',
+    ];
+    this.typed = '';
+    this.targetWord = '';
+    this.obstacles = [];
+    this.playerY = 0;
+    this.playerVY = 0;
+    this.isJumping = false;
+    this.gravity = 1200;
+    this.groundY = H - 80;
+    this.speed = 2;
+    this.score = 0;
+    this.combo = 0;
+    this.maxCombo = 0;
+    this.totalChars = 0;
+    this.startTime = 0;
+    this.over = false;
+    this.nextSpawnX = W + 200;
+    this.flashAlpha = 0;
+    this.hitLabel = '';
+    this.hitLabelTimer = 0;
+  }
+
+  init() {
+    this.playerY = this.groundY;
+    this.startTime = performance.now();
+    this.spawnObstacle();
+    this._keyH = (e) => this.key(e);
+    document.addEventListener('keydown', this._keyH);
+    this.loop();
+  }
+
+  destroy() {
+    document.removeEventListener('keydown', this._keyH);
+    if (this._raf) cancelAnimationFrame(this._raf);
+  }
+
+  spawnObstacle() {
+    const word = this.words[Math.floor(Math.random() * this.words.length)];
+    const gapY = this.groundY - 60 - Math.random() * 120;
+    this.obstacles.push({ x: W + 50, word, gapY, gapH: 100, cleared: false });
+    this.nextSpawnX = W + 50 + 250 + Math.random() * 150;
+  }
+
+  key(e) {
+    if (this.over) {
+      if (e.key === 'r') { Object.assign(this, new GameWordHopper()); this.init(); return; }
+      if (e.key === 'Escape') { backToMenu(); return; }
+      return;
+    }
+    if (e.key === 'Escape') { backToMenu(); return; }
+
+    // Typing
+    if (e.key.length === 1 && e.key.match(/[a-z]/i)) {
+      const ch = e.key.toLowerCase();
+      if (!this.targetWord) {
+        // Find matching obstacle
+        const obs = this.obstacles.find(o => !o.cleared && o.word.startsWith(ch));
+        if (obs) {
+          this.targetWord = obs.word;
+          this.typed = ch;
+          this.totalChars++;
+        }
+      } else {
+        const next = this.targetWord[this.typed.length];
+        if (ch === next) {
+          this.typed += ch;
+          this.totalChars++;
+          if (this.typed === this.targetWord) {
+            // Word complete — ready to jump
+            this.flashAlpha = 1;
+          }
+        } else {
+          // Wrong key — break combo
+          this.combo = 0;
+          this.typed = '';
+          this.targetWord = '';
+        }
+      }
+    }
+
+    // Jump
+    if (e.key === ' ' && this.typed === this.targetWord && this.targetWord && !this.isJumping) {
+      e.preventDefault();
+      const jumpH = 120 + this.targetWord.length * 10;
+      this.playerVY = -Math.sqrt(2 * this.gravity * jumpH);
+      this.isJumping = true;
+      this.combo++;
+      if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+      this.score += this.targetWord.length * 10 * (1 + this.combo * 0.1);
+      this.hitLabel = this.combo >= 5 ? 'PERFECT!' : 'GOOD';
+      this.hitLabelTimer = 60;
+      this.typed = '';
+      this.targetWord = '';
+      this.flashAlpha = 0;
+    }
+  }
+
+  loop() {
+    if (this.over) { this.draw(); return; }
+    this._raf = requestAnimationFrame(() => this.loop());
+
+    // Physics
+    if (this.isJumping) {
+      this.playerVY += this.gravity * (1/60);
+      this.playerY += this.playerVY * (1/60);
+      if (this.playerY >= this.groundY) {
+        this.playerY = this.groundY;
+        this.playerVY = 0;
+        this.isJumping = false;
+      }
+    }
+
+    // Move obstacles
+    this.obstacles.forEach(o => o.x -= this.speed);
+    this.obstacles = this.obstacles.filter(o => o.x > -100);
+
+    // Spawn
+    if (this.obstacles.length === 0 || this.obstacles[this.obstacles.length-1].x < W - 200) {
+      this.spawnObstacle();
+    }
+
+    // Collision
+    this.obstacles.forEach(o => {
+      if (o.cleared) return;
+      const px = 80;
+      if (Math.abs(o.x - px) < 30) {
+        if (this.playerY < o.gapY || this.playerY > o.gapY + o.gapH) {
+          this.over = true;
+        } else if (!o.cleared) {
+          o.cleared = true;
+          this.speed += 0.05;
+        }
+      }
+    });
+
+    // Flash decay
+    if (this.flashAlpha > 0) this.flashAlpha -= 0.02;
+    if (this.hitLabelTimer > 0) this.hitLabelTimer--;
+
+    this.draw();
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+
+    // Ground
+    ctx.fillStyle = C.dark;
+    ctx.fillRect(0, this.groundY + 20, W, H - this.groundY - 20);
+    ctx.fillStyle = C.dim;
+    ctx.fillRect(0, this.groundY + 20, W, 2);
+
+    // Obstacles
+    this.obstacles.forEach(o => {
+      // Top block
+      ctx.fillStyle = o.cleared ? 'rgba(0,255,65,0.1)' : C.dark;
+      ctx.fillRect(o.x - 20, 0, 40, o.gapY);
+      // Bottom block
+      ctx.fillRect(o.x - 20, o.gapY + o.gapH, 40, this.groundY + 20 - o.gapY - o.gapH);
+      // Borders
+      ctx.strokeStyle = o.cleared ? C.dim : C.green;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(o.x - 20, 0, 40, o.gapY);
+      ctx.strokeRect(o.x - 20, o.gapY + o.gapH, 40, this.groundY + 20 - o.gapY - o.gapH);
+      // Word
+      if (!o.cleared) {
+        ctx.fillStyle = C.amber;
+        ctx.font = '14px Consolas, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(o.word, o.x, o.gapY + o.gapH/2 + 5);
+      }
+    });
+
+    // Player (simple rectangle)
+    ctx.fillStyle = C.green;
+    ctx.shadowColor = C.green;
+    ctx.shadowBlur = 8;
+    ctx.fillRect(70, this.playerY - 20, 20, 20);
+    ctx.shadowBlur = 0;
+
+    // Timing line (when word is ready)
+    if (this.typed === this.targetWord && this.targetWord) {
+      ctx.strokeStyle = C.green;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(80, 0);
+      ctx.lineTo(80, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Flash effect
+    if (this.flashAlpha > 0) {
+      ctx.fillStyle = `rgba(0,255,65,${this.flashAlpha * 0.15})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // HUD
+    ctx.textAlign = 'left';
+    ctx.fillStyle = C.amber;
+    ctx.font = '14px Consolas, monospace';
+    ctx.fillText('SCORE: ' + Math.floor(this.score), 20, 30);
+    ctx.fillStyle = C.green;
+    ctx.fillText('COMBO: ' + this.combo, 20, 50);
+
+    // WPM
+    const elapsed = (performance.now() - this.startTime) / 1000;
+    const wpm = elapsed > 0 ? Math.round((this.totalChars / 5) / (elapsed / 60)) : 0;
+    ctx.fillStyle = C.cyan;
+    ctx.fillText('WPM: ' + wpm, 20, 70);
+
+    // Typing indicator
+    if (this.targetWord) {
+      ctx.textAlign = 'center';
+      ctx.font = '18px Consolas, monospace';
+      const typed = this.typed;
+      const rest = this.targetWord.slice(typed.length);
+      ctx.fillStyle = C.green;
+      ctx.fillText(typed, W/2 - ctx.measureText(rest).width/2, H - 30);
+      ctx.fillStyle = C.dim;
+      ctx.fillText(rest, W/2 + ctx.measureText(typed).width/2, H - 30);
+    }
+
+    // Hit label
+    if (this.hitLabelTimer > 0) {
+      ctx.textAlign = 'center';
+      ctx.font = '20px Consolas, monospace';
+      ctx.fillStyle = this.hitLabel === 'PERFECT!' ? C.amber : C.green;
+      ctx.globalAlpha = this.hitLabelTimer / 60;
+      ctx.fillText(this.hitLabel, W/2, H/2 - 50);
+      ctx.globalAlpha = 1;
+    }
+
+    // Game over
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.red;
+      ctx.font = '28px Consolas, monospace';
+      ctx.fillText('GAME OVER', W/2, H/2 - 40);
+      ctx.fillStyle = C.amber;
+      ctx.font = '16px Consolas, monospace';
+      ctx.fillText('Score: ' + Math.floor(this.score), W/2, H/2);
+      ctx.fillStyle = C.cyan;
+      ctx.font = '14px Consolas, monospace';
+      ctx.fillText('WPM: ' + wpm + '  Max Combo: ' + this.maxCombo, W/2, H/2 + 25);
+      ctx.fillStyle = C.dim;
+      ctx.font = '12px Consolas, monospace';
+      ctx.fillText('R to retry  ·  ESC for menu', W/2, H/2 + 55);
     }
   }
 }

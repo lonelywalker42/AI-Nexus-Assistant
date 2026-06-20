@@ -144,6 +144,7 @@ export default function MusicPage() {
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const hiddenRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -192,10 +193,12 @@ export default function MusicPage() {
       }));
     };
 
-    // If playing, sync every 500ms
+    // If playing, sync every 500ms (skip if window is hidden to avoid race)
     if (isPlaying) {
       syncState(false);
-      const interval = setInterval(() => syncState(false), 500);
+      const interval = setInterval(() => {
+        if (!hiddenRef.current) syncState(false);
+      }, 500);
       return () => clearInterval(interval);
     } else {
       // Not playing — check if it's because window was hidden
@@ -226,6 +229,7 @@ export default function MusicPage() {
   // Write pausedByWindow SYNCHRONOUSLY before React state update to avoid race condition
   useEffect(() => {
     const onVisibilityChange = () => {
+      hiddenRef.current = document.hidden;
       if (document.hidden && isPlaying) {
         const audio = audioRef.current;
         if (audio && !audio.paused) {

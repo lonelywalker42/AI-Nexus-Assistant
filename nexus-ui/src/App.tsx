@@ -189,8 +189,8 @@ function App() {
       </div>
 
       {/* 主内容 */}
-      <main className={`flex-1 mt-9 p-6 ${activePage === "chat" ? "overflow-hidden flex flex-col" : "overflow-auto"}`}>
-        <div className={`animate-fade-in ${activePage === "chat" ? "flex-1 flex flex-col min-h-0" : ""}`}>
+      <main className="flex-1 mt-9 p-6 flex flex-col overflow-hidden">
+        <div className="animate-fade-in flex-1 flex flex-col min-h-0 overflow-auto">
           {renderPage()}
         </div>
       </main>
