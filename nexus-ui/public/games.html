@@ -708,61 +708,118 @@ class GameShooter {
 // ══════════════════════════════════════════════
 class GameWordHopper {
   constructor() {
-    // CET-6 word pools [word, part-of-speech, definition]
-    this.wordPools = {
-      easy: [
-        ['abstract','adj.','抽象的'],['academic','adj.','学术的'],['access','n.','访问；通道'],
-        ['achieve','v.','实现；达到'],['adequate','adj.','充足的'],['adjust','v.','调整；适应'],
-        ['admit','v.','承认；准入'],['adopt','v.','采纳；收养'],['advance','v./n.','前进；进展'],
-        ['advocate','v./n.','提倡；倡导者'],['affect','v.','影响'],['afford','v.','负担得起'],
-        ['agenda','n.','议程'],['allocate','v.','分配'],['alternative','n./adj.','替代；可选的'],
-        ['ambiguous','adj.','模糊的'],['analyse','v.','分析'],['annual','adj.','年度的'],
-        ['anticipate','v.','预期'],['apparent','adj.','明显的'],['appeal','v./n.','呼吁；上诉'],
-        ['approach','v./n.','接近；方法'],['appropriate','adj.','适当的'],['assess','v.','评估'],
-        ['assign','v.','分配'],['assist','v.','协助'],['assume','v.','假设'],['attach','v.','附加'],
-        ['attain','v.','达到'],['attempt','v./n.','尝试'],
-      ],
-      medium: [
-        ['bargain','n./v.','讨价还价'],['barrier','n.','障碍'],['benefit','n./v.','利益；受益'],
-        ['bias','n.','偏见'],['bond','n.','纽带'],['boom','n./v.','繁荣'],
-        ['boundary','n.','边界'],['breach','n./v.','违反'],['brief','adj.','简短的'],
-        ['budget','n.','预算'],['burden','n.','负担'],['campaign','n.','运动；战役'],
-        ['candidate','n.','候选人'],['capacity','n.','能力；容量'],['capture','v.','捕获'],
-        ['category','n.','类别'],['cease','v.','停止'],['challenge','n./v.','挑战'],
-        ['channel','n.','渠道'],['chapter','n.','章节'],['circumstance','n.','情况'],
-        ['civil','adj.','公民的'],['clarify','v.','澄清'],['coincide','v.','巧合'],
-        ['collapse','v./n.','崩溃'],['colleague','n.','同事'],['combine','v.','结合'],
-        ['comment','n./v.','评论'],['commission','n.','委员会'],['commit','v.','承诺；犯(罪)'],
-        ['communicate','v.','沟通'],['community','n.','社区'],['compensate','v.','补偿'],
-        ['compile','v.','编译'],['complex','adj.','复杂的'],['component','n.','组件'],
-        ['comprehensive','adj.','全面的'],['comprise','v.','包含'],['compromise','n./v.','妥协'],
-        ['conceive','v.','构想'],
-      ],
-      hard: [
-        ['concentrate','v.','集中'],['conclusion','n.','结论'],['conduct','v./n.','进行；行为'],
-        ['conference','n.','会议'],['confine','v.','限制'],['confirm','v.','确认'],
-        ['conflict','n./v.','冲突'],['conform','v.','遵守'],['confront','v.','面对'],
-        ['conscious','adj.','有意识的'],['consensus','n.','共识'],['consequence','n.','后果'],
-        ['conserve','v.','保存'],['considerable','adj.','相当大的'],['consist','v.','由...组成'],
-        ['consistent','adj.','一致的'],['constant','adj.',' constant'],['constitute','v.','构成'],
-        ['construct','v.','构建'],['consult','v.','咨询'],['consume','v.','消耗'],
-        ['contemporary','adj.','当代的'],['contest','n./v.','竞争'],['context','n.','上下文'],
-        ['contract','n.','合同'],['contradict','v.','矛盾'],['contribute','v.','贡献'],
-        ['controversial','adj.','有争议的'],['convention','n.',' convention'],['convert','v.','转换'],
-        ['convey','v.','传达'],['cooperate','v.','合作'],['cope','v.','应对'],
-        ['core','n./adj.','核心'],['corporate','adj.','公司的'],['correspond','v.','对应'],
-        ['crucial','adj.','关键的'],['currency','n.','货币'],['curriculum','n.','课程'],
-        ['debate','n./v.','辩论'],
-      ],
-    };
-    // Shuffle each pool on init
-    Object.keys(this.wordPools).forEach(k => {
-      const arr = this.wordPools[k];
-      for(let i = arr.length - 1; i > 0; i--){
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-      }
-    });
+    // Complete CET-6 vocabulary pool [word, part-of-speech, definition]
+    // All words in one pool, difficulty determined by word length
+    this.allWords = [
+      // A
+      ['abstract','adj.','抽象的'],['academic','adj.','学术的'],['access','n.','访问；通道'],
+      ['accomplish','v.','完成'],['account','n./v.','账户；解释'],['accumulate','v.','积累'],
+      ['accurate','adj.','精确的'],['accuse','v.','指控'],['achieve','v.','实现；达到'],
+      ['acknowledge','v.','承认'],['acquire','v.','获得'],['adapt','v.','适应；改编'],
+      ['adequate','adj.','充足的'],['adhere','v.','粘附；遵守'],['adjust','v.','调整；适应'],
+      ['administer','v.','管理'],['admire','v.','钦佩'],['admit','v.','承认；准入'],
+      ['adopt','v.','采纳；收养'],['advance','v./n.','前进；进展'],['advocate','v./n.','提倡'],
+      ['affect','v.','影响'],['afford','v.','负担得起'],['agenda','n.','议程'],
+      ['aggressive','adj.','侵略性的'],['allocate','v.','分配'],['allowance','n.','津贴'],
+      ['alter','v.','改变'],['alternative','n./adj.','替代'],['ambiguous','adj.','模糊的'],
+      ['ambitious','adj.','有雄心的'],['amend','v.','修正'],['analyse','v.','分析'],
+      ['anticipate','v.','预期'],['apparent','adj.','明显的'],['appeal','v./n.','呼吁'],
+      ['appetite','n.','食欲；欲望'],['applicable','adj.','适用的'],['appraise','v.','评估'],
+      ['appreciate','v.','感激；欣赏'],['approach','v./n.','接近；方法'],['appropriate','adj.','适当的'],
+      ['approve','v.','批准'],['arise','v.','出现'],['arouse','v.','唤醒'],
+      ['artificial','adj.','人工的'],['assess','v.','评估'],['asset','n.','资产'],
+      ['assign','v.','分配'],['assist','v.','协助'],['associate','v.','联想；关联'],
+      ['assume','v.','假设'],['assure','v.','保证'],['atmosphere','n.','大气；氛围'],
+      ['attach','v.','附件'],['attain','v.','达到'],['attempt','v./n.','尝试'],
+      ['attitude','n.','态度'],['attract','v.','吸引'],['attribute','n./v.','属性；归因'],
+      ['authority','n.','权威'],['automatic','adj.','自动的'],['available','adj.','可用的'],
+      // B
+      ['bachelor','n.','学士；单身汉'],['balance','n./v.','平衡'],['ban','v./n.','禁止'],
+      ['bankrupt','adj.','破产的'],['bargain','n./v.','讨价还价'],['barrier','n.','障碍'],
+      ['behalf','n.','代表'],['benefit','n./v.','利益；受益'],['bias','n.','偏见'],
+      ['bind','v.','绑定'],['blank','adj.','空白的'],['blast','n./v.','爆炸'],
+      ['blend','v./n.','混合'],['block','n./v.','街区；阻塞'],['boast','v./n.','自夸'],
+      ['bold','adj.','大胆的'],['bond','n.','纽带'],['boom','n./v.','繁荣'],
+      ['boost','v./n.','促进'],['border','n.','边界'],['bounce','v./n.','弹跳'],
+      ['boundary','n.','边界'],['breach','n./v.','违反'],['breed','v./n.','繁殖；品种'],
+      ['brief','adj.','简短的'],['brilliant','adj.','杰出的'],['broad','adj.','广泛的'],
+      ['budget','n.','预算'],['bulk','n.','大量'],['bulletin','n.','公告'],
+      ['burden','n.','负担'],['burst','v./n.','爆发'],['bypass','v./n.','绕过'],
+      // C
+      ['cabinet','n.','内阁；柜子'],['calculate','v.','计算'],['campaign','n.','运动'],
+      ['cancel','v.','取消'],['candidate','n.','候选人'],['capable','adj.','有能力的'],
+      ['capacity','n.','能力；容量'],['capture','v.','捕获'],['cast','v./n.','投掷；演员'],
+      ['casual','adj.','随意的'],['catalog','n.','目录'],['category','n.','类别'],
+      ['cease','v.','停止'],['celebrity','n.','名人'],['challenge','n./v.','挑战'],
+      ['champion','n.','冠军'],['channel','n.','渠道'],['chapter','n.','章节'],
+      ['characteristic','n./adj.','特征'],['charity','n.','慈善'],['chemical','adj.','化学的'],
+      ['circulate','v.','循环'],['circumstance','n.','情况'],['cite','v.','引用'],
+      ['civil','adj.','公民的'],['clarify','v.','澄清'],['classify','v.','分类'],
+      ['climate','n.','气候'],['coincide','v.','巧合'],['collapse','v./n.','崩溃'],
+      ['colleague','n.','同事'],['combine','v.','结合'],['command','v./n.','命令'],
+      ['comment','n./v.','评论'],['commission','n.','委员会'],['commit','v.','承诺'],
+      ['communicate','v.','沟通'],['community','n.','社区'],['compact','adj.','紧凑的'],
+      ['companion','n.','同伴'],['compare','v.','比较'],['compatible','adj.','兼容的'],
+      ['compel','v.','强迫'],['compensate','v.','补偿'],['compile','v.','编译'],
+      ['complain','v.','抱怨'],['complement','v./n.','补充'],['complex','adj.','复杂的'],
+      ['component','n.','组件'],['compose','v.','组成'],['comprehensive','adj.','全面的'],
+      ['comprise','v.','包含'],['compromise','n./v.','妥协'],['compulsory','adj.','强制的'],
+      ['concentrate','v.','集中'],['concept','n.','概念'],['concern','v./n.','关心；担忧'],
+      ['conclude','v.','结论'],['concrete','adj.','具体的'],['condemn','v.','谴责'],
+      ['conduct','v./n.','进行；行为'],['conference','n.','会议'],['confess','v.','坦白'],
+      ['confine','v.','限制'],['confirm','v.','确认'],['conflict','n./v.','冲突'],
+      ['conform','v.','遵守'],['confront','v.','面对'],['confuse','v.','混淆'],
+      ['congress','n.','国会'],['conscience','n.','良心'],['conscious','adj.','有意识的'],
+      ['consensus','n.','共识'],['consequence','n.','后果'],['conserve','v.','保存'],
+      ['considerable','adj.','相当大的'],['consist','v.','由...组成'],['consistent','adj.','一致的'],
+      ['constant','adj.',' constant'],['constitute','v.','构成'],['construct','v.','构建'],
+      ['consult','v.','咨询'],['consume','v.','消耗'],['contact','v./n.','接触'],
+      ['contain','v.','包含'],['contemporary','adj.','当代的'],['contempt','n.','蔑视'],
+      ['content','n./adj.','内容；满足的'],['contest','n./v.','竞争'],['context','n.','上下文'],
+      ['contract','n.','合同'],['contradict','v.','矛盾'],['contrary','adj.','相反的'],
+      ['contrast','n./v.','对比'],['contribute','v.','贡献'],['controversial','adj.','有争议的'],
+      ['convention','n.',' convention'],['convert','v.','转换'],['convey','v.','传达'],
+      ['convince','v.','说服'],['cooperate','v.','合作'],['cope','v.','应对'],
+      ['core','n./adj.','核心'],['corporate','adj.','公司的'],['correspond','v.','对应'],
+      ['corrupt','adj.','腐败的'],['counsel','n./v.','建议'],['counterpart','n.','对应物'],
+      ['couple','n./v.','一对；连接'],['course','n.','课程；过程'],['crash','v./n.','碰撞'],
+      ['creative','adj.','创造性的'],['credit','n./v.','信用；归功'],['criminal','adj.','犯罪的'],
+      ['crisis','n.','危机'],['criteria','n.','标准'],['critical','adj.','关键的；批判的'],
+      ['crossing','n.','十字路口'],['crowd','n.','人群'],['crucial','adj.','关键的'],
+      ['cultivate','v.','培养'],['currency','n.','货币'],['curriculum','n.','课程'],
+      // D
+      ['debate','n./v.','辩论'],['decay','v./n.','腐烂'],['deceive','v.','欺骗'],
+      ['decent','adj.','体面的'],['declare','v.','宣布'],['decline','v./n.','下降；拒绝'],
+      ['decorate','v.','装饰'],['decrease','v./n.','减少'],['dedicate','v.','奉献'],
+      ['defeat','v./n.','击败'],['defend','v.','辩护'],['define','v.','定义'],
+      ['definite','adj.','明确的'],['delay','v./n.','延迟'],['deliberate','adj.','故意的'],
+      ['delicate','adj.','精致的'],['deliver','v.','交付'],['demand','v./n.','需求'],
+      ['demonstrate','v.','演示'],['deny','v.','否认'],['depart','v.','离开'],
+      ['depend','v.','依赖'],['deposit','n./v.','存款；沉积'],['depress','v.','使沮丧'],
+      ['deprive','v.','剥夺'],['derive','v.','源自'],['describe','v.','描述'],
+      ['desert','n./v.','沙漠；抛弃'],['deserve','v.','值得'],['design','v./n.','设计'],
+      ['desire','v./n.','渴望'],['despite','prep.','尽管'],['destination','n.','目的地'],
+      ['destroy','v.','破坏'],['detect','v.','检测'],['determine','v.','决定'],
+      ['device','n.','设备'],['devote','v.','奉献'],['diagnose','v.','诊断'],
+      ['differ','v.','不同'],['digest','v./n.','消化；摘要'],['dilemma','n.','困境'],
+      ['dimension','n.','维度'],['diminish','v.','减少'],['diplomatic','adj.','外交的'],
+      ['disabled','adj.','残疾的'],['disappoint','v.','使失望'],['disaster','n.','灾难'],
+      ['discipline','n.','纪律'],['discount','n./v.','折扣'],['discover','v.','发现'],
+      ['discriminate','v.','歧视'],['disguise','v./n.','伪装'],['dismiss','v.','解雇'],
+      ['disorder','n.','混乱'],['display','v./n.','展示'],['dispose','v.','处理'],
+      ['dispute','n./v.','争论'],['dissolve','v.','溶解'],['distinct','adj.','不同的'],
+      ['distinguish','v.','区分'],['distribute','v.','分配'],['disturb','v.','打扰'],
+      ['diverse','adj.','多样的'],['divorce','n./v.','离婚'],['document','n./v.','文档；记录'],
+      ['domestic','adj.',' domestic'],['dominant','adj.','占主导的'],['donate','v.','捐赠'],
+      ['doubt','n./v.','怀疑'],['draft','n./v.','草案；起草'],['dramatic','adj.','戏剧性的'],
+      ['drift','v./n.','漂流'],['drought','n.','干旱'],['dump','v./n.','倾倒'],
+      ['durable','adj.','耐用的'],['duration','n.','持续时间'],['dynamic','adj.','动态的'],
+    ];
+    // Shuffle on init (Fisher-Yates)
+    for(let i = this.allWords.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.allWords[i], this.allWords[j]] = [this.allWords[j], this.allWords[i]];
+    }
     this.activeWords = []; // {text, x, y, speed, typedIdx, targeted}
     this.targetWord = null;
     this.score = 0;
@@ -853,12 +910,12 @@ class GameWordHopper {
   }
 
   getWord() {
-    // Pick word based on level
-    let pool;
-    if (this.level <= 2) pool = this.wordPools.easy;
-    else if (this.level <= 5) pool = this.wordPools.medium;
-    else pool = this.wordPools.hard;
-    const entry = pool[Math.floor(Math.random() * pool.length)];
+    // Pick word from full pool, filter by length based on level
+    var minLen = this.level <= 2 ? 3 : this.level <= 5 ? 5 : 7;
+    var maxLen = this.level <= 2 ? 6 : this.level <= 5 ? 9 : 15;
+    var candidates = this.allWords.filter(function(w){ return w[0].length >= minLen && w[0].length <= maxLen; });
+    if(candidates.length === 0) candidates = this.allWords;
+    var entry = candidates[Math.floor(Math.random() * candidates.length)];
     return { text: entry[0], pos: entry[1], def: entry[2] };
   }
 
@@ -1059,11 +1116,11 @@ class GameWordHopper {
 
       // Show POS + definition below the word
       if (w.def) {
-        ctx.font = '13px Consolas, monospace';
+        ctx.font = 'bold 15px Consolas, monospace';
         ctx.textAlign = 'center';
         var posDef = (w.pos ? w.pos + ' ' : '') + w.def;
-        ctx.fillStyle = isTarget ? C.cyan : 'rgba(255,255,255,0.3)';
-        ctx.fillText(posDef, w.x, w.y + 18);
+        ctx.fillStyle = isTarget ? C.cyan : 'rgba(255,255,255,0.35)';
+        ctx.fillText(posDef, w.x, w.y + 20);
       }
 
       // Target indicator

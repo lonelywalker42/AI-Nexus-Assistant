@@ -473,8 +473,13 @@ loadPlaylistFromDB().then(function(items){
   if(items.length > 0){
     playlist = items;
     currentIdx = -1;
-    $('trackInfo').textContent = items.length + ' 首音乐已加载';
-    $('trackInfo').className = 'track-info active';
+    // Check for pending resume immediately after playlist loads
+    if(_pendingResume){
+      resumeFromState(_pendingResume);
+    }else{
+      $('trackInfo').textContent = items.length + ' 首音乐已加载';
+      $('trackInfo').className = 'track-info active';
+    }
   }
 });
 loadAlertFromDB().then(function(file){
