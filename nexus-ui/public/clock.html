@@ -411,6 +411,12 @@ function initAudio(){
 var specData = null;
 function drawSpectrum(){
   requestAnimationFrame(drawSpectrum);
+
+  // Auto-resume AudioContext if suspended but audio is playing
+  if(audioCtx && audioCtx.state === 'suspended' && isPlaying && !audioEl.paused){
+    audioCtx.resume();
+  }
+
   if(!analyser){drawIdleSpectrum();return;}
 
   var bufLen = analyser.frequencyBinCount;
@@ -575,21 +581,21 @@ function resumeFromState(state){
     // 设置进度并播放
     function startPlayback(){
       audioEl.currentTime = Math.min(state.currentTime || 0, audioEl.duration || 0);
-      // Resume AudioContext before play (must be chained with play promise)
+      // Update UI immediately (before play resolves)
+      isPlaying = true;
+      updatePlayBtn();
+      $('trackInfo').textContent = '♪ ' + name;
+      $('trackInfo').className = 'track-info active';
+      // Resume AudioContext + play
       var resumePromise = audioCtx && audioCtx.state === 'suspended' ? audioCtx.resume() : Promise.resolve();
       resumePromise.then(function(){
         return audioEl.play();
       }).then(function(){
-        isPlaying = true;
-        updatePlayBtn();
-        $('trackInfo').textContent = '♪ ' + name;
-        $('trackInfo').className = 'track-info active';
         // Notify MusicPage that clock took over
         if(_bc) try{ _bc.postMessage({type:'clock-playing'}); }catch(e){}
       }).catch(function(){
-        // Autoplay blocked — show paused state
-        isPlaying = false;
-        updatePlayBtn();
+        // Autoplay blocked — keep trying on next user interaction
+        // Don't reset isPlaying so the UI shows playing state
       });
     }
     if(audioEl.readyState >= 1){

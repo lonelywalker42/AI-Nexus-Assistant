@@ -226,40 +226,53 @@ export default function MusicPage() {
   }, []);
 
   // Pause music when window is hidden (main window closes to tray)
-  // Write pausedByWindow SYNCHRONOUSLY before React state update to avoid race condition
+  // Uses Tauri custom event (visibilitychange doesn't fire in WebView2 on Windows)
   useEffect(() => {
-    const onVisibilityChange = () => {
-      hiddenRef.current = document.hidden;
-      if (document.hidden && isPlaying) {
-        const audio = audioRef.current;
-        if (audio && !audio.paused) {
-          // Write pausedByWindow flag IMMEDIATELY (before React re-render)
-          // This ensures clock.html sees the flag on its next poll
-          localStorage.setItem('nexus-music-state', JSON.stringify({
-            trackName: currentIdx >= 0 && currentIdx < tracks.length ? tracks[currentIdx].name : '',
-            currentTime: audio.currentTime,
-            duration: audio.duration || 0,
-            isPlaying: false,
-            currentIdx,
-            volume,
-            playMode,
-            pausedByWindow: true,
-          }));
-          // Also notify via BroadcastChannel for instant detection
-          try {
-            const bc = new BroadcastChannel('nexus-music-sync');
-            bc.postMessage({ type: 'paused-by-window', trackName: tracks[currentIdx]?.name, currentTime: audio.currentTime });
-            bc.close();
-          } catch {}
-          audio.pause();
-          // Stop the sync interval immediately by setting isPlaying to false
-          // This prevents the interval from overwriting pausedByWindow
-          setIsPlaying(false);
-        }
+    const pauseForClock = () => {
+      hiddenRef.current = true;
+      const audio = audioRef.current;
+      if (audio && !audio.paused && isPlaying) {
+        // Write pausedByWindow flag IMMEDIATELY
+        localStorage.setItem('nexus-music-state', JSON.stringify({
+          trackName: currentIdx >= 0 && currentIdx < tracks.length ? tracks[currentIdx].name : '',
+          currentTime: audio.currentTime,
+          duration: audio.duration || 0,
+          isPlaying: false,
+          currentIdx,
+          volume,
+          playMode,
+          pausedByWindow: true,
+        }));
+        // Notify via BroadcastChannel for instant detection
+        try {
+          const bc = new BroadcastChannel('nexus-music-sync');
+          bc.postMessage({ type: 'paused-by-window', trackName: tracks[currentIdx]?.name, currentTime: audio.currentTime });
+          bc.close();
+        } catch {}
+        audio.pause();
+        setIsPlaying(false);
       }
     };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+
+    const resumeFromClock = () => {
+      hiddenRef.current = false;
+    };
+
+    // Listen for Tauri custom events
+    window.addEventListener('nexus-window-hide', pauseForClock);
+    window.addEventListener('nexus-window-show', resumeFromClock);
+    // Also keep visibilitychange as fallback
+    const onVisChange = () => {
+      if (document.hidden) pauseForClock();
+      else resumeFromClock();
+    };
+    document.addEventListener("visibilitychange", onVisChange);
+
+    return () => {
+      window.removeEventListener('nexus-window-hide', pauseForClock);
+      window.removeEventListener('nexus-window-show', resumeFromClock);
+      document.removeEventListener("visibilitychange", onVisChange);
+    };
   }, [isPlaying, currentIdx, tracks, volume, playMode]);
 
   // Spectrum visualization

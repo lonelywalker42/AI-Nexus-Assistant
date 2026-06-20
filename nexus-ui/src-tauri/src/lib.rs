@@ -63,6 +63,8 @@ fn show_main_window(app: tauri::AppHandle) {
         let _ = w.set_skip_taskbar(false);
         let _ = w.show();
         let _ = w.set_focus();
+        // Notify frontend that window is visible again
+        let _ = w.eval("window.dispatchEvent(new CustomEvent('nexus-window-show'))");
     }
 }
 
@@ -586,7 +588,9 @@ pub fn run() {
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
+                        // Notify frontend BEFORE hiding (visibilitychange doesn't fire in WebView2)
                         if let Some(w) = ah.get_webview_window("main") {
+                            let _ = w.eval("window.dispatchEvent(new CustomEvent('nexus-window-hide'))");
                             let _ = w.set_skip_taskbar(true);
                             let _ = w.hide();
                         }
