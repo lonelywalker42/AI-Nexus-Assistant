@@ -227,17 +227,31 @@ async function extractBookMetadata(book: Book): Promise<Partial<Book>> {
   } catch { return {}; }
 }
 
-// Book Spine Component
+// Book Spine Component — glassmorphism + theme-aware
+const SPINE_PALETTES = [
+  { bg: 'linear-gradient(135deg, #3b82f6, #2563eb)', glow: 'rgba(59,130,246,0.3)' },
+  { bg: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', glow: 'rgba(139,92,246,0.3)' },
+  { bg: 'linear-gradient(135deg, #ec4899, #db2777)', glow: 'rgba(236,72,153,0.3)' },
+  { bg: 'linear-gradient(135deg, #f59e0b, #d97706)', glow: 'rgba(245,158,11,0.3)' },
+  { bg: 'linear-gradient(135deg, #10b981, #059669)', glow: 'rgba(16,185,129,0.3)' },
+  { bg: 'linear-gradient(135deg, #06b6d4, #0891b2)', glow: 'rgba(6,182,212,0.3)' },
+  { bg: 'linear-gradient(135deg, #ef4444, #dc2626)', glow: 'rgba(239,68,68,0.3)' },
+  { bg: 'linear-gradient(135deg, #6366f1, #4f46e5)', glow: 'rgba(99,102,241,0.3)' },
+];
+
 function BookSpine({ book, index, onClick }: { book: Book; index: number; onClick: () => void }) {
-  const colors = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"];
-  const color = colors[index % colors.length];
+  const palette = SPINE_PALETTES[index % SPINE_PALETTES.length];
+  const shortTitle = (book.title || book.name.replace(/\.[^.]+$/, "")).slice(0, 12);
 
   return (
-    <div className="book-spine-wrapper cursor-pointer group" onClick={onClick}>
-      <div className="book-spine" style={{ background: color }}>
-        <div className="book-spine-title">{book.title || book.name.replace(/\.[^.]+$/, "")}</div>
+    <div className="book-spine-wrapper cursor-pointer group" onClick={onClick}
+      tabIndex={0} role="button"
+      onKeyDown={e => { if (e.key === 'Enter') onClick(); }}>
+      <div className="book-spine" style={{ background: palette.bg }}>
+        <div className="book-spine-title">{shortTitle}</div>
+        <div className="book-spine-shine" />
       </div>
-      <div className="book-spine-shadow" style={{ background: color }} />
+      <div className="book-spine-shadow" style={{ background: palette.glow }} />
     </div>
   );
 }

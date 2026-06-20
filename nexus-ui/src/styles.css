@@ -402,42 +402,62 @@ select.input-glass {
   background: radial-gradient(circle, #333 0%, #222 100%);
 }
 
-/* ── 书架样式 ── */
+/* ── 书架样式 (glassmorphism + theme-aware) ── */
 .bookshelf-row {
-  padding: 20px 0;
+  padding: 24px;
   position: relative;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-md);
 }
 
 .bookshelf-books {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
-  padding: 0 20px 0;
-  min-height: 200px;
+  gap: 8px;
+  padding: 0 8px 0;
+  min-height: 220px;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 .book-spine-wrapper {
   display: flex;
   flex-direction: column;
   align-items: center;
-  transition: transform 0.2s ease;
+  transition: transform var(--duration-fast) var(--ease-out), filter var(--duration-fast) var(--ease-out);
+  outline: none;
 }
 
 .book-spine-wrapper:hover {
-  transform: translateY(-8px);
+  transform: translateY(-10px) scale(1.02);
+  filter: brightness(1.1);
+}
+
+.book-spine-wrapper:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 4px;
+  border-radius: 4px;
 }
 
 .book-spine {
-  width: 36px;
-  height: 180px;
-  border-radius: 3px 5px 5px 3px;
+  width: 40px;
+  height: 190px;
+  border-radius: 4px 6px 6px 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  box-shadow: inset -2px 0 4px rgba(0,0,0,0.2), 2px 2px 6px rgba(0,0,0,0.15);
+  box-shadow:
+    inset -2px 0 6px rgba(0,0,0,0.25),
+    inset 1px 0 2px rgba(255,255,255,0.15),
+    3px 3px 8px rgba(0,0,0,0.2),
+    0 0 0 1px rgba(255,255,255,0.05);
   cursor: pointer;
+  overflow: hidden;
 }
 
 .book-spine::before {
@@ -446,39 +466,58 @@ select.input-glass {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
-  background: rgba(0,0,0,0.15);
-  border-radius: 3px 0 0 3px;
+  width: 5px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 4px 0 0 4px;
+}
+
+.book-spine-shine {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.08) 45%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.08) 55%, transparent 60%);
+  pointer-events: none;
 }
 
 .book-spine-title {
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  color: rgba(255,255,255,0.9);
+  color: rgba(255,255,255,0.95);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-height: 160px;
-  padding: 8px 0;
+  max-height: 170px;
+  padding: 10px 0;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  z-index: 1;
 }
 
 .book-spine-shadow {
-  width: 36px;
-  height: 6px;
-  border-radius: 0 0 3px 3px;
-  opacity: 0.3;
-  filter: blur(2px);
-  margin-top: -1px;
+  width: 40px;
+  height: 8px;
+  border-radius: 0 0 4px 4px;
+  opacity: 0.4;
+  filter: blur(3px);
+  margin-top: -2px;
+  transition: opacity var(--duration-fast);
+}
+
+.book-spine-wrapper:hover .book-spine-shadow {
+  opacity: 0.6;
+  filter: blur(4px);
 }
 
 .bookshelf-plank {
-  height: 12px;
-  margin: 0 -10px;
-  border-radius: 0 0 4px 4px;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  height: 14px;
+  margin: 4px -10px 0;
+  border-radius: 0 0 6px 6px;
+  background: linear-gradient(180deg, var(--border-color), var(--glass-border));
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.1);
 }
 
 /* ── Toast 通知 ── */
