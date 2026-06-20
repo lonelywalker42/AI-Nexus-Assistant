@@ -718,37 +718,35 @@ class GameWordHopper {
       'world','below','plant','water','river','music','light','color','shape','ocean','storm','flame',
       'space','dream','brave','swift','power','noble','quiet','rapid','vivid','solid','logic','cyber',
       'pixel','turbo','laser','radar','sonic','vapor','nexus','alpha','delta','sigma','omega','prime',
-      'control','system','process','data','code','debug','stack','queue','array','logic','binary',
-      'python','rust','java','swift','react','node','html','css','web','app','api','git','docker',
     ];
     this.typed = '';
-    this.targetWord = '';
+    this.targetObs = null; // reference to target obstacle
     this.obstacles = [];
     this.playerY = 0;
     this.playerVY = 0;
     this.isJumping = false;
     this.gravity = 1200;
     this.groundY = H - 80;
-    this.speed = 2;
+    this.speed = 1.5;
     this.score = 0;
     this.combo = 0;
     this.maxCombo = 0;
     this.totalChars = 0;
     this.startTime = 0;
     this.over = false;
-    this.nextSpawnX = W + 200;
     this.flashAlpha = 0;
     this.hitLabel = '';
     this.hitLabelTimer = 0;
+    this.showTutorial = true;
+    this.tutorialStep = 0; // 0=instructions, 1=waiting for type, 2=waiting for space
   }
 
   init() {
     this.playerY = this.groundY;
     this.startTime = performance.now();
-    this.spawnObstacle();
     this._keyH = (e) => this.key(e);
     document.addEventListener('keydown', this._keyH);
-    this.loop();
+    this.drawTutorial();
   }
 
   destroy() {
@@ -756,14 +754,77 @@ class GameWordHopper {
     if (this._raf) cancelAnimationFrame(this._raf);
   }
 
+  drawTutorial() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+
+    // Title
+    ctx.fillStyle = C.green; ctx.font = '24px Consolas, monospace';
+    ctx.shadowColor = C.green; ctx.shadowBlur = 10;
+    ctx.fillText('WORD HOPPER', W/2, 80);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
+    ctx.fillText('Type words to jump through obstacles!', W/2, 110);
+
+    // Instructions
+    const instructions = [
+      ['1.', 'Words scroll from right to left'],
+      ['2.', 'Type the word shown on an obstacle'],
+      ['3.', 'Press SPACE to jump when word is complete'],
+      ['4.', 'Jump through the gap to clear obstacles'],
+      ['5.', 'Miss the gap = Game Over!'],
+    ];
+
+    instructions.forEach(([num, text], i) => {
+      const y = 170 + i * 40;
+      ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(num, W/2 - 160, y);
+      ctx.fillStyle = C.green; ctx.font = '13px Consolas, monospace';
+      ctx.fillText(text, W/2 - 130, y);
+    });
+
+    // Key hints
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.amber; ctx.font = '16px Consolas, monospace';
+    ctx.fillText('[ A-Z ] Type letters', W/2, 400);
+    ctx.fillText('[ SPACE ] Jump', W/2, 430);
+    ctx.fillText('[ ESC ] Back to menu', W/2, 460);
+
+    // Start prompt
+    ctx.fillStyle = C.green;
+    ctx.font = '18px Consolas, monospace';
+    const blink = Math.floor(Date.now() / 500) % 2 === 0;
+    if (blink) ctx.fillText('Press any key to start...', W/2, 530);
+
+    if (!this._tutorialRaf) {
+      this._tutorialRaf = requestAnimationFrame(() => this.drawTutorial());
+    }
+  }
+
+  startGame() {
+    this.showTutorial = false;
+    if (this._tutorialRaf) cancelAnimationFrame(this._tutorialRaf);
+    this.startTime = performance.now();
+    this.spawnObstacle();
+    this.loop();
+  }
+
   spawnObstacle() {
     const word = this.words[Math.floor(Math.random() * this.words.length)];
-    const gapY = this.groundY - 60 - Math.random() * 120;
-    this.obstacles.push({ x: W + 50, word, gapY, gapH: 100, cleared: false });
-    this.nextSpawnX = W + 50 + 250 + Math.random() * 150;
+    const gapY = this.groundY - 80 - Math.random() * 100;
+    this.obstacles.push({ x: W + 50, word, gapY, gapH: 120, cleared: false });
   }
 
   key(e) {
+    // Tutorial phase
+    if (this.showTutorial) {
+      if (e.key === 'Escape') { backToMenu(); return; }
+      this.startGame();
+      return;
+    }
+
     if (this.over) {
       if (e.key === 'r') { Object.assign(this, new GameWordHopper()); this.init(); return; }
       if (e.key === 'Escape') { backToMenu(); return; }
@@ -771,48 +832,59 @@ class GameWordHopper {
     }
     if (e.key === 'Escape') { backToMenu(); return; }
 
-    // Typing
-    if (e.key.length === 1 && e.key.match(/[a-z]/i)) {
+    // Typing — only accept letter keys
+    if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
       const ch = e.key.toLowerCase();
-      if (!this.targetWord) {
-        // Find matching obstacle
-        const obs = this.obstacles.find(o => !o.cleared && o.word.startsWith(ch));
+
+      if (!this.targetObs) {
+        // Find closest un-cleared obstacle that starts with this letter
+        const obs = this.obstacles
+          .filter(o => !o.cleared && o.word.startsWith(ch) && o.x > 20)
+          .sort((a, b) => a.x - b.x)[0];
         if (obs) {
-          this.targetWord = obs.word;
+          this.targetObs = obs;
           this.typed = ch;
           this.totalChars++;
         }
       } else {
-        const next = this.targetWord[this.typed.length];
+        const word = this.targetObs.word;
+        const next = word[this.typed.length];
         if (ch === next) {
           this.typed += ch;
           this.totalChars++;
-          if (this.typed === this.targetWord) {
-            // Word complete — ready to jump
+          if (this.typed === word) {
             this.flashAlpha = 1;
           }
         } else {
-          // Wrong key — break combo
+          // Wrong key — reset typing
           this.combo = 0;
           this.typed = '';
-          this.targetWord = '';
+          this.targetObs = null;
         }
       }
     }
 
-    // Jump
-    if (e.key === ' ' && this.typed === this.targetWord && this.targetWord && !this.isJumping) {
+    // Backspace — reset current typing
+    if (e.key === 'Backspace') {
+      if (this.typed.length > 0) {
+        this.typed = '';
+        this.targetObs = null;
+      }
+    }
+
+    // Jump when word is complete
+    if (e.key === ' ' && this.targetObs && this.typed === this.targetObs.word && !this.isJumping) {
       e.preventDefault();
-      const jumpH = 120 + this.targetWord.length * 10;
+      const jumpH = 100 + this.targetObs.word.length * 8;
       this.playerVY = -Math.sqrt(2 * this.gravity * jumpH);
       this.isJumping = true;
       this.combo++;
       if (this.combo > this.maxCombo) this.maxCombo = this.combo;
-      this.score += this.targetWord.length * 10 * (1 + this.combo * 0.1);
+      this.score += this.targetObs.word.length * 10 * (1 + this.combo * 0.1);
       this.hitLabel = this.combo >= 5 ? 'PERFECT!' : 'GOOD';
       this.hitLabelTimer = 60;
       this.typed = '';
-      this.targetWord = '';
+      this.targetObs = null;
       this.flashAlpha = 0;
     }
   }
@@ -873,22 +945,35 @@ class GameWordHopper {
 
     // Obstacles
     this.obstacles.forEach(o => {
+      const isTarget = this.targetObs === o;
       // Top block
-      ctx.fillStyle = o.cleared ? 'rgba(0,255,65,0.1)' : C.dark;
-      ctx.fillRect(o.x - 20, 0, 40, o.gapY);
+      ctx.fillStyle = o.cleared ? 'rgba(0,255,65,0.1)' : isTarget ? '#1a1a2a' : C.dark;
+      ctx.fillRect(o.x - 25, 0, 50, o.gapY);
       // Bottom block
-      ctx.fillRect(o.x - 20, o.gapY + o.gapH, 40, this.groundY + 20 - o.gapY - o.gapH);
+      ctx.fillRect(o.x - 25, o.gapY + o.gapH, 50, this.groundY + 20 - o.gapY - o.gapH);
       // Borders
-      ctx.strokeStyle = o.cleared ? C.dim : C.green;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(o.x - 20, 0, 40, o.gapY);
-      ctx.strokeRect(o.x - 20, o.gapY + o.gapH, 40, this.groundY + 20 - o.gapY - o.gapH);
-      // Word
+      ctx.strokeStyle = o.cleared ? C.dim : isTarget ? C.amber : C.green;
+      ctx.lineWidth = isTarget ? 2 : 1;
+      ctx.strokeRect(o.x - 25, 0, 50, o.gapY);
+      ctx.strokeRect(o.x - 25, o.gapY + o.gapH, 50, this.groundY + 20 - o.gapY - o.gapH);
+      // Word — show typed progress
       if (!o.cleared) {
-        ctx.fillStyle = C.amber;
-        ctx.font = '14px Consolas, monospace';
+        ctx.font = '15px Consolas, monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(o.word, o.x, o.gapY + o.gapH/2 + 5);
+        if (isTarget && this.typed.length > 0) {
+          // Show typed portion in green, remaining in amber
+          const typedPart = this.typed;
+          const restPart = o.word.slice(this.typed.length);
+          const totalW = ctx.measureText(o.word).width;
+          const typedW = ctx.measureText(typedPart).width;
+          ctx.fillStyle = C.green;
+          ctx.fillText(typedPart, o.x - totalW/2 + typedW/2, o.gapY + o.gapH/2 + 5);
+          ctx.fillStyle = C.amber;
+          ctx.fillText(restPart, o.x + typedW/2, o.gapY + o.gapH/2 + 5);
+        } else {
+          ctx.fillStyle = C.amber;
+          ctx.fillText(o.word, o.x, o.gapY + o.gapH/2 + 5);
+        }
       }
     });
 
@@ -900,15 +985,17 @@ class GameWordHopper {
     ctx.shadowBlur = 0;
 
     // Timing line (when word is ready)
-    if (this.typed === this.targetWord && this.targetWord) {
+    if (this.targetObs && this.typed === this.targetObs.word) {
       ctx.strokeStyle = C.green;
       ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.6;
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
       ctx.moveTo(80, 0);
       ctx.lineTo(80, H);
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
     }
 
     // Flash effect
@@ -932,15 +1019,28 @@ class GameWordHopper {
     ctx.fillText('WPM: ' + wpm, 20, 70);
 
     // Typing indicator
-    if (this.targetWord) {
+    if (this.targetObs) {
       ctx.textAlign = 'center';
       ctx.font = '18px Consolas, monospace';
+      const word = this.targetObs.word;
       const typed = this.typed;
-      const rest = this.targetWord.slice(typed.length);
+      const rest = word.slice(typed.length);
+      const totalW = ctx.measureText(word).width;
+      const typedW = ctx.measureText(typed).width;
       ctx.fillStyle = C.green;
-      ctx.fillText(typed, W/2 - ctx.measureText(rest).width/2, H - 30);
+      ctx.fillText(typed, W/2 - totalW/2 + typedW/2, H - 30);
       ctx.fillStyle = C.dim;
-      ctx.fillText(rest, W/2 + ctx.measureText(typed).width/2, H - 30);
+      ctx.fillText(rest, W/2 + typedW/2, H - 30);
+      // Hint
+      if (typed === word) {
+        ctx.fillStyle = C.amber; ctx.font = '11px Consolas, monospace';
+        ctx.fillText('Press SPACE to jump!', W/2, H - 10);
+      }
+    } else {
+      // Hint when no target
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.dark; ctx.font = '11px Consolas, monospace';
+      ctx.fillText('Type the first letter of a word', W/2, H - 20);
     }
 
     // Hit label

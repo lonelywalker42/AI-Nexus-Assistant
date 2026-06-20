@@ -204,16 +204,16 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
         {/* 左侧：任务列表 */}
         <div className="lg:col-span-2 space-y-4">
           {/* 快速添加 */}
-          <div className="glass-card p-4">
-            <div className="flex gap-2 items-center">
-              <input
-                ref={inputRef}
-                className="input-glass flex-1 text-sm"
-                placeholder="添加今日任务..."
+          <div className="glass-card p-4 space-y-2">
+            <input
+              ref={inputRef}
+              className="input-glass flex-1 text-sm w-full py-2.5"
+              placeholder="添加今日任务..."
                 value={newTask}
                 onChange={e => setNewTask(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") handleAddTask(); }}
-              />
+            />
+            <div className="flex gap-2 items-center">
               <select
                 className="input-glass text-xs py-2 px-2"
                 value={newPriority}
@@ -232,6 +232,7 @@ export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) =>
                   <option key={c.key} value={c.key}>{c.icon} {c.label}</option>
                 ))}
               </select>
+              <span className="flex-1" />
               <button
                 className="btn-gradient btn-click text-xs py-2 px-3 flex items-center gap-1"
                 onClick={handleAddTask}

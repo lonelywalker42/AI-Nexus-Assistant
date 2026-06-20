@@ -251,9 +251,34 @@ export default function BookshelfPage() {
   const [textFileData, setTextFileData] = useState<TextFileData | null>(null);
   const [chapterIdx, setChapterIdx] = useState(0);
   const [fontSize, setFontSize] = useState(100);
+  const [pageIdx, setPageIdx] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const readerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Calculate total pages when content changes
+  useEffect(() => {
+    setPageIdx(0);
+    const timer = setTimeout(() => {
+      if (contentRef.current && readerRef.current) {
+        const contentH = contentRef.current.scrollHeight;
+        const containerH = readerRef.current.clientHeight;
+        const pages = Math.max(1, Math.ceil(contentH / containerH));
+        setTotalPages(pages);
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [chapterIdx, epubData, textFileData, fontSize]);
+
+  // Scroll to current page
+  useEffect(() => {
+    if (readerRef.current) {
+      const containerH = readerRef.current.clientHeight;
+      readerRef.current.scrollTo({ top: pageIdx * containerH, behavior: 'smooth' });
+    }
+  }, [pageIdx]);
 
   // Load book metadata from localStorage on mount (fast)
   useEffect(() => {
@@ -475,84 +500,98 @@ export default function BookshelfPage() {
         </div>
       )}
 
-      {viewMode === "reader" && epubData && (
-        /* EPUB Reader — direct HTML rendering (no iframe) */
+      {viewMode === "reader" && (epubData || textFileData) && (
+        /* Reader — page-based view with left/right navigation */
         <div className="flex-1 flex flex-col min-h-0 gap-2">
-          {/* Chapter nav bar */}
+          {/* Top bar: chapter nav + page info */}
           <div className="flex items-center justify-between px-1">
-            <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
-              onClick={() => setChapterIdx(Math.max(0, chapterIdx - 1))}
-              style={{ opacity: chapterIdx === 0 ? 0.3 : 1, pointerEvents: chapterIdx === 0 ? "none" : "auto" }}>
-              <IconChevronLeft size={14} /> Prev
-            </button>
-            <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
-              {epubData.chapters[chapterIdx]?.title || `Chapter ${chapterIdx + 1}`}
-            </span>
-            <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
-              onClick={() => setChapterIdx(Math.min(epubData.chapters.length - 1, chapterIdx + 1))}
-              style={{ opacity: chapterIdx >= epubData.chapters.length - 1 ? 0.3 : 1, pointerEvents: chapterIdx >= epubData.chapters.length - 1 ? "none" : "auto" }}>
-              Next <IconChevronRight size={14} />
-            </button>
+            {epubData ? (
+              <>
+                <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
+                  onClick={() => { setChapterIdx(Math.max(0, chapterIdx - 1)); setPageIdx(0); }}
+                  style={{ opacity: chapterIdx === 0 ? 0.3 : 1, pointerEvents: chapterIdx === 0 ? "none" : "auto" }}>
+                  <IconChevronLeft size={14} /> 上一章
+                </button>
+                <span className="text-xs font-medium truncate max-w-[200px]" style={{ color: "var(--text-primary)" }}>
+                  {epubData.chapters[chapterIdx]?.title || `Chapter ${chapterIdx + 1}`}
+                </span>
+                <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
+                  onClick={() => { setChapterIdx(Math.min(epubData.chapters.length - 1, chapterIdx + 1)); setPageIdx(0); }}
+                  style={{ opacity: chapterIdx >= epubData.chapters.length - 1 ? 0.3 : 1, pointerEvents: chapterIdx >= epubData.chapters.length - 1 ? "none" : "auto" }}>
+                  下一章 <IconChevronRight size={14} />
+                </button>
+              </>
+            ) : (
+              <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+                {selectedBook?.title || "Reader"}
+              </span>
+            )}
           </div>
-          {/* Chapter content */}
-          <div className="flex-1 rounded-2xl overflow-y-auto" ref={readerRef}
-            style={{
-              background: "var(--glass-bg)",
-              border: "1px solid var(--glass-border)",
-              fontSize: `${fontSize}%`,
-              lineHeight: 1.8,
-              color: "var(--text-primary)",
-            }}>
-            <div className="p-6 max-w-3xl mx-auto"
-              dangerouslySetInnerHTML={{ __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" }}
-              style={{
-                fontFamily: "'Open Sans', system-ui, sans-serif",
-                wordWrap: "break-word",
-                overflowWrap: "break-word",
-              }}
-            />
-          </div>
-          {/* Chapter list */}
-          <div className="flex items-center gap-2 overflow-x-auto py-1">
-            {epubData.chapters.map((_ch, i) => (
-              <button key={i}
-                className="px-2 py-1 rounded text-[10px] cursor-pointer flex-shrink-0 transition-colors"
-                style={i === chapterIdx
-                  ? { background: "var(--accent-blue)", color: "#fff" }
-                  : { background: "var(--hover-bg)", color: "var(--text-muted)" }}
-                onClick={() => setChapterIdx(i)}>
-                {i + 1}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {viewMode === "reader" && textFileData && (
-        /* Text/Markdown Reader */
-        <div className="flex-1 flex flex-col min-h-0 gap-2">
-          <div className="flex-1 rounded-2xl overflow-y-auto" ref={readerRef}
-            style={{
-              background: "var(--glass-bg)",
-              border: "1px solid var(--glass-border)",
-              fontSize: `${fontSize}%`,
-              lineHeight: 1.8,
-              color: "var(--text-primary)",
-            }}>
-            <div className="p-6 max-w-3xl mx-auto reader-content"
+          {/* Content area — fixed height, page navigation */}
+          <div className="flex-1 flex gap-2 min-h-0">
+            {/* Left page button */}
+            <button className="flex-shrink-0 w-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors"
+              style={{ color: "var(--text-muted)", opacity: pageIdx === 0 ? 0.2 : 0.6 }}
+              onClick={() => setPageIdx(Math.max(0, pageIdx - 1))}
+              disabled={pageIdx === 0}>
+              <IconChevronLeft size={20} />
+            </button>
+
+            {/* Page content */}
+            <div className="flex-1 rounded-2xl overflow-hidden relative" ref={readerRef}
               style={{
-                fontFamily: "'Open Sans', system-ui, sans-serif",
-                wordWrap: "break-word",
-                overflowWrap: "break-word",
+                background: "var(--glass-bg)",
+                border: "1px solid var(--glass-border)",
+                fontSize: `${fontSize}%`,
+                lineHeight: 1.8,
+                color: "var(--text-primary)",
               }}>
-              {textFileData.isMarkdown ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                  {textFileData.content}
-                </ReactMarkdown>
-              ) : (
-                <pre className="whitespace-pre-wrap" style={{ fontFamily: "inherit" }}>{textFileData.content}</pre>
-              )}
+              <div ref={contentRef} className="p-6 max-w-3xl mx-auto"
+                dangerouslySetInnerHTML={epubData ? { __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" } : undefined}
+                style={{
+                  fontFamily: "'Open Sans', system-ui, sans-serif",
+                  wordWrap: "break-word",
+                  overflowWrap: "break-word",
+                }}>
+                {textFileData && (
+                  textFileData.isMarkdown ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {textFileData.content}
+                    </ReactMarkdown>
+                  ) : (
+                    <pre className="whitespace-pre-wrap" style={{ fontFamily: "inherit" }}>{textFileData.content}</pre>
+                  )
+                )}
+              </div>
             </div>
+
+            {/* Right page button */}
+            <button className="flex-shrink-0 w-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors"
+              style={{ color: "var(--text-muted)", opacity: pageIdx >= totalPages - 1 ? 0.2 : 0.6 }}
+              onClick={() => setPageIdx(Math.min(totalPages - 1, pageIdx + 1))}
+              disabled={pageIdx >= totalPages - 1}>
+              <IconChevronRight size={20} />
+            </button>
+          </div>
+
+          {/* Bottom: chapter selector + page indicator */}
+          <div className="flex items-center justify-between px-1">
+            {/* Chapter list — simplified */}
+            {epubData && epubData.chapters.length > 1 && (
+              <select className="text-[10px] bg-transparent border-none outline-none cursor-pointer"
+                style={{ color: "var(--text-muted)" }}
+                value={chapterIdx}
+                onChange={e => { setChapterIdx(Number(e.target.value)); setPageIdx(0); }}>
+                {epubData.chapters.map((ch, i) => (
+                  <option key={i} value={i}>{i + 1}. {ch.title?.slice(0, 30) || `Chapter ${i + 1}`}</option>
+                ))}
+              </select>
+            )}
+            <span className="flex-1" />
+            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+              {pageIdx + 1} / {totalPages}
+            </span>
           </div>
         </div>
       )}
