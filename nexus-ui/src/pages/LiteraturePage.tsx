@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { searchApi, historyApi, chatApi, modelsApi, knowledgeApi, papersApi, type Paper, type HistoryRecord, type ModelConfig, type KnowledgeCard } from "../api/client";
+import { searchApi, historyApi, chatApi, modelsApi, knowledgeApi, papersApi, enhancedSearchApi, type Paper, type HistoryRecord, type ModelConfig, type KnowledgeCard } from "../api/client";
 import { IconSearch, IconChevronRight, IconSparkle, IconBookmark, IconList, IconGrid, IconUpload, IconFilter, IconGlobe, IconX } from "../components/Icons";
 
 const SOURCES = [
@@ -25,6 +25,14 @@ const SOURCE_COLORS: Record<string, { bg: string; text: string }> = {
 export default function LiteraturePage() {
   const [tab, setTab] = useState<"search" | "review" | "topic" | "history">("search");
   const [keywords, setKeywords] = useState([""]);
+  // Boolean search: operators between keyword rows
+  const [operators, setOperators] = useState<string[]>([]); // AND/OR/NOT between rows
+  const [useBoolean, setUseBoolean] = useState(false);
+  // Batch import
+  const [batchImporting, setBatchImporting] = useState(false);
+  // Smart review sections
+  const [customSections, setCustomSections] = useState(["研究背景", "研究现状", "方法对比", "研究趋势", "关键结论"]);
+  const [showSectionEditor, setShowSectionEditor] = useState(false);
   const [selectedSources, setSelectedSources] = useState(SOURCES.filter(s => s.default).map(s => s.key));
   const [results, setResults] = useState<Paper[]>([]);
   const [searching, setSearching] = useState(false);
@@ -93,20 +101,51 @@ export default function LiteraturePage() {
   }, [tab, reviewSource]);
 
   const handleSearch = async () => {
-    const query = keywords.filter(k => k.trim()).join(" ");
-    if (!query.trim()) return;
+    const validKeywords = keywords.filter(k => k.trim());
+    if (validKeywords.length === 0) return;
     setSearching(true);
     setStats("搜索中...");
     try {
-      const res = await searchApi.search(query, selectedSources);
-      setResults(res.papers);
-      setStats(`找到 ${res.count} 篇文献（已自动保存到历史记录）`);
+      let res;
+      if (useBoolean && validKeywords.length > 1) {
+        // Boolean search: build groups with operators
+        const groups = validKeywords.map((kw, i) => ({
+          keywords: kw.trim().split(/\s+/),
+          field: "all",
+          operator: i === 0 ? "AND" : (operators[i - 1] || "OR"),
+        }));
+        res = await enhancedSearchApi.search(groups, selectedSources);
+      } else {
+        const query = validKeywords.join(" ");
+        res = await searchApi.search(query, selectedSources);
+      }
+      setResults((res as any).papers || []);
+      setStats(`找到 ${(res as any).count} 篇文献（已自动保存到历史记录）`);
       setReviewPool(new Set());
       setExpandedAbstracts(new Set());
     } catch (err) {
       setStats(`搜索失败: ${err}`);
     }
     setSearching(false);
+  };
+
+  // Batch import selected results to library
+  const handleBatchImport = async () => {
+    const poolResults = reviewPool.size > 0
+      ? Array.from(reviewPool).map(i => results[i]).filter(Boolean)
+      : results;
+    if (poolResults.length === 0) {
+      alert("请先搜索文献或选择要导入的文献");
+      return;
+    }
+    setBatchImporting(true);
+    try {
+      const res = await enhancedSearchApi.batchImport(poolResults as unknown as Record<string, unknown>[]) as any;
+      alert(`导入完成：${res.imported} 篇成功，${res.skipped} 篇已存在`);
+    } catch (err) {
+      alert(`导入失败: ${err}`);
+    }
+    setBatchImporting(false);
   };
 
   const toggleSource = (key: string) => {
@@ -139,14 +178,18 @@ export default function LiteraturePage() {
 
     let prompt = "";
 
+    const sectionsText = customSections.length > 0
+      ? customSections.map((s, i) => `  ${i + 1}. ${s}`).join("\n")
+      : "  1. 研究背景\n  2. 研究现状\n  3. 方法对比\n  4. 研究趋势\n  5. 关键结论";
+
     if (reviewSource === "custom" && reviewInput.trim()) {
-      prompt = `请基于以下文献数据生成一份结构化的AI综述报告，包含：研究背景、主要发现、研究趋势、关键结论。文献数据：\n\n${reviewInput.slice(0, 4000)}`;
+      prompt = `请基于以下文献数据生成一份结构化的AI综述报告，按照以下结构撰写（使用 Markdown 二级标题）：\n${sectionsText}\n\n文献数据：\n\n${reviewInput.slice(0, 4000)}`;
     } else if (reviewSource === "kb" && selectedKbCards.length > 0) {
       const selected = kbCards.filter(c => selectedKbCards.includes(c.id));
       const paperSummaries = selected.map((c, i) =>
         `[${i + 1}] ${c.title}\n摘要: ${c.summary || "无"}\n要点: ${c.key_points?.join("; ") || "无"}`
       ).join("\n\n");
-      prompt = `请基于以下知识库文献生成一份结构化的AI综述报告，包含：研究背景、主要发现、研究趋势、关键结论。\n\n${paperSummaries}`;
+      prompt = `请基于以下知识库文献生成一份结构化的AI综述报告，按照以下结构撰写（使用 Markdown 二级标题）：\n${sectionsText}\n\n${paperSummaries}`;
     } else if (reviewSource === "search" && results.length > 0) {
       const poolResults = reviewPool.size > 0
         ? Array.from(reviewPool).map(i => results[i]).filter(Boolean)
@@ -154,7 +197,7 @@ export default function LiteraturePage() {
       const paperSummaries = poolResults.slice(0, 20).map((p, i) =>
         `[${i + 1}] ${p.title} (${p.year}) - ${p.authors?.slice(0, 3).join(", ")} | ${p.journal}\n${p.abstract?.slice(0, 200) || ""}`
       ).join("\n\n");
-      prompt = `请基于以下文献生成一份结构化的AI综述报告，包含：研究背景、主要发现、研究趋势、关键结论。\n\n${paperSummaries}`;
+      prompt = `请基于以下文献生成一份结构化的AI综述报告，按照以下结构撰写（使用 Markdown 二级标题）：\n${sectionsText}\n\n${paperSummaries}`;
     } else {
       setReviewContent("请选择数据源：搜索结果、知识库文献，或粘贴自定义数据。");
       setReviewing(false);
@@ -373,12 +416,34 @@ export default function LiteraturePage() {
               </button>
             </div>
 
+            {/* Boolean mode toggle */}
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-[10px] cursor-pointer" style={{ color: "var(--text-muted)" }}>
+                <input type="checkbox" checked={useBoolean} onChange={e => setUseBoolean(e.target.checked)} />
+                布尔检索模式 (AND/OR/NOT)
+              </label>
+            </div>
+
             {/* 多关键词行 */}
             {keywords.length > 1 && (
               <div className="space-y-2">
                 {keywords.slice(1).map((kw, i) => (
                   <div key={i + 1} className="flex gap-2 items-center">
-                    <span className="text-xs font-bold px-2" style={{ color: "var(--accent-blue)" }}>OR</span>
+                    {useBoolean ? (
+                      <select className="input-glass text-xs w-16 py-1"
+                        value={operators[i] || "OR"}
+                        onChange={e => {
+                          const next = [...operators];
+                          next[i] = e.target.value;
+                          setOperators(next);
+                        }}>
+                        <option value="AND">AND</option>
+                        <option value="OR">OR</option>
+                        <option value="NOT">NOT</option>
+                      </select>
+                    ) : (
+                      <span className="text-xs font-bold px-2" style={{ color: "var(--accent-blue)" }}>OR</span>
+                    )}
                     <input
                       className="input-glass flex-1"
                       placeholder={`关键词 ${i + 2}`}
@@ -435,6 +500,11 @@ export default function LiteraturePage() {
                   <IconUpload size={12} /> 导入 PDF
                 </button>
                 <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={handleImportPdf} />
+                {results.length > 0 && (
+                  <button className="btn-ghost text-xs flex items-center gap-1.5" onClick={handleBatchImport} disabled={batchImporting}>
+                    <IconUpload size={12} /> {batchImporting ? "导入中..." : `批量导入到文献库${reviewPool.size > 0 ? ` (${reviewPool.size})` : ""}`}
+                  </button>
+                )}
                 <button className="text-xs cursor-pointer flex items-center gap-1 transition-colors"
                   style={{ color: "var(--text-muted)" }}
                   onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-blue)")}
@@ -715,6 +785,45 @@ export default function LiteraturePage() {
                   : "请先在「关键词检索」tab 中搜索文献"}
               </p>
             )}
+
+            {/* Custom Sections Editor */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>综述结构</p>
+                <button className="text-[10px] cursor-pointer" style={{ color: "var(--accent-blue)" }}
+                  onClick={() => setShowSectionEditor(!showSectionEditor)}>
+                  {showSectionEditor ? "收起" : "自定义"}
+                </button>
+              </div>
+              {showSectionEditor ? (
+                <div className="space-y-1.5">
+                  {customSections.map((section, i) => (
+                    <div key={i} className="flex gap-1.5 items-center">
+                      <span className="text-[10px] w-4 text-center" style={{ color: "var(--text-muted)" }}>{i + 1}</span>
+                      <input className="input-glass flex-1 text-xs py-1"
+                        value={section}
+                        onChange={e => {
+                          const next = [...customSections];
+                          next[i] = e.target.value;
+                          setCustomSections(next);
+                        }} />
+                      <button className="text-[10px] cursor-pointer" style={{ color: "var(--text-muted)" }}
+                        onClick={() => setCustomSections(customSections.filter((_, j) => j !== i))}>
+                        <IconX size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  <button className="text-[10px] cursor-pointer" style={{ color: "var(--accent-blue)" }}
+                    onClick={() => setCustomSections([...customSections, "新章节"])}>
+                    + 添加章节
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                  {customSections.join(" → ")}
+                </p>
+              )}
+            </div>
 
             <button className="btn-gradient btn-click" onClick={handleReview} disabled={reviewing}>
               {reviewing ? "生成中..." : "生成综述"}

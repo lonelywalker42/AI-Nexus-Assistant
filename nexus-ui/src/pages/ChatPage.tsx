@@ -1,11 +1,16 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { chatApi, modelsApi, papersApi, type ChatSession, type ChatMessage, type ModelConfig, type PaperDetail } from "../api/client";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 // 从文本中提取关键词生成 ≤10 字标题
 function extractTitle(userMsg: string, _aiMsg: string): string {
-  // 优先从用户消息提取核心名词短语
   const text = userMsg.replace(/[@#]/g, "").trim();
-  // 尝试匹配 "请/帮我/关于...的..." 模式
   const patterns = [
     /(?:请|帮我|关于|分析|解释|什么是|如何|怎么)(.{2,8})/u,
     /^(.{2,10})[？?。.!！]/u,
@@ -17,7 +22,6 @@ function extractTitle(userMsg: string, _aiMsg: string): string {
       if (title.length >= 2) return title;
     }
   }
-  // 降级：取前 10 个中文字符或前 10 个单词字符
   const cn = text.match(/[一-鿿]{2,10}/);
   if (cn) return cn[0].slice(0, 10);
   const en = text.match(/[a-zA-Z0-9\s]{3,15}/);
@@ -37,56 +41,93 @@ function useCopyable() {
   return { copiedId, copy };
 }
 
-function renderMarkdown(md: string): string {
-  if (!md) return "";
-
-  const codeBlocks: string[] = [];
-  let result = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    const idx = codeBlocks.length;
-    codeBlocks.push(`<pre><code class="lang-${lang}">${escapeHtml(code.trim())}</code></pre>`);
-    return `__CODEBLOCK_${idx}__`;
-  });
-
-  result = result.replace(
-    /(?:^|\n)(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/g,
-    (_, header, _sep, body) => {
-      const ths = header.split("|").filter((c: string) => c.trim()).map((c: string) => `<th>${c.trim()}</th>`).join("");
-      const rows = body.trim().split("\n").map((row: string) => {
-        const tds = row.split("|").filter((c: string) => c.trim()).map((c: string) => `<td>${c.trim()}</td>`).join("");
-        return `<tr>${tds}</tr>`;
-      }).join("");
-      return `<table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`;
-    }
+// Code block component with copy button
+function CodeBlock({ language, children }: { language: string; children: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className="code-block-wrapper">
+      <div className="code-block-header">
+        <span className="code-block-lang">{language || "code"}</span>
+        <button className="code-block-copy" onClick={handleCopy}>
+          {copied ? "✓ 已复制" : "复制"}
+        </button>
+      </div>
+      <SyntaxHighlighter
+        style={oneDark}
+        language={language || "text"}
+        PreTag="div"
+        customStyle={{
+          margin: 0,
+          borderRadius: "0 0 8px 8px",
+          fontSize: "13px",
+          lineHeight: "1.6",
+          background: "rgba(15, 23, 42, 0.06)",
+        }}
+      >
+        {children}
+      </SyntaxHighlighter>
+    </div>
   );
-
-  result = result.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-  result = result.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  result = result.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  result = result.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-  result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  result = result.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  result = result.replace(/`([^`]+)`/g, '<code>$1</code>');
-  result = result.replace(/\$\$([\s\S]*?)\$\$/g, '<div class="math-block">$$$$1$$</div>');
-  result = result.replace(/\$([^$\n]+?)\$/g, '<span class="math-inline">$$$$1$$</span>');
-  result = result.replace(/^- (.+)$/gm, '<li>$1</li>');
-  result = result.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
-  result = result.replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`);
-  result = result.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
-  result = result.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>');
-  result = result.replace(/^---$/gm, '<hr>');
-  result = result.replace(/\n\n/g, '</p><p>');
-  result = result.replace(/\n/g, '<br>');
-  result = result.replace(/__CODEBLOCK_(\d+)__/g, (_, idx) => codeBlocks[parseInt(idx)]);
-
-  return result;
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+// Markdown renderer component
+function MarkdownContent({ content, isUser }: { content: string; isUser: boolean }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      components={{
+        code({ className, children, ...props }) {
+          const match = /language-(\w+)/.exec(className || "");
+          const codeStr = String(children).replace(/\n$/, "");
+          if (match) {
+            return <CodeBlock language={match[1]} children={codeStr} />;
+          }
+          return (
+            <code className="inline-code" {...props}>
+              {children}
+            </code>
+          );
+        },
+        table({ children }) {
+          return (
+            <div className="table-wrapper">
+              <table>{children}</table>
+            </div>
+          );
+        },
+        a({ href, children }) {
+          return (
+            <a href={href} target="_blank" rel="noopener noreferrer"
+              style={{ color: isUser ? "rgba(255,255,255,0.9)" : "var(--accent-blue)", textDecoration: "underline" }}>
+              {children}
+            </a>
+          );
+        },
+        blockquote({ children }) {
+          return (
+            <blockquote style={{
+              borderLeft: "3px solid var(--accent-blue)",
+              paddingLeft: "12px",
+              margin: "8px 0",
+              color: "var(--text-secondary)",
+              fontStyle: "italic",
+            }}>
+              {children}
+            </blockquote>
+          );
+        },
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 // 写作场景 prompt
@@ -104,13 +145,23 @@ const CHAT_CATEGORIES = [
   { key: "review", label: "文献综述" },
   { key: "idea", label: "IDEA" },
   { key: "research", label: "研究" },
+  { key: "discussion", label: "选题讨论" },
+];
+
+// 研究讨论结构化 prompt 模板
+const DISCUSSION_TEMPLATES = [
+  { key: "gap", label: "研究空白", prompt: "请分析该方向目前的研究空白和不足之处，指出尚未解决的关键问题。" },
+  { key: "innovation", label: "创新点", prompt: "请从方法论、应用场景、技术路线等角度，挖掘可能的创新点和突破方向。" },
+  { key: "feasibility", label: "可行性", prompt: "请评估该研究方向的技术可行性，包括所需资源、技术难度、预期周期。" },
+  { key: "related", label: "相关工作", prompt: "请推荐该方向值得重点关注的文献和研究团队。" },
 ];
 
 function detectCategory(title: string, category: string): string {
   if (category && category !== "general") return category;
   if (title.includes("综述") || title.includes("review")) return "review";
   if (title.includes("IDEA") || title.includes("想法")) return "idea";
-  if (title.includes("选题") || title.includes("研究")) return "research";
+  if (title.includes("选题") || title.includes("研究") || title.includes("讨论")) return "discussion";
+  if (title.includes("research")) return "research";
   return "general";
 }
 
@@ -205,7 +256,6 @@ export default function ChatPage() {
 
   // 快捷操作
   const handleQuickAction = async (action: string) => {
-    // 获取选中文本（如果没有则用输入框内容）
     const selectedText = window.getSelection()?.toString() || input.trim();
     if (!selectedText) {
       alert("请先选中文本或在输入框中输入内容");
@@ -214,7 +264,6 @@ export default function ChatPage() {
     const prompt = WRITING_PROMPTS[action];
     if (!prompt) return;
 
-    // 设置输入内容并发送
     const fullContent = `${prompt}\n\n${selectedText}`;
     setInput("");
     if (!activeSession) await handleNewSession();
@@ -283,7 +332,6 @@ export default function ChatPage() {
     const msg = await chatApi.addMessage(activeSession!, content);
     setMessages(prev => [...prev, msg]);
 
-    // 首次对话后自动生成标题
     const isFirstMessage = messages.length === 0;
 
     setStreaming(true);
@@ -409,16 +457,17 @@ export default function ChatPage() {
       <div className="flex-1 flex flex-col gap-3 min-w-0">
         <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>{currentSession?.title || "选择或新建对话"}</h2>
 
-        <div className="flex-1 space-y-3 overflow-y-auto">
-          {messages.map(msg => (
-            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+        <div className="flex-1 space-y-3 overflow-y-auto chat-scroll-area">
+          {messages.map((msg, msgIdx) => (
+            <div key={msg.id} className={`chat-message-enter flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              style={{ animationDelay: `${Math.min(msgIdx * 0.03, 0.3)}s` }}>
               <div className="max-w-[80%] rounded-2xl px-4 py-3 group relative"
                 style={msg.role === "user"
                   ? { background: "var(--accent-blue)", color: "#fff" }
                   : { background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }
                 }
               >
-                {/* 复制按钮 — 增大点击区域 */}
+                {/* 复制按钮 */}
                 <button
                   className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs cursor-pointer z-10"
                   style={{
@@ -430,42 +479,59 @@ export default function ChatPage() {
                 >
                   {copiedId === msg.id ? "已复制 ✓" : "复制"}
                 </button>
-                <p className="text-[10px] font-semibold mb-1 opacity-60">{msg.role === "user" ? "You" : "AI"}</p>
+                <p className="text-[10px] font-semibold mb-1.5 opacity-60">{msg.role === "user" ? "You" : "AI"}</p>
                 {msg.thinking_content && (
-                  <details className="mb-2">
-                    <summary className="text-xs cursor-pointer" style={{ color: msg.role === "user" ? "rgba(255,255,255,0.6)" : "var(--text-muted)" }}>Thinking...</summary>
-                    <p className="text-xs italic mt-1 whitespace-pre-wrap" style={{ color: msg.role === "user" ? "rgba(255,255,255,0.7)" : "var(--text-secondary)" }}>{msg.thinking_content}</p>
+                  <details className="thinking-block mb-2">
+                    <summary className="text-xs cursor-pointer flex items-center gap-1.5"
+                      style={{ color: msg.role === "user" ? "rgba(255,255,255,0.6)" : "var(--text-muted)" }}>
+                      <span className="thinking-icon">💭</span> Thinking
+                    </summary>
+                    <div className="thinking-content mt-1.5 text-xs whitespace-pre-wrap"
+                      style={{ color: msg.role === "user" ? "rgba(255,255,255,0.7)" : "var(--text-secondary)" }}>
+                      {msg.thinking_content}
+                    </div>
                   </details>
                 )}
-                <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                <div className="markdown-body text-sm">
+                  <MarkdownContent content={msg.content} isUser={msg.role === "user"} />
+                </div>
               </div>
             </div>
           ))}
 
           {streaming && (
-            <div className="flex justify-start">
+            <div className="chat-message-enter flex justify-start">
               <div className="max-w-[80%] rounded-2xl px-4 py-3 group relative" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>
-                <p className="text-[10px] font-semibold mb-1 opacity-60" style={{ color: "var(--text-secondary)" }}>AI</p>
+                <p className="text-[10px] font-semibold mb-1.5 opacity-60" style={{ color: "var(--text-secondary)" }}>AI</p>
                 {streamToolCalls.length > 0 && (
-                  <div className="mb-2 space-y-1">
+                  <div className="mb-2 space-y-1.5">
                     {streamToolCalls.map((tc, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs px-2 py-1 rounded-lg"
+                      <div key={i} className="tool-call-item flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg"
                         style={{ background: "rgba(59,130,246,0.08)", color: "var(--accent-blue)" }}>
-                        <span>🔍</span>
-                        <span className="font-medium">{tc.query}</span>
-                        {!tc.result && <span className="animate-pulse ml-auto">搜索中...</span>}
-                        {tc.result && <span className="ml-auto" style={{ color: "var(--text-muted)" }}>✓</span>}
+                        <span className="tool-call-icon">{tc.result ? "✅" : "🔍"}</span>
+                        <span className="font-medium truncate flex-1">{tc.query}</span>
+                        {!tc.result && <span className="stream-typing-dots">搜索中</span>}
                       </div>
                     ))}
                   </div>
                 )}
                 {streamThinking && (
-                  <details open className="mb-2">
-                    <summary className="text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>Thinking...</summary>
-                    <p className="text-xs italic mt-1 whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>{streamThinking}</p>
+                  <details open className="thinking-block mb-2">
+                    <summary className="text-xs cursor-pointer flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
+                      <span className="thinking-icon">💭</span> Thinking
+                    </summary>
+                    <div className="thinking-content mt-1.5 text-xs whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>
+                      {streamThinking}
+                    </div>
                   </details>
                 )}
-                <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderMarkdown(streamContent || (streamToolCalls.length ? "" : "...")) }} />
+                <div className="markdown-body text-sm">
+                  {streamContent ? (
+                    <MarkdownContent content={streamContent} isUser={false} />
+                  ) : streamToolCalls.length === 0 ? (
+                    <span className="stream-cursor">▊</span>
+                  ) : null}
+                </div>
               </div>
             </div>
           )}
@@ -474,7 +540,23 @@ export default function ChatPage() {
         </div>
 
         {/* 快捷操作 */}
-        <div className="flex gap-2 text-xs">
+        <div className="flex gap-2 text-xs flex-wrap">
+          {/* 研究讨论模板（仅在讨论类会话中显示） */}
+          {currentSession && detectCategory(currentSession.title, currentSession.category) === "discussion" && (
+            <>
+              {DISCUSSION_TEMPLATES.map(t => (
+                <button key={t.key} className="px-3 py-1 rounded-full transition-colors cursor-pointer"
+                  style={{ background: "rgba(59,130,246,0.08)", color: "var(--accent-blue)" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(59,130,246,0.15)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "rgba(59,130,246,0.08)")}
+                  onClick={() => {
+                    setInput(prev => prev ? `${prev}\n${t.prompt}` : t.prompt);
+                  }}
+                >{t.label}</button>
+              ))}
+              <span className="w-px h-5 flex-shrink-0" style={{ background: "var(--border-color)" }} />
+            </>
+          )}
           {[
             { key: "polish", label: "润色" },
             { key: "translate", label: "翻译" },
@@ -541,7 +623,11 @@ export default function ChatPage() {
               }}
             />
             <button className="btn-gradient btn-click flex-shrink-0" onClick={handleSend} disabled={streaming}>
-              {streaming ? "..." : "发送"}
+              {streaming ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="stream-typing-dots">生成中</span>
+                </span>
+              ) : "发送"}
             </button>
           </div>
         </div>

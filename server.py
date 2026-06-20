@@ -72,6 +72,7 @@ try:
     def _auto_migrate():
         import sqlite3
         try:
+            from app.utils.paths import get_data_dir
             db_path = get_data_dir() / "nexus.db"
             if not db_path.exists():
                 return
@@ -1892,6 +1893,330 @@ def generate_card_from_text(data: dict):
         return {"id": card.id, "title": card.title, "tags": ai_data.get("tags", [])}
     finally:
         db.close()
+
+
+# ── 写作工作台 API ──
+
+@app.get("/api/writing/documents")
+def list_writing_documents(document_type: str = None):
+    """列出写作文档"""
+    from app.services.writing_service import list_documents
+    db = get_session()
+    try:
+        docs = list_documents(db, document_type)
+        return {"documents": [{
+            "id": d.id, "title": d.title, "document_type": d.document_type,
+            "word_count": d.word_count, "created_at": d.created_at.isoformat(),
+            "updated_at": d.updated_at.isoformat(),
+        } for d in docs]}
+    finally:
+        db.close()
+
+
+@app.post("/api/writing/documents")
+def create_writing_document(data: dict):
+    """创建写作文档"""
+    from app.services.writing_service import create_document
+    db = get_session()
+    try:
+        doc = create_document(
+            db,
+            title=data.get("title", "无标题文档"),
+            content=data.get("content", ""),
+            document_type=data.get("document_type", "paper"),
+            linked_paper_ids=data.get("linked_paper_ids", []),
+        )
+        return {"id": doc.id, "title": doc.title}
+    finally:
+        db.close()
+
+
+@app.get("/api/writing/documents/{doc_id}")
+def get_writing_document(doc_id: str):
+    """获取写作文档"""
+    from app.services.writing_service import get_document
+    db = get_session()
+    try:
+        doc = get_document(db, doc_id)
+        if not doc:
+            return {"error": "Document not found"}
+        import json
+        return {
+            "id": doc.id, "title": doc.title, "content": doc.content,
+            "outline": json.loads(doc.outline or "[]"),
+            "linked_paper_ids": json.loads(doc.linked_paper_ids or "[]"),
+            "document_type": doc.document_type, "word_count": doc.word_count,
+            "created_at": doc.created_at.isoformat(),
+            "updated_at": doc.updated_at.isoformat(),
+        }
+    finally:
+        db.close()
+
+
+@app.patch("/api/writing/documents/{doc_id}")
+def update_writing_document(doc_id: str, data: dict):
+    """更新写作文档"""
+    from app.services.writing_service import update_document
+    db = get_session()
+    try:
+        doc = update_document(db, doc_id, **data)
+        if not doc:
+            return {"error": "Document not found"}
+        return {"id": doc.id, "title": doc.title, "word_count": doc.word_count}
+    finally:
+        db.close()
+
+
+@app.delete("/api/writing/documents/{doc_id}")
+def delete_writing_document(doc_id: str):
+    """删除写作文档"""
+    from app.services.writing_service import delete_document
+    db = get_session()
+    try:
+        ok = delete_document(db, doc_id)
+        return {"success": ok}
+    finally:
+        db.close()
+
+
+@app.post("/api/writing/documents/{doc_id}/link-paper")
+def link_paper_to_document(doc_id: str, data: dict):
+    """关联文献到文档"""
+    from app.services.writing_service import link_paper
+    db = get_session()
+    try:
+        doc = link_paper(db, doc_id, data.get("paper_id", ""))
+        if not doc:
+            return {"error": "Document not found"}
+        return {"id": doc.id, "linked_paper_ids": json.loads(doc.linked_paper_ids)}
+    finally:
+        db.close()
+
+
+@app.post("/api/writing/documents/{doc_id}/ai")
+def writing_ai_operation(doc_id: str, data: dict):
+    """写作 AI 操作（润色/翻译/扩写/缩写）"""
+    from app.services.writing_service import get_document, update_document
+    db = get_session()
+    try:
+        doc = get_document(db, doc_id)
+        if not doc:
+            return {"error": "Document not found"}
+
+        operation = data.get("operation", "polish")  # polish/translate/expand/condense/latex
+        text = data.get("text", doc.content)
+        if not text:
+            return {"error": "No text to process"}
+
+        prompts = {
+            "polish": "请对以下学术文本进行润色，保持原意的同时提升语言表达的学术性和流畅度。使用准确的学术术语，保持逻辑连贯，避免口语化表达。只返回润色后的文本，不要解释。",
+            "translate": "请将以下文本翻译为学术英语/中文（根据源语言自动判断方向）。使用准确的学术术语，保持句式地道。只返回翻译后的文本，不要解释。",
+            "expand": "请将以下文本进行学术性扩写，补充必要的细节、论证和过渡，使论述更加完整和严谨。只返回扩写后的文本，不要解释。",
+            "condense": "请将以下文本精简，保留核心观点和关键信息，去除冗余表述。只返回精简后的文本，不要解释。",
+            "latex": "请将以下文本转换为 LaTeX 格式。数学公式转为 $...$ 或 \\[...\\]，结构转为 section/subsection，列表转为 enumerate/itemize。只返回 LaTeX 代码，不要解释。",
+        }
+
+        system_prompt = prompts.get(operation, prompts["polish"])
+        ai = get_ai()
+        result = ai.chat([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text[:8000]}
+        ])
+
+        return {"result": result.get("content", ""), "operation": operation}
+    finally:
+        db.close()
+
+
+# ── 增强的文献检索 API ──
+
+@app.post("/api/search/enhanced")
+def enhanced_search(req: dict):
+    """布尔逻辑搜索"""
+    groups = req.get("groups", [])
+    sources = req.get("sources", ["openalex", "arxiv", "semantic_scholar"])
+    max_results = req.get("max_results", 50)
+
+    if not groups:
+        return {"papers": [], "count": 0}
+
+    # Build boolean query string
+    query_parts = []
+    for g in groups:
+        keywords = g.get("keywords", [])
+        field = g.get("field", "all")
+        op = g.get("operator", "AND")
+        if not keywords:
+            continue
+        part = " ".join(keywords)
+        if op == "NOT":
+            query_parts.append(f"NOT ({part})")
+        else:
+            query_parts.append(f"({part})")
+
+    # Join with AND between groups
+    query = " AND ".join(query_parts)
+    if not query:
+        return {"papers": [], "count": 0}
+
+    engine = get_search_engine()
+    results = engine.search(query, sources=sources, max_results=max_results)
+    return {"papers": results, "count": len(results), "query": query}
+
+
+@app.post("/api/papers/batch-import")
+def batch_import_papers(data: dict):
+    """批量导入文献（从搜索结果）"""
+    papers_data = data.get("papers", [])
+    db = get_session()
+    try:
+        imported = 0
+        skipped = 0
+        for p in papers_data:
+            # Check for duplicate by title
+            title = p.get("title", "")
+            if not title:
+                continue
+            existing = db.query(Paper).filter(Paper.title == title).first()
+            if existing:
+                skipped += 1
+                continue
+            from app.services import paper_service
+            paper_service.create_from_search(db, p)
+            imported += 1
+        return {"imported": imported, "skipped": skipped}
+    finally:
+        db.close()
+
+
+# ── 增强的综述生成 API ──
+
+@app.post("/api/reviews/smart-generate")
+def smart_review_generate(data: dict):
+    """智能综述生成（支持自定义结构）"""
+    paper_ids = data.get("paper_ids", [])
+    title = data.get("title", "文献综述")
+    sections = data.get("sections", ["研究背景", "研究现状", "方法对比", "研究趋势", "关键结论"])
+
+    db = get_session()
+    try:
+        papers = db.query(Paper).filter(Paper.id.in_(paper_ids)).all()
+        if not papers:
+            return {"error": "No papers found"}
+
+        # Build paper context
+        paper_context = []
+        for i, p in enumerate(papers, 1):
+            summary = p.ai_summary or p.abstract[:200] if p.abstract else ""
+            authors = json.loads(p.authors) if p.authors else []
+            author_str = ", ".join(authors[:3]) + ("等" if len(authors) > 3 else "")
+            paper_context.append(f"[{i}] {p.title}\n作者: {author_str}\n年份: {p.year}\n期刊: {p.journal or 'N/A'}\n摘要: {summary}")
+
+        papers_text = "\n\n".join(paper_context)
+        sections_text = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(sections))
+
+        prompt = f"""请基于以下文献，撰写一篇结构化的综述文章。
+
+文献列表：
+{papers_text}
+
+综述标题：{title}
+
+请按照以下结构撰写（使用 Markdown 二级标题）：
+{sections_text}
+
+要求：
+1. 每个部分都要引用具体文献，使用 [数字] 格式标注
+2. 保持学术性语言，逻辑清晰
+3. 在"研究趋势"部分要指出未来可能的研究方向
+4. 总字数控制在 2000-4000 字"""
+
+        ai = get_ai()
+        full_content = ""
+        for chunk in ai.stream_chat([
+            {"role": "system", "content": "你是一个专业的学术综述撰写助手。"},
+            {"role": "user", "content": prompt}
+        ]):
+            if chunk.get("type") == "content":
+                full_content += chunk.get("data", "")
+
+        # Save review
+        from app.models.review import Review
+        review = Review(title=title, content=full_content, paper_ids=json.dumps(paper_ids))
+        db.add(review)
+        db.commit()
+        db.refresh(review)
+
+        return {"id": review.id, "title": title, "content": full_content}
+    finally:
+        db.close()
+
+
+# ── 知识库增强导入 API ──
+
+@app.post("/api/knowledge/import/url")
+def import_from_url(data: dict):
+    """从网页 URL 导入知识卡片"""
+    url = data.get("url", "")
+    if not url:
+        return {"error": "No URL provided"}
+
+    try:
+        import httpx
+        resp = httpx.get(url, timeout=30, follow_redirects=True, proxy=None)
+        resp.raise_for_status()
+        html = resp.text
+
+        # Simple content extraction
+        import re
+        # Remove script/style tags
+        html = re.sub(r'<script[^>]*>[\s\S]*?</script>', '', html, flags=re.IGNORECASE)
+        html = re.sub(r'<style[^>]*>[\s\S]*?</style>', '', html, flags=re.IGNORECASE)
+        # Extract title
+        title_match = re.search(r'<title[^>]*>([^<]+)</title>', html, re.IGNORECASE)
+        title = title_match.group(1).strip() if title_match else url
+        # Extract text content
+        text = re.sub(r'<[^>]+>', ' ', html)
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        if len(text) < 50:
+            return {"error": "Could not extract meaningful content"}
+
+        # Use AI to generate card
+        ai = get_ai()
+        result = ai.chat([
+            {"role": "system", "content": "你是一个知识管理助手。请从以下网页内容中提取：1) 标题 2) 简短摘要(200字以内) 3) 3-5个关键点 4) 5个标签。用JSON格式返回：{\"title\": \"...\", \"summary\": \"...\", \"key_points\": [...], \"tags\": [...]}"},
+            {"role": "user", "content": text[:3000]}
+        ])
+
+        json_match = re.search(r'\{[\s\S]*\}', result.get("content", ""))
+        ai_data = {}
+        if json_match:
+            try:
+                ai_data = json.loads(json_match.group())
+            except:
+                pass
+
+        if not ai_data:
+            ai_data = {"title": title[:60], "summary": text[:300], "key_points": [], "tags": []}
+
+        db = get_session()
+        try:
+            card = KnowledgeCard(
+                title=ai_data.get("title", title[:60])[:200],
+                summary=ai_data.get("summary", text[:300])[:1000],
+                key_points=json.dumps(ai_data.get("key_points", []), ensure_ascii=False),
+                source_type="web",
+                user_notes=f"来源: {url}",
+            )
+            db.add(card)
+            db.commit()
+            db.refresh(card)
+            return {"id": card.id, "title": card.title}
+        finally:
+            db.close()
+    except Exception as e:
+        return {"error": str(e)}
 
 
 if __name__ == "__main__":

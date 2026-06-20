@@ -1,18 +1,139 @@
 import { useState, useEffect, useRef } from "react";
 import { IconBookOpen, IconBook, IconSearch, IconFolder, IconArrowLeft, IconChevronLeft, IconChevronRight } from "../components/Icons";
+import JSZip from "jszip";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 
-// epubjs for EPUB rendering
-let ePub: any = null;
-async function loadEpub() {
-  if (ePub) return ePub;
-  try {
-    const mod = await import("epubjs");
-    ePub = mod.default || mod;
-    return ePub;
-  } catch (err) {
-    console.error("Failed to load epubjs:", err);
-    return null;
+// EPUB parser using JSZip (no iframe/blob URL issues)
+interface EpubChapter {
+  title: string;
+  content: string; // HTML content
+}
+
+interface EpubData {
+  title: string;
+  author: string;
+  description: string;
+  coverUrl: string | null;
+  chapters: EpubChapter[];
+}
+
+async function parseEpub(file: File): Promise<EpubData> {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+
+  // 1. Find container.xml to locate OPF
+  const containerXml = await zip.file("META-INF/container.xml")?.async("text");
+  if (!containerXml) throw new Error("Invalid EPUB: no container.xml");
+
+  const opfPathMatch = containerXml.match(/full-path="([^"]+)"/);
+  if (!opfPathMatch) throw new Error("Invalid EPUB: no OPF path");
+  const opfPath = opfPathMatch[1];
+  const opfDir = opfPath.substring(0, opfPath.lastIndexOf("/") + 1);
+
+  // 2. Parse OPF
+  const opfContent = await zip.file(opfPath)?.async("text");
+  if (!opfContent) throw new Error("Invalid EPUB: no OPF file");
+
+  // Extract metadata
+  const titleMatch = opfContent.match(/<dc:title[^>]*>([^<]+)<\/dc:title>/);
+  const authorMatch = opfContent.match(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/);
+  const descMatch = opfContent.match(/<dc:description[^>]*>([^<]+)<\/dc:description>/);
+
+  // Extract cover image
+  let coverUrl: string | null = null;
+  const coverMetaMatch = opfContent.match(/name="cover"\s+content="([^"]+)"/);
+  if (coverMetaMatch) {
+    const coverId = coverMetaMatch[1];
+    const coverItemMatch = opfContent.match(new RegExp(`id="${coverId}"[^>]*href="([^"]+)"`));
+    if (coverItemMatch) {
+      const coverPath = opfDir + coverItemMatch[1];
+      const coverFile = zip.file(coverPath);
+      if (coverFile) {
+        const coverBuf = await coverFile.async("arraybuffer");
+        const ext = coverPath.split(".").pop()?.toLowerCase() || "jpg";
+        const mime = ext === "png" ? "image/png" : "image/jpeg";
+        coverUrl = `data:${mime};base64,${btoa(String.fromCharCode(...new Uint8Array(coverBuf)))}`;
+      }
+    }
   }
+
+  // Extract spine (reading order) and manifest — attribute-order agnostic
+  const manifestItems: Record<string, string> = {};
+  const itemTagRegex = /<item\s[^>]*?\/>/g;
+  let m;
+  while ((m = itemTagRegex.exec(opfContent)) !== null) {
+    const tag = m[0];
+    const idMatch = tag.match(/\bid="([^"]+)"/);
+    const hrefMatch = tag.match(/\bhref="([^"]+)"/);
+    if (idMatch && hrefMatch) {
+      manifestItems[idMatch[1]] = opfDir + hrefMatch[1];
+    }
+  }
+
+  const spineIds: string[] = [];
+  const spineRegex = /<itemref\s[^>]*?idref="([^"]+)"[^>]*?\/?>/g;
+  while ((m = spineRegex.exec(opfContent)) !== null) {
+    spineIds.push(m[1]);
+  }
+
+  // 3. Load chapters
+  const chapters: EpubChapter[] = [];
+  for (const id of spineIds) {
+    const href = manifestItems[id];
+    if (!href) continue;
+    const ext = href.split(".").pop()?.toLowerCase();
+    if (ext !== "xhtml" && ext !== "html" && ext !== "htm") continue;
+
+    const file = zip.file(href);
+    if (!file) continue;
+
+    let html = await file.async("text");
+
+    // Extract chapter title from <title> or first <h1>-<h3>
+    const titleTagMatch = html.match(/<title[^>]*>([^<]+)<\/title>/);
+    const hMatch = html.match(/<h[1-3][^>]*>([^<]+)<\/h[1-3]>/);
+    const chapterTitle = hMatch?.[1] || titleTagMatch?.[1] || `Chapter ${chapters.length + 1}`;
+
+    // Convert relative image paths to data URLs
+    const imgRegex = /src="([^"]+)"/g;
+    let imgMatch;
+    const imgReplacements: [string, string][] = [];
+    while ((imgMatch = imgRegex.exec(html)) !== null) {
+      const imgSrc = imgMatch[1];
+      if (imgSrc.startsWith("http") || imgSrc.startsWith("data:")) continue;
+      const imgPath = opfDir + imgSrc;
+      const imgFile = zip.file(imgPath);
+      if (imgFile) {
+        try {
+          const imgBuf = await imgFile.async("arraybuffer");
+          const imgExt = imgPath.split(".").pop()?.toLowerCase() || "jpg";
+          const imgMime = imgExt === "png" ? "image/png" : imgExt === "gif" ? "image/gif" : "image/jpeg";
+          const imgB64 = btoa(String.fromCharCode(...new Uint8Array(imgBuf)));
+          imgReplacements.push([imgSrc, `data:${imgMime};base64,${imgB64}`]);
+        } catch {}
+      }
+    }
+    for (const [orig, dataUrl] of imgReplacements) {
+      html = html.replace(new RegExp(`src="${orig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'g'), `src="${dataUrl}"`);
+    }
+
+    // Strip <html>, <head>, <body> tags to get just the content
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    const chapterContent = bodyMatch ? bodyMatch[1] : html;
+
+    chapters.push({ title: chapterTitle, content: chapterContent });
+  }
+
+  return {
+    title: titleMatch?.[1] || file.name.replace(/\.epub$/i, ""),
+    author: authorMatch?.[1] || "Unknown",
+    description: descMatch?.[1] || "",
+    coverUrl,
+    chapters,
+  };
 }
 
 interface Book {
@@ -28,6 +149,12 @@ interface Book {
 }
 
 type ViewMode = "shelf" | "detail" | "reader";
+
+// Text/Markdown file data for reader
+interface TextFileData {
+  content: string;
+  isMarkdown: boolean;
+}
 
 // IndexedDB helpers — Promise-based, lazy loading
 const DB_NAME = "nexus-books";
@@ -90,20 +217,12 @@ async function loadBookFile(name: string): Promise<File | null> {
 async function extractBookMetadata(book: Book): Promise<Partial<Book>> {
   if (!book.name.toLowerCase().endsWith(".epub")) return {};
   try {
-    const epubLib = await loadEpub();
-    if (!epubLib) return {};
-    const url = URL.createObjectURL(book.file);
-    const bookObj = epubLib(url);
-    const metadata = await bookObj.loaded.metadata;
-    const coverUrl = await bookObj.coverUrl();
-    const desc = metadata.description || "";
-    bookObj.destroy();
-    URL.revokeObjectURL(url);
+    const epub = await parseEpub(book.file);
     return {
-      title: metadata.title || undefined,
-      author: metadata.creator || undefined,
-      description: typeof desc === "string" ? desc.slice(0, 500) : undefined,
-      coverUrl: coverUrl || undefined,
+      title: epub.title || undefined,
+      author: epub.author || undefined,
+      description: epub.description ? epub.description.slice(0, 500) : undefined,
+      coverUrl: epub.coverUrl || undefined,
     };
   } catch { return {}; }
 }
@@ -128,8 +247,9 @@ export default function BookshelfPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("shelf");
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [rendition, setRendition] = useState<any>(null);
-  const [currentPage, setCurrentPage] = useState("");
+  const [epubData, setEpubData] = useState<EpubData | null>(null);
+  const [textFileData, setTextFileData] = useState<TextFileData | null>(null);
+  const [chapterIdx, setChapterIdx] = useState(0);
   const [fontSize, setFontSize] = useState(100);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -177,135 +297,66 @@ export default function BookshelfPage() {
     setViewMode("detail");
   };
 
-  const openReader = () => {
+  const openReader = async () => {
     if (!selectedBook) return;
-    if (!selectedBook.name.toLowerCase().endsWith(".epub")) {
-      alert("Only EPUB format is supported for the built-in reader.");
-      return;
-    }
-    setViewMode("reader");
-  };
 
-  // Initialize EPUB reader when viewMode changes to "reader"
-  useEffect(() => {
-    if (viewMode !== "reader" || !selectedBook || !selectedBook.file) return;
-    let active = true;
-    let rend: any = null;
-    let resizeObs: ResizeObserver | null = null;
-
-    const initReader = async () => {
-      // Step 1: Wait for container to have stable dimensions via ResizeObserver
-      const container = readerRef.current;
-      if (!container) return;
-
-      await new Promise<void>((resolve) => {
-        if (container.offsetWidth > 100 && container.offsetHeight > 50) {
-          resolve();
-          return;
-        }
-        resizeObs = new ResizeObserver((entries) => {
-          for (const entry of entries) {
-            if (entry.contentRect.width > 100 && entry.contentRect.height > 50) {
-              resizeObs?.disconnect();
-              resizeObs = null;
-              resolve();
-            }
-          }
-        });
-        resizeObs.observe(container);
-        // Timeout fallback
-        setTimeout(() => { resizeObs?.disconnect(); resizeObs = null; resolve(); }, 3000);
-      });
-
-      if (!active || !readerRef.current) return;
-
-      // Step 2: Load epubjs library
-      const epubLib = await loadEpub();
-      if (!epubLib) {
-        if (readerRef.current) {
-          readerRef.current.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);"><p>Failed to load EPUB library</p></div>';
-        }
+    // Load file from IndexedDB if placeholder (fixes no-content bug)
+    let book = selectedBook;
+    if (!book.file) {
+      const file = await loadBookFile(book.name);
+      if (file) {
+        book = { ...book, file };
+        setBooks(prev => prev.map(b => b.name === book.name ? book : b));
+        setSelectedBook(book);
+      } else {
+        alert("无法加载文件，请重新导入书籍文件夹。");
         return;
       }
-      if (!active || !readerRef.current) return;
+    }
 
-      // Step 3: Create book from ArrayBuffer directly (avoids blob URL iframe issues in Tauri)
+    const nameLower = book.name.toLowerCase();
+
+    if (nameLower.endsWith(".epub")) {
+      // Parse EPUB using JSZip
       try {
-        const buf = await selectedBook.file.arrayBuffer();
-        if (!active) return;
-
-        const book = epubLib(buf);
-        const c = readerRef.current;
-        const w = c.offsetWidth || 600;
-        const h = c.offsetHeight || 500;
-
-        // Step 4: Render with paginated flow and auto spread
-        rend = book.renderTo(c, { width: w, height: h, spread: "auto" });
-
-        // Apply theme to make text readable and adaptive
-        rend.themes.default({
-          "body": {
-            "color": "var(--text-primary, #1e293b)",
-            "font-family": "'Open Sans', system-ui, -apple-system, sans-serif",
-            "line-height": "1.7",
-            "padding": "0 16px",
-          },
-          "p": { "margin": "0.5em 0" },
-          "a": { "color": "var(--accent-blue, #3b82f6)" },
-        });
-
-        const savedCfi = localStorage.getItem(`book-progress-${selectedBook.name}`);
-        await rend.display(savedCfi || undefined);
-
-        rend.on("relocated", (location: any) => {
-          if (location?.start?.cfi) {
-            localStorage.setItem(`book-progress-${selectedBook.name}`, location.start.cfi);
-            setCurrentPage(location.start.displayed?.page || "");
-          }
-        });
-
-        // Resize rendition when container resizes
-        const resizeHandler = () => {
-          if (rend && c.offsetWidth > 0) {
-            rend.resize(c.offsetWidth, c.offsetHeight);
-          }
-        };
-        window.addEventListener("resize", resizeHandler);
-        if (active) setRendition(rend);
-      } catch (err) {
-        console.error("EPUB render error:", err);
-        // Fallback: show error message in the container
-        if (readerRef.current) {
-          readerRef.current.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);"><p>Failed to load EPUB: ${err}</p></div>`;
+        const data = await parseEpub(book.file);
+        if (data.chapters.length === 0) {
+          alert("未能从 EPUB 中提取到章节内容，文件可能格式异常。");
+          return;
         }
+        setEpubData(data);
+        setTextFileData(null);
+        setChapterIdx(0);
+        setViewMode("reader");
+      } catch (err) {
+        console.error("EPUB parse error:", err);
+        alert("Failed to parse EPUB: " + err);
       }
-    };
-
-    // Use requestAnimationFrame to ensure DOM is painted before measuring
-    const raf = requestAnimationFrame(() => {
-      setTimeout(initReader, 50);
-    });
-
-    return () => {
-      active = false;
-      cancelAnimationFrame(raf);
-      if (resizeObs) resizeObs.disconnect();
-      if (rend) { try { rend.destroy(); } catch {} setRendition(null); }
-    };
-  }, [viewMode, selectedBook]);
+    } else if (nameLower.endsWith(".txt") || nameLower.endsWith(".md")) {
+      // Read text/markdown file
+      try {
+        const content = await book.file.text();
+        setTextFileData({ content, isMarkdown: nameLower.endsWith(".md") });
+        setEpubData(null);
+        setViewMode("reader");
+      } catch (err) {
+        console.error("Text file read error:", err);
+        alert("Failed to read file: " + err);
+      }
+    } else {
+      alert("内置阅读器支持 EPUB、TXT 和 MD 格式。");
+    }
+  };
 
   const closeReader = () => {
-    if (rendition) {
-      rendition.destroy();
-      setRendition(null);
-    }
+    setEpubData(null);
+    setTextFileData(null);
+    setChapterIdx(0);
     setViewMode("detail");
   };
 
   const handleFontSize = (delta: number) => {
-    const newSize = Math.max(80, Math.min(200, fontSize + delta));
-    setFontSize(newSize);
-    if (rendition) rendition.themes.fontSize(`${newSize}%`);
+    setFontSize(prev => Math.max(80, Math.min(200, prev + delta)));
   };
 
   const filteredBooks = searchQuery
@@ -413,7 +464,7 @@ export default function BookshelfPage() {
                   </p>
                 )}
                 <div className="flex gap-2 pt-2">
-                  {selectedBook.name.toLowerCase().endsWith(".epub") && (
+                  {/\.(epub|txt|md)$/i.test(selectedBook.name) && (
                     <button className="btn-gradient btn-click text-xs" onClick={openReader}>Read</button>
                   )}
                   <button className="btn-ghost text-xs" onClick={() => { setViewMode("shelf"); setSelectedBook(null); }}>Back</button>
@@ -424,18 +475,84 @@ export default function BookshelfPage() {
         </div>
       )}
 
-      {viewMode === "reader" && (
-        /* EPUB Reader */
+      {viewMode === "reader" && epubData && (
+        /* EPUB Reader — direct HTML rendering (no iframe) */
         <div className="flex-1 flex flex-col min-h-0 gap-2">
-          <div ref={readerRef} className="flex-1 rounded-2xl overflow-hidden" style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)", minHeight: "400px" }} />
-          <div className="flex items-center justify-between py-1">
-            <button className="btn-ghost text-xs py-1.5" onClick={() => rendition?.prev()}>
+          {/* Chapter nav bar */}
+          <div className="flex items-center justify-between px-1">
+            <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
+              onClick={() => setChapterIdx(Math.max(0, chapterIdx - 1))}
+              style={{ opacity: chapterIdx === 0 ? 0.3 : 1, pointerEvents: chapterIdx === 0 ? "none" : "auto" }}>
               <IconChevronLeft size={14} /> Prev
             </button>
-            <span className="text-xs" style={{ color: "var(--text-muted)" }}>{currentPage}</span>
-            <button className="btn-ghost text-xs py-1.5" onClick={() => rendition?.next()}>
+            <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+              {epubData.chapters[chapterIdx]?.title || `Chapter ${chapterIdx + 1}`}
+            </span>
+            <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
+              onClick={() => setChapterIdx(Math.min(epubData.chapters.length - 1, chapterIdx + 1))}
+              style={{ opacity: chapterIdx >= epubData.chapters.length - 1 ? 0.3 : 1, pointerEvents: chapterIdx >= epubData.chapters.length - 1 ? "none" : "auto" }}>
               Next <IconChevronRight size={14} />
             </button>
+          </div>
+          {/* Chapter content */}
+          <div className="flex-1 rounded-2xl overflow-y-auto" ref={readerRef}
+            style={{
+              background: "var(--glass-bg)",
+              border: "1px solid var(--glass-border)",
+              fontSize: `${fontSize}%`,
+              lineHeight: 1.8,
+              color: "var(--text-primary)",
+            }}>
+            <div className="p-6 max-w-3xl mx-auto"
+              dangerouslySetInnerHTML={{ __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" }}
+              style={{
+                fontFamily: "'Open Sans', system-ui, sans-serif",
+                wordWrap: "break-word",
+                overflowWrap: "break-word",
+              }}
+            />
+          </div>
+          {/* Chapter list */}
+          <div className="flex items-center gap-2 overflow-x-auto py-1">
+            {epubData.chapters.map((_ch, i) => (
+              <button key={i}
+                className="px-2 py-1 rounded text-[10px] cursor-pointer flex-shrink-0 transition-colors"
+                style={i === chapterIdx
+                  ? { background: "var(--accent-blue)", color: "#fff" }
+                  : { background: "var(--hover-bg)", color: "var(--text-muted)" }}
+                onClick={() => setChapterIdx(i)}>
+                {i + 1}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {viewMode === "reader" && textFileData && (
+        /* Text/Markdown Reader */
+        <div className="flex-1 flex flex-col min-h-0 gap-2">
+          <div className="flex-1 rounded-2xl overflow-y-auto" ref={readerRef}
+            style={{
+              background: "var(--glass-bg)",
+              border: "1px solid var(--glass-border)",
+              fontSize: `${fontSize}%`,
+              lineHeight: 1.8,
+              color: "var(--text-primary)",
+            }}>
+            <div className="p-6 max-w-3xl mx-auto reader-content"
+              style={{
+                fontFamily: "'Open Sans', system-ui, sans-serif",
+                wordWrap: "break-word",
+                overflowWrap: "break-word",
+              }}>
+              {textFileData.isMarkdown ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                  {textFileData.content}
+                </ReactMarkdown>
+              ) : (
+                <pre className="whitespace-pre-wrap" style={{ fontFamily: "inherit" }}>{textFileData.content}</pre>
+              )}
+            </div>
           </div>
         </div>
       )}

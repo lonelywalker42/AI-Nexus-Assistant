@@ -401,3 +401,75 @@ export const historyApi = {
     request<{ id: string }>("/api/history", { method: "POST", body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/api/history/${id}`, { method: "DELETE" }),
 };
+
+// ── Writing (写作工作台) ──────────────────────────────────────
+
+export interface WritingDocument {
+  id: string;
+  title: string;
+  content: string;
+  outline: string[];
+  linked_paper_ids: string[];
+  document_type: string;
+  word_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export const writingApi = {
+  list: (document_type?: string) => {
+    const p = document_type ? `?document_type=${document_type}` : "";
+    request<{ documents: WritingDocument[] }>(`/api/writing/documents${p}`);
+  },
+  get: (id: string) => request<WritingDocument>(`/api/writing/documents/${id}`),
+  create: (data: { title?: string; content?: string; document_type?: string }) =>
+    request<{ id: string }>("/api/writing/documents", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<WritingDocument>) =>
+    request<{ id: string; word_count: number }>(`/api/writing/documents/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: (id: string) => request<{ success: boolean }>(`/api/writing/documents/${id}`, { method: "DELETE" }),
+  linkPaper: (docId: string, paperId: string) =>
+    request<{ id: string; linked_paper_ids: string[] }>(`/api/writing/documents/${docId}/link-paper`, { method: "POST", body: JSON.stringify({ paper_id: paperId }) }),
+  aiOperation: (docId: string, operation: string, text?: string) =>
+    request<{ result: string; operation: string }>(`/api/writing/documents/${docId}/ai`, { method: "POST", body: JSON.stringify({ operation, text }) }),
+};
+
+// ── Enhanced Search (布尔检索) ────────────────────────────────
+
+export interface SearchGroup {
+  keywords: string[];
+  field: string; // title/abstract/all
+  operator: string; // AND/OR/NOT
+}
+
+export const enhancedSearchApi = {
+  search: (groups: SearchGroup[], sources?: string[], max_results?: number) =>
+    request<{ papers: Record<string, unknown>[]; count: number; query: string }>("/api/search/enhanced", {
+      method: "POST",
+      body: JSON.stringify({ groups, sources, max_results }),
+    }),
+  batchImport: (papers: Record<string, unknown>[]) =>
+    request<{ imported: number; skipped: number }>("/api/papers/batch-import", {
+      method: "POST",
+      body: JSON.stringify({ papers }),
+    }),
+};
+
+// ── Smart Review (智能综述) ───────────────────────────────────
+
+export const smartReviewApi = {
+  generate: (paperIds: string[], title?: string, sections?: string[]) =>
+    request<{ id: string; title: string; content: string }>("/api/reviews/smart-generate", {
+      method: "POST",
+      body: JSON.stringify({ paper_ids: paperIds, title: title || "文献综述", sections }),
+    }),
+};
+
+// ── Knowledge URL Import ─────────────────────────────────────
+
+export const knowledgeImportApi = {
+  fromUrl: (url: string) =>
+    request<{ id: string; title: string }>("/api/knowledge/import/url", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
+};

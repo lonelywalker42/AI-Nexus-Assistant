@@ -176,8 +176,9 @@ export default function MusicPage() {
   }, [currentIdx, playMode, tracks]);
 
   // Sync playback state to localStorage (for clock.html to read)
+  // Also handles: pause when window hidden, clock picks up from pausedByWindow flag
   useEffect(() => {
-    const syncState = () => {
+    const syncState = (pausedByWindow = false) => {
       const audio = audioRef.current;
       localStorage.setItem('nexus-music-state', JSON.stringify({
         trackName: currentIdx >= 0 && currentIdx < tracks.length ? tracks[currentIdx].name : '',
@@ -187,35 +188,69 @@ export default function MusicPage() {
         currentIdx,
         volume,
         playMode,
+        pausedByWindow,
       }));
     };
-    syncState(); // Write immediately on state change
+
+    // If playing, sync every 500ms
     if (isPlaying) {
-      const interval = setInterval(syncState, 1000);
+      syncState(false);
+      const interval = setInterval(() => syncState(false), 500);
       return () => clearInterval(interval);
+    } else {
+      // Not playing — check if it's because window was hidden
+      if (document.hidden) {
+        syncState(true); // Mark as pausedByWindow so clock can resume
+      } else {
+        syncState(false);
+      }
     }
   }, [isPlaying, currentIdx, tracks, volume, playMode]);
 
+  // Listen for BroadcastChannel from clock when it transfers playback back
+  useEffect(() => {
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('nexus-music-sync');
+      bc.onmessage = (e) => {
+        if (e.data?.type === 'clock-playing') {
+          // Clock took over playback, update our state
+          setIsPlaying(false);
+        }
+      };
+    } catch {}
+    return () => { try { bc?.close(); } catch {} };
+  }, []);
+
   // Pause music when window is hidden (main window closes to tray)
-  // Clock player will resume from the synced state
+  // Write pausedByWindow SYNCHRONOUSLY before React state update to avoid race condition
   useEffect(() => {
     const onVisibilityChange = () => {
       if (document.hidden && isPlaying) {
         const audio = audioRef.current;
         if (audio && !audio.paused) {
-          audio.pause();
-          setIsPlaying(false);
-          // Write final state so clock can pick up
+          // Write pausedByWindow flag IMMEDIATELY (before React re-render)
+          // This ensures clock.html sees the flag on its next poll
           localStorage.setItem('nexus-music-state', JSON.stringify({
             trackName: currentIdx >= 0 && currentIdx < tracks.length ? tracks[currentIdx].name : '',
-            currentTime: audio.currentTime || 0,
+            currentTime: audio.currentTime,
             duration: audio.duration || 0,
             isPlaying: false,
-            pausedByWindow: true,
             currentIdx,
             volume,
             playMode,
+            pausedByWindow: true,
           }));
+          // Also notify via BroadcastChannel for instant detection
+          try {
+            const bc = new BroadcastChannel('nexus-music-sync');
+            bc.postMessage({ type: 'paused-by-window', trackName: tracks[currentIdx]?.name, currentTime: audio.currentTime });
+            bc.close();
+          } catch {}
+          audio.pause();
+          // Stop the sync interval immediately by setting isPlaying to false
+          // This prevents the interval from overwriting pausedByWindow
+          setIsPlaying(false);
         }
       }
     };

@@ -11,6 +11,7 @@ import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import MusicPage from "./pages/MusicPage";
 import BookshelfPage from "./pages/BookshelfPage";
+import WritingPage from "./pages/WritingPage";
 import { dashboardApi } from "./api/client";
 import {
   IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat,
@@ -31,6 +32,7 @@ const PAGES = [
   { id: "knowledge", label: "IDEA", icon: "lightbulb", group: "research" },
   { id: "experiments", label: "试验管理", icon: "flask", group: "research" },
   { id: "chat", label: "AI 对话", icon: "chat", group: "research" },
+  { id: "writing", label: "写作", icon: "book", group: "research" },
   // 个人助手
   { id: "music", label: "音乐", icon: "music", group: "personal" },
   { id: "bookshelf", label: "书架", icon: "bookOpen", group: "personal" },
@@ -127,6 +129,7 @@ function App() {
       case "experiments": return <ExperimentPage />;
       case "knowledge": return <KnowledgePage />;
       case "chat": return <ChatPage />;
+      case "writing": return <WritingPage />;
       case "music": return <MusicPage />;
       case "bookshelf": return <BookshelfPage />;
       case "materials": return (

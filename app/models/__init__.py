@@ -6,6 +6,7 @@ from .experiment import Experiment, ExperimentResult
 from .knowledge import KnowledgeCard, Tag, CardTag
 from .chat import ChatSession, ChatMessage
 from .review import Review
+from .writing import WritingDocument
 
 __all__ = [
     "Task", "WeeklyPlan",
@@ -16,4 +17,5 @@ __all__ = [
     "KnowledgeCard", "Tag", "CardTag",
     "ChatSession", "ChatMessage",
     "Review",
+    "WritingDocument",
 ]

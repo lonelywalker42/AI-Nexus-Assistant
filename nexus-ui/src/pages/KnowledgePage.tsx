@@ -17,6 +17,7 @@ export default function KnowledgePage() {
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [search, setSearch] = useState("");
   const [importing, setImporting] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
   const [importStatus, setImportStatus] = useState("");
 
   // 视图状态
@@ -130,7 +131,9 @@ export default function KnowledgePage() {
         const data = JSON.parse(text);
         const isAiLiterature = !!(data.kbPapers || data.papers);
         const isDeepSeek = !!(data.topics);
-        const format = isAiLiterature ? "ai-literature" : isDeepSeek ? "DeepSeek" : "未知";
+        const isChatGPT = !!(data.messages) && Array.isArray(data.messages);
+        const isMimo = !!(data.conversations) || !!(data.data?.conversation);
+        const format = isAiLiterature ? "ai-literature" : isDeepSeek ? "DeepSeek" : isChatGPT ? "ChatGPT" : isMimo ? "mimo" : "未知";
         setImportStatus(`检测到 ${format} 格式，正在导入...`);
         const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/json", {
           method: "POST",
@@ -220,6 +223,31 @@ export default function KnowledgePage() {
     input.click();
   };
 
+  // URL 导入
+  const handleImportUrl = async () => {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    setImportStatus(`正在抓取: ${importUrl}...`);
+    try {
+      const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: importUrl }),
+      });
+      const result = await res.json();
+      if (result.error) {
+        setImportStatus(`❌ 导入失败: ${result.error}`);
+      } else {
+        setImportStatus(`✅ 导入完成: ${result.title}`);
+        setImportUrl("");
+        loadCards();
+      }
+    } catch (err) {
+      setImportStatus(`❌ 导入失败: ${err}`);
+    }
+    setImporting(false);
+  };
+
   return (
     <div className="space-y-5">
       {/* 头部 */}
@@ -288,8 +316,18 @@ export default function KnowledgePage() {
             <button onClick={handleImportMD} disabled={importing} className="btn-ghost text-xs py-1.5 disabled:opacity-50">Markdown 文件</button>
             <button onClick={handleImportPDF} disabled={importing} className="btn-ghost text-xs py-1.5 disabled:opacity-50">PDF 文献</button>
             <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              支持 ai-literature JSON、DeepSeek 对话 JSON、Markdown、PDF
+              支持 ai-literature/DeepSeek/ChatGPT/mimo JSON、Markdown、PDF
             </span>
+          </div>
+          {/* URL 导入 */}
+          <div className="flex gap-2 items-center">
+            <input className="input-glass flex-1 text-xs py-1.5" placeholder="粘贴网页链接导入知识卡片..."
+              value={importUrl} onChange={e => setImportUrl(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleImportUrl()} />
+            <button onClick={handleImportUrl} disabled={importing || !importUrl.trim()}
+              className="btn-ghost text-xs py-1.5 disabled:opacity-50">
+              {importing ? "导入中..." : "抓取导入"}
+            </button>
           </div>
           {importStatus && (
             <pre className="text-xs whitespace-pre-wrap rounded-lg p-3" style={{

@@ -385,7 +385,7 @@ var currentIdx = -1;
 var isPlaying = false;
 var volume = 0.7;
 var isMuted = false;
-var playMode = 'sequential'; // 'sequential' | 'shuffle'
+var playMode = 'sequential'; // 'sequential' | 'repeat' | 'shuffle'
 
 var audioEl = $('audioEl');
 var canvas = $('specCanvas');
@@ -509,63 +509,158 @@ setInterval(checkPlaylistUpdate, 3000);
 // 窗口获得焦点时也检查
 window.addEventListener('focus', checkPlaylistUpdate);
 
-// 每 1 秒读取 MusicPage 播放状态并同步
+// BroadcastChannel for instant cross-window sync — MUST be declared before handler
+var _bc = null;
+try { _bc = new BroadcastChannel('nexus-music-sync'); } catch(e){}
+
+// Track recent resume to prevent poll race condition
+var _lastResumeTime = 0;
+
+// Listen for instant BroadcastChannel notification from MusicPage
+if(_bc){
+  _bc.onmessage = function(e){
+    if(e.data && e.data.type === 'paused-by-window'){
+      // Immediately trigger resume without waiting for poll
+      try{
+        var state = JSON.parse(localStorage.getItem('nexus-music-state')||'null');
+        if(state && state.pausedByWindow){
+          resumeFromState(state);
+        }
+      }catch(err){}
+    }
+  };
+}
+
+// Resume playback from MusicPage state (extracted for reuse by BroadcastChannel)
+function resumeFromState(state){
+  var name = state.trackName.replace(/\.[^.]+$/,'');
+  _lastResumeTime = Date.now(); // Guard against poll race condition
+
+  function tryResumeTrack(){
+    var matchIdx = playlist.findIndex(function(t){return t.name === state.trackName});
+    if(matchIdx < 0) return;
+    if(isPlaying && currentIdx === matchIdx) return;
+
+    currentIdx = matchIdx;
+    var item = playlist[matchIdx];
+    var url = URL.createObjectURL(item.file);
+
+    // 先停止当前播放
+    if(isPlaying && audioEl && !audioEl.paused){
+      audioEl.pause();
+      isPlaying = false;
+    }
+
+    audioEl.src = url;
+    audioEl.volume = isMuted ? 0 : volume;
+    initAudio();
+
+    // 设置进度并播放
+    function startPlayback(){
+      audioEl.currentTime = Math.min(state.currentTime || 0, audioEl.duration || 0);
+      // Resume AudioContext before play (must be chained with play promise)
+      var resumePromise = audioCtx && audioCtx.state === 'suspended' ? audioCtx.resume() : Promise.resolve();
+      resumePromise.then(function(){
+        return audioEl.play();
+      }).then(function(){
+        isPlaying = true;
+        updatePlayBtn();
+        $('trackInfo').textContent = '♪ ' + name;
+        $('trackInfo').className = 'track-info active';
+        // Notify MusicPage that clock took over
+        if(_bc) try{ _bc.postMessage({type:'clock-playing'}); }catch(e){}
+      }).catch(function(){
+        // Autoplay blocked — show paused state
+        isPlaying = false;
+        updatePlayBtn();
+      });
+    }
+    if(audioEl.readyState >= 1){
+      startPlayback();
+    }else{
+      audioEl.onloadedmetadata = function(){ startPlayback(); audioEl.onloadedmetadata = null; };
+    }
+
+    $('trackInfo').textContent = '♪ ' + name;
+    $('trackInfo').className = 'track-info active';
+
+    // 清除标记防止重复触发
+    state.pausedByWindow = false;
+    localStorage.setItem('nexus-music-state', JSON.stringify(state));
+  }
+
+  // 先尝试从当前列表找，找不到则从 IndexedDB 重新加载
+  if(playlist.length > 0){
+    var found = playlist.findIndex(function(t){return t.name === state.trackName});
+    if(found >= 0){
+      tryResumeTrack();
+    }else{
+      loadPlaylistFromDB().then(function(items){
+        if(items.length > 0){
+          playlist = items;
+          tryResumeTrack();
+        }
+      });
+    }
+  }else{
+    loadPlaylistFromDB().then(function(items){
+      if(items.length > 0){
+        playlist = items;
+        $('trackInfo').textContent = items.length + ' 首音乐已加载';
+        $('trackInfo').className = 'track-info active';
+        tryResumeTrack();
+      }
+    });
+  }
+}
+
+// 每 500ms 读取 MusicPage 播放状态并同步 (faster than before)
 var _musicPageActive = false;
 setInterval(function(){
   try{
     var state = JSON.parse(localStorage.getItem('nexus-music-state')||'null');
     if(!state || !state.trackName){ _musicPageActive = false; return; }
 
+    // Sync playMode from MusicPage
+    if(state.playMode && state.playMode !== playMode){
+      playMode = state.playMode;
+    }
+
     var name = state.trackName.replace(/\.[^.]+$/,'');
 
+    // Guard: skip if clock just resumed (within 3 seconds) to avoid race condition
+    var justResumed = (Date.now() - _lastResumeTime) < 3000;
+
     if(state.isPlaying){
-      // MusicPage 正在播放 → 停止 clock 自己的音频，仅显示进度
       _musicPageActive = true;
-      if(isPlaying && audioEl && !audioEl.paused){
+      // Only pause if clock is NOT the one playing (avoid race with resumeFromState)
+      if(!justResumed && isPlaying && audioEl && !audioEl.paused){
         audioEl.pause();
         isPlaying = false;
         updatePlayBtn();
       }
+      // Show MusicPage progress info
       var ct = state.currentTime || 0;
       var dur = state.duration || 0;
       var m = Math.floor(ct/60);
       var s = Math.floor(ct%60);
       var pct = dur > 0 ? Math.round(ct/dur*100) : 0;
-      $('trackInfo').textContent = '♪ ' + name + '  ' + m + ':' + String(s).padStart(2,'0') + '  ' + pct + '%';
-      $('trackInfo').className = 'track-info active';
+      if(!isPlaying){
+        $('trackInfo').textContent = '♪ ' + name + '  ' + m + ':' + String(s).padStart(2,'0') + '  ' + pct + '%';
+        $('trackInfo').className = 'track-info active';
+      }
     }else if(state.pausedByWindow){
       // MusicPage 因窗口隐藏而暂停 → clock 续放
       _musicPageActive = false;
-      if(playlist.length > 0){
-        // 找到同一首歌在 clock 播放列表中的索引
-        var matchIdx = playlist.findIndex(function(t){return t.name === state.trackName});
-        if(matchIdx >= 0 && (!isPlaying || currentIdx !== matchIdx)){
-          currentIdx = matchIdx;
-          var item = playlist[matchIdx];
-          var url = URL.createObjectURL(item.file);
-          audioEl.src = url;
-          audioEl.currentTime = state.currentTime || 0;
-          audioEl.volume = isMuted ? 0 : volume;
-          audioEl.play().then(function(){
-            initAudio();
-            if(audioCtx.state === 'suspended') audioCtx.resume();
-            isPlaying = true;
-            updatePlayBtn();
-          }).catch(function(){});
-          $('trackInfo').textContent = '♪ ' + name;
-          $('trackInfo').className = 'track-info active';
-          // 清除标记防止重复触发
-          state.pausedByWindow = false;
-          localStorage.setItem('nexus-music-state', JSON.stringify(state));
-        }
-      }
+      if(!justResumed) resumeFromState(state);
     }else if(!state.isPlaying && _musicPageActive){
       // MusicPage 手动暂停
       _musicPageActive = false;
       $('trackInfo').textContent = '⏸ ' + name + '  已暂停';
+      updatePlayBtn();
     }
   }catch(e){}
-}, 1000);
+}, 500);
 
 // 播放控制 — playlist 项为 {name, file:File, type:string}
 function loadAndPlay(idx){
@@ -576,9 +671,10 @@ function loadAndPlay(idx){
   $('trackInfo').className = 'track-info active';
   var url = URL.createObjectURL(item.file);
   audioEl.src = url;
+  audioEl.volume = isMuted ? 0 : volume;
+  initAudio();
+  if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   audioEl.play().then(function(){
-    initAudio();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
     isPlaying = true;
     updatePlayBtn();
   }).catch(function(){});
@@ -607,6 +703,8 @@ function playNext(){
     if(playlist.length > 1){
       while(next === currentIdx) next = Math.floor(Math.random() * playlist.length);
     }
+  }else if(playMode === 'repeat'){
+    next = currentIdx;
   }else{
     next = (currentIdx + 1) % playlist.length;
   }
@@ -629,6 +727,10 @@ function playPrev(){
 
 function togglePlayMode(){
   if(playMode === 'sequential'){
+    playMode = 'repeat';
+    $('iconMode').innerHTML = '<path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/><path d="M12 15l-3-3h2V8h2v4h2z" opacity="0.5"/>';
+    $('btnMode').title = '单曲循环';
+  }else if(playMode === 'repeat'){
     playMode = 'shuffle';
     $('iconMode').innerHTML = '<path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>';
     $('btnMode').title = '随机播放';
