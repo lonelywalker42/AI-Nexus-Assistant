@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef } from "react";
-import { IconBookOpen, IconBook, IconSearch, IconFolder, IconArrowLeft, IconChevronLeft, IconChevronRight } from "../components/Icons";
+import { IconBookOpen, IconBook, IconSearch, IconFolder, IconArrowLeft, IconChevronLeft, IconChevronRight, IconSun } from "../components/Icons";
 import JSZip from "jszip";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Set pdf.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
 // EPUB parser using JSZip (no iframe/blob URL issues)
 interface EpubChapter {
@@ -148,6 +152,40 @@ interface Book {
   coverUrl?: string;
 }
 
+// PDF parser using pdf.js
+interface PdfData {
+  title: string;
+  author: string;
+  pages: { content: string; pageNum: number }[];
+}
+
+async function parsePdf(file: File): Promise<PdfData> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const meta = await pdf.getMetadata();
+  const info = (meta.info as any) || {};
+
+  const pages: { content: string; pageNum: number }[] = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const text = textContent.items
+      .map((item: any) => item.str)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text) {
+      pages.push({ content: text, pageNum: i });
+    }
+  }
+
+  return {
+    title: info.Title || file.name.replace(/\.pdf$/i, ""),
+    author: info.Author || "Unknown",
+    pages,
+  };
+}
+
 type ViewMode = "shelf" | "detail" | "reader";
 
 // Text/Markdown file data for reader
@@ -263,10 +301,13 @@ export default function BookshelfPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [epubData, setEpubData] = useState<EpubData | null>(null);
   const [textFileData, setTextFileData] = useState<TextFileData | null>(null);
+  const [pdfData, setPdfData] = useState<PdfData | null>(null);
   const [chapterIdx, setChapterIdx] = useState(0);
   const [fontSize, setFontSize] = useState(100);
   const [pageIdx, setPageIdx] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [eyeProtection, setEyeProtection] = useState(() => localStorage.getItem("nexus-reader-eye-protect") === "true");
+  const [flipDirection, setFlipDirection] = useState<"left" | "right" | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const readerRef = useRef<HTMLDivElement>(null);
@@ -293,6 +334,34 @@ export default function BookshelfPage() {
       readerRef.current.scrollTo({ top: pageIdx * containerH, behavior: 'smooth' });
     }
   }, [pageIdx]);
+
+  // Persist eye protection mode
+  useEffect(() => {
+    localStorage.setItem("nexus-reader-eye-protect", String(eyeProtection));
+  }, [eyeProtection]);
+
+  // Page flip animation handler
+  const flipPage = (direction: "left" | "right") => {
+    if (direction === "right" && pageIdx >= totalPages - 1) return;
+    if (direction === "left" && pageIdx === 0) return;
+    setFlipDirection(direction);
+    setTimeout(() => {
+      if (direction === "right") setPageIdx(p => Math.min(totalPages - 1, p + 1));
+      else setPageIdx(p => Math.max(0, p - 1));
+      setFlipDirection(null);
+    }, 300);
+  };
+
+  // Keyboard navigation for page flip
+  useEffect(() => {
+    if (viewMode !== "reader") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); flipPage("left"); }
+      if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === " ") { e.preventDefault(); flipPage("right"); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [viewMode, pageIdx, totalPages]);
 
   // Load book metadata from localStorage on mount (fast)
   useEffect(() => {
@@ -365,11 +434,29 @@ export default function BookshelfPage() {
         }
         setEpubData(data);
         setTextFileData(null);
+        setPdfData(null);
         setChapterIdx(0);
         setViewMode("reader");
       } catch (err) {
         console.error("EPUB parse error:", err);
         alert("Failed to parse EPUB: " + err);
+      }
+    } else if (nameLower.endsWith(".pdf")) {
+      // Parse PDF using pdf.js
+      try {
+        const data = await parsePdf(book.file);
+        if (data.pages.length === 0) {
+          alert("未能从 PDF 中提取到文本内容，可能是扫描版PDF。");
+          return;
+        }
+        setPdfData(data);
+        setEpubData(null);
+        setTextFileData(null);
+        setChapterIdx(0);
+        setViewMode("reader");
+      } catch (err) {
+        console.error("PDF parse error:", err);
+        alert("Failed to parse PDF: " + err);
       }
     } else if (nameLower.endsWith(".txt") || nameLower.endsWith(".md")) {
       // Read text/markdown file
@@ -377,19 +464,21 @@ export default function BookshelfPage() {
         const content = await book.file.text();
         setTextFileData({ content, isMarkdown: nameLower.endsWith(".md") });
         setEpubData(null);
+        setPdfData(null);
         setViewMode("reader");
       } catch (err) {
         console.error("Text file read error:", err);
         alert("Failed to read file: " + err);
       }
     } else {
-      alert("内置阅读器支持 EPUB、TXT 和 MD 格式。");
+      alert("内置阅读器支持 EPUB、PDF、TXT 和 MD 格式。");
     }
   };
 
   const closeReader = () => {
     setEpubData(null);
     setTextFileData(null);
+    setPdfData(null);
     setChapterIdx(0);
     setViewMode("detail");
   };
@@ -439,6 +528,17 @@ export default function BookshelfPage() {
             <button className="btn-ghost text-xs py-1" onClick={() => handleFontSize(-10)}>A-</button>
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>{fontSize}%</span>
             <button className="btn-ghost text-xs py-1" onClick={() => handleFontSize(10)}>A+</button>
+            <button className="text-xs py-1 px-2 rounded-lg cursor-pointer transition-colors"
+              style={{
+                background: eyeProtection ? "rgba(245,158,11,0.2)" : "transparent",
+                color: eyeProtection ? "#d97706" : "var(--text-muted)",
+                border: "1px solid",
+                borderColor: eyeProtection ? "rgba(245,158,11,0.3)" : "var(--border-color)",
+              }}
+              onClick={() => setEyeProtection(!eyeProtection)}
+              title="护眼模式">
+              <IconSun size={14} />
+            </button>
           </div>
         )}
       </div>
@@ -503,7 +603,7 @@ export default function BookshelfPage() {
                   </p>
                 )}
                 <div className="flex gap-2 pt-2">
-                  {/\.(epub|txt|md)$/i.test(selectedBook.name) && (
+                  {/\.(epub|pdf|txt|md)$/i.test(selectedBook.name) && (
                     <button className="btn-gradient btn-click text-xs" onClick={openReader}>Read</button>
                   )}
                   <button className="btn-ghost text-xs" onClick={() => { setViewMode("shelf"); setSelectedBook(null); }}>Back</button>
@@ -514,7 +614,7 @@ export default function BookshelfPage() {
         </div>
       )}
 
-      {viewMode === "reader" && (epubData || textFileData) && (
+      {viewMode === "reader" && (epubData || textFileData || pdfData) && (
         /* Reader — page-based view with left/right navigation */
         <div className="flex-1 flex flex-col min-h-0 gap-2">
           {/* Top bar: chapter nav + page info */}
@@ -535,6 +635,22 @@ export default function BookshelfPage() {
                   下一章 <IconChevronRight size={14} />
                 </button>
               </>
+            ) : pdfData ? (
+              <>
+                <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
+                  onClick={() => setChapterIdx(Math.max(0, chapterIdx - 1))}
+                  style={{ opacity: chapterIdx === 0 ? 0.3 : 1, pointerEvents: chapterIdx === 0 ? "none" : "auto" }}>
+                  <IconChevronLeft size={14} /> 上一页
+                </button>
+                <span className="text-xs font-medium truncate max-w-[200px]" style={{ color: "var(--text-primary)" }}>
+                  第 {chapterIdx + 1} 页 / 共 {pdfData.pages.length} 页
+                </span>
+                <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
+                  onClick={() => setChapterIdx(Math.min(pdfData.pages.length - 1, chapterIdx + 1))}
+                  style={{ opacity: chapterIdx >= pdfData.pages.length - 1 ? 0.3 : 1, pointerEvents: chapterIdx >= pdfData.pages.length - 1 ? "none" : "auto" }}>
+                  下一页 <IconChevronRight size={14} />
+                </button>
+              </>
             ) : (
               <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
                 {selectedBook?.title || "Reader"}
@@ -542,31 +658,48 @@ export default function BookshelfPage() {
             )}
           </div>
 
-          {/* Content area — fixed height, page navigation */}
-          <div className="flex-1 flex gap-2 min-h-0">
-            {/* Left page button */}
-            <button className="flex-shrink-0 w-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors"
-              style={{ color: "var(--text-muted)", opacity: pageIdx === 0 ? 0.2 : 0.6 }}
-              onClick={() => setPageIdx(Math.max(0, pageIdx - 1))}
-              disabled={pageIdx === 0}>
-              <IconChevronLeft size={20} />
-            </button>
-
-            {/* Page content */}
-            <div className="flex-1 rounded-2xl overflow-hidden relative" ref={readerRef}
+          {/* Content area — book-style layout with page flip */}
+          <div className="flex-1 flex min-h-0 relative" style={{
+            perspective: "1200px",
+          }}>
+            {/* Book container */}
+            <div className="flex-1 flex relative overflow-hidden rounded-2xl" ref={readerRef}
               style={{
-                background: "var(--glass-bg)",
+                background: eyeProtection
+                  ? "linear-gradient(135deg, #f5e6d0, #ede0cc)"
+                  : "var(--glass-bg)",
                 border: "1px solid var(--glass-border)",
                 fontSize: `${fontSize}%`,
                 lineHeight: 1.8,
-                color: "var(--text-primary)",
+                color: eyeProtection ? "#5b4636" : "var(--text-primary)",
+                boxShadow: "inset 0 0 30px rgba(0,0,0,0.05), 0 4px 20px rgba(0,0,0,0.08)",
+                transition: "background 0.5s ease, color 0.5s ease",
               }}>
-              <div ref={contentRef} className="p-6 max-w-3xl mx-auto"
+              {/* Eye protection overlay */}
+              {eyeProtection && (
+                <div className="absolute inset-0 pointer-events-none" style={{
+                  background: "rgba(255,248,230,0.15)",
+                  mixBlendMode: "multiply",
+                }} />
+              )}
+              {/* Page flip shadow */}
+              {flipDirection && (
+                <div className="absolute inset-0 pointer-events-none" style={{
+                  background: flipDirection === "right"
+                    ? "linear-gradient(to left, rgba(0,0,0,0.08), transparent 40%)"
+                    : "linear-gradient(to right, rgba(0,0,0,0.08), transparent 40%)",
+                  animation: "fadeIn 0.3s ease",
+                }} />
+              )}
+              {/* Content */}
+              <div ref={contentRef} className="p-8 max-w-3xl mx-auto w-full"
                 dangerouslySetInnerHTML={epubData ? { __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" } : undefined}
                 style={{
-                  fontFamily: "'Open Sans', system-ui, sans-serif",
+                  fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
                   wordWrap: "break-word",
                   overflowWrap: "break-word",
+                  transition: "transform 0.3s ease",
+                  transform: flipDirection === "right" ? "translateX(-5px)" : flipDirection === "left" ? "translateX(5px)" : "none",
                 }}>
                 {textFileData && (
                   textFileData.isMarkdown ? (
@@ -577,16 +710,20 @@ export default function BookshelfPage() {
                     <pre className="whitespace-pre-wrap" style={{ fontFamily: "inherit" }}>{textFileData.content}</pre>
                   )
                 )}
+                {pdfData && pdfData.pages[chapterIdx] && (
+                  <div className="whitespace-pre-wrap leading-relaxed" style={{ fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif" }}>
+                    {pdfData.pages[chapterIdx].content}
+                  </div>
+                )}
               </div>
+              {/* Book fold line (center) */}
+              <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px pointer-events-none"
+                style={{ background: "rgba(0,0,0,0.04)" }} />
+              {/* Left page click zone */}
+              <div className="absolute top-0 bottom-0 left-0 w-1/3 cursor-pointer" onClick={() => flipPage("left")} />
+              {/* Right page click zone */}
+              <div className="absolute top-0 bottom-0 right-0 w-1/3 cursor-pointer" onClick={() => flipPage("right")} />
             </div>
-
-            {/* Right page button */}
-            <button className="flex-shrink-0 w-8 flex items-center justify-center rounded-lg cursor-pointer transition-colors"
-              style={{ color: "var(--text-muted)", opacity: pageIdx >= totalPages - 1 ? 0.2 : 0.6 }}
-              onClick={() => setPageIdx(Math.min(totalPages - 1, pageIdx + 1))}
-              disabled={pageIdx >= totalPages - 1}>
-              <IconChevronRight size={20} />
-            </button>
           </div>
 
           {/* Bottom: chapter selector + page indicator */}
@@ -599,6 +736,17 @@ export default function BookshelfPage() {
                 onChange={e => { setChapterIdx(Number(e.target.value)); setPageIdx(0); }}>
                 {epubData.chapters.map((ch, i) => (
                   <option key={i} value={i}>{i + 1}. {ch.title?.slice(0, 30) || `Chapter ${i + 1}`}</option>
+                ))}
+              </select>
+            )}
+            {/* PDF page selector */}
+            {pdfData && pdfData.pages.length > 1 && (
+              <select className="text-[10px] bg-transparent border-none outline-none cursor-pointer"
+                style={{ color: "var(--text-muted)" }}
+                value={chapterIdx}
+                onChange={e => { setChapterIdx(Number(e.target.value)); setPageIdx(0); }}>
+                {pdfData.pages.map((p, i) => (
+                  <option key={i} value={i}>第 {p.pageNum} 页</option>
                 ))}
               </select>
             )}

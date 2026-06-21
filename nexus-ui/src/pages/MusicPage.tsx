@@ -1,6 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { IconMusic, IconDisc, IconPlay, IconPause, IconSkipBack, IconSkipForward, IconShuffle, IconRepeat, IconVolume2, IconVolumeX, IconFolder, IconList } from "../components/Icons";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { IconMusic, IconDisc, IconPlay, IconPause, IconSkipBack, IconSkipForward, IconShuffle, IconRepeat, IconVolume2, IconVolumeX, IconFolder, IconList, IconFilter } from "../components/Icons";
 import { getGlobalAudio, getGlobalAudioContext, getMusicState, setMusicState, subscribeMusicState } from "../hooks/useGlobalAudio";
+
+type SortKey = "name" | "title" | "artist";
+type SortOrder = "asc" | "desc";
 
 // jsmediatags for metadata extraction
 let jsmediatags: any = null;
@@ -142,6 +145,9 @@ export default function MusicPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>(() => (localStorage.getItem("nexus-music-sort-key") as SortKey) || "name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => (localStorage.getItem("nexus-music-sort-order") as SortOrder) || "asc");
+  const [showSortMenu, setShowSortMenu] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(getGlobalAudio());
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -152,6 +158,33 @@ export default function MusicPage() {
   const animFrameRef = useRef<number>(0);
 
   const currentTrack = currentIdx >= 0 && currentIdx < tracks.length ? tracks[currentIdx] : null;
+
+  // Sorted tracks (preserving original index for playback)
+  const sortedTracks = useMemo(() => {
+    const indexed = tracks.map((t, i) => ({ ...t, _origIdx: i }));
+    indexed.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "name") cmp = a.name.localeCompare(b.name, "zh");
+      else if (sortKey === "title") cmp = (a.title || a.name).localeCompare(b.title || b.name, "zh");
+      else if (sortKey === "artist") cmp = (a.artist || "").localeCompare(b.artist || "", "zh");
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+    return indexed;
+  }, [tracks, sortKey, sortOrder]);
+
+  // Persist sort preferences
+  useEffect(() => {
+    localStorage.setItem("nexus-music-sort-key", sortKey);
+    localStorage.setItem("nexus-music-sort-order", sortOrder);
+  }, [sortKey, sortOrder]);
+
+  // Close sort menu on outside click
+  useEffect(() => {
+    if (!showSortMenu) return;
+    const close = () => setShowSortMenu(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [showSortMenu]);
 
   // Restore playback state on mount (persists across page switches)
   useEffect(() => {
@@ -621,28 +654,44 @@ export default function MusicPage() {
             ) : (
               /* Track List */
               <div className="glass-card flex-1 overflow-y-auto">
+                {/* Sort Controls */}
+                <div className="flex items-center gap-2 px-4 py-2 border-b relative" style={{ borderColor: "var(--border-color)" }}>
+                  <IconFilter size={12} style={{ color: "var(--text-muted)" }} />
+                  <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>排序:</span>
+                  {(["name", "title", "artist"] as SortKey[]).map((key) => (
+                    <button key={key} className="text-[10px] px-2 py-0.5 rounded-full cursor-pointer transition-colors"
+                      style={{
+                        background: sortKey === key ? "rgba(59,130,246,0.15)" : "var(--hover-bg)",
+                        color: sortKey === key ? "var(--accent-blue)" : "var(--text-muted)",
+                      }}
+                      onClick={() => { if (sortKey === key) setSortOrder(o => o === "asc" ? "desc" : "asc"); else setSortKey(key); }}>
+                      {key === "name" ? "文件名" : key === "title" ? "标题" : "艺术家"}
+                      {sortKey === key && (sortOrder === "asc" ? " ↑" : " ↓")}
+                    </button>
+                  ))}
+                </div>
                 <div className="divide-y" style={{ borderColor: "var(--border-color)" }}>
-                  {tracks.map((track, i) => (
-                    <div key={i}
+                  {sortedTracks.map((track) => (
+                    <div key={track._origIdx}
                       className="flex items-center gap-3 px-4 py-3 cursor-pointer transition-all"
                       style={{
-                        background: currentIdx === i ? "rgba(59,130,246,0.08)" : "transparent",
+                        background: currentIdx === track._origIdx ? "rgba(59,130,246,0.08)" : "transparent",
                       }}
-                      onMouseEnter={(e) => { if (currentIdx !== i) e.currentTarget.style.background = "var(--hover-bg)"; }}
-                      onMouseLeave={(e) => { if (currentIdx !== i) e.currentTarget.style.background = "transparent"; }}
-                      onClick={() => loadAndPlay(i)}
+                      onMouseEnter={(e) => { if (currentIdx !== track._origIdx) e.currentTarget.style.background = "var(--hover-bg)"; }}
+                      onMouseLeave={(e) => { if (currentIdx !== track._origIdx) e.currentTarget.style.background = "transparent"; }}
+                      onClick={() => loadAndPlay(track._origIdx)}
                     >
                       {/* Track Number / Playing Indicator */}
                       <div className="w-6 text-center flex-shrink-0">
-                        {currentIdx === i && isPlaying ? (
+                        {currentIdx === track._origIdx && isPlaying ? (
                           <div className="flex items-end justify-center gap-0.5 h-4">
                             <div className="w-0.5 bg-blue-500 rounded-full animate-pulse" style={{ height: 12 }} />
                             <div className="w-0.5 bg-blue-500 rounded-full animate-pulse" style={{ height: 8, animationDelay: "0.15s" }} />
                             <div className="w-0.5 bg-blue-500 rounded-full animate-pulse" style={{ height: 14, animationDelay: "0.3s" }} />
                           </div>
                         ) : (
-                          <span className="text-xs" style={{ color: currentIdx === i ? "var(--accent-blue)" : "var(--text-muted)" }}>
-                            {i + 1}
+                          <span className="text-xs" style={{ color: currentIdx === track._origIdx ? "var(--accent-blue)" : "var(--text-muted)" }}>
+                            {track._origIdx + 1}
                           </span>
                         )}
                       </div>
@@ -660,7 +709,7 @@ export default function MusicPage() {
 
                       {/* Track Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate" style={{ color: currentIdx === i ? "var(--accent-blue)" : "var(--text-primary)" }}>
+                        <p className="text-sm font-medium truncate" style={{ color: currentIdx === track._origIdx ? "var(--accent-blue)" : "var(--text-primary)" }}>
                           {track.title || track.name.replace(/\.[^.]+$/, "")}
                         </p>
                         <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>

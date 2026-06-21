@@ -16,6 +16,7 @@
     "jsmediatags": "^3.9.7",
     "jszip": "^3.10.1",
     "lucide-react": "^0.400.0",
+    "pdfjs-dist": "^6.0.227",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.0",

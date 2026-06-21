@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { knowledgeApi, chatApi, type KnowledgeCard } from "../api/client";
-import { IconFile, IconChat, IconArrowLeft, IconStar, IconLightbulb, IconX } from "../components/Icons";
+import { IconFile, IconChat, IconArrowLeft, IconStar, IconLightbulb, IconX, IconGlobe } from "../components/Icons";
 
 const CATEGORIES = [
   { key: "literature", label: "文献导入", iconKey: "file", color: "#3b82f6" },
   { key: "deepseek", label: "AI 对话", iconKey: "chat", color: "#8b5cf6" },
   { key: "note", label: "随手记", iconKey: "lightbulb", color: "#f59e0b" },
   { key: "manual", label: "手动创建", iconKey: "edit", color: "#10b981" },
+  { key: "web", label: "网页抓取", iconKey: "globe", color: "#06b6d4" },
 ];
 
 const CATEGORY_ICONS: Record<string, React.FC<{ size?: number }>> = {
-  file: IconFile, chat: IconChat, edit: IconFile, lightbulb: IconLightbulb,
+  file: IconFile, chat: IconChat, edit: IconFile, lightbulb: IconLightbulb, globe: IconGlobe,
 };
 
 export default function KnowledgePage() {

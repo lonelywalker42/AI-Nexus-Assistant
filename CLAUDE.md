@@ -46,6 +46,109 @@ python build.py                           # PySide6 PyInstaller build
 cd nexus-ui && npx tsc --noEmit
 ```
 
+## Environment Setup for Claude Code
+
+This section guides Claude Code through setting up the development environment from a fresh clone.
+
+### Prerequisites
+
+| Dependency | Version | Purpose |
+|-----------|---------|---------|
+| Python | 3.10+ | Backend runtime |
+| Node.js | 18+ LTS | Frontend build + open-webSearch |
+| Rust | 1.70+ | Tauri shell compilation |
+| Git | 2.30+ | Version control + submodules |
+
+### Step 1: Clone with Submodules
+
+```bash
+git clone --recursive https://github.com/anthropics/ai-nexus-assistant.git
+cd ai-nexus-assistant
+
+# If already cloned without --recursive:
+git submodule update --init --recursive
+```
+
+### Step 2: Python Environment
+
+```bash
+# Create virtual environment (recommended)
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# or
+.venv\Scripts\activate     # Windows
+
+# Install core dependencies
+pip install -e .
+
+# Install Tauri backend dependencies
+pip install fastapi uvicorn openai anthropic httpx
+
+# Optional: MinerU for PDF conversion
+pip install magic-pdf
+```
+
+### Step 3: Frontend Dependencies
+
+```bash
+# Tauri frontend
+cd nexus-ui
+npm install
+
+# open-webSearch (web search aggregator)
+cd ../open-webSearch
+npm install
+npm run build
+cd ..
+```
+
+### Step 4: Tauri Build Tools (for desktop app)
+
+```bash
+# Install Tauri CLI
+cargo install tauri-cli
+
+# Or via npm
+npm install -g @tauri-apps/cli
+```
+
+### Step 5: Verify Setup
+
+```bash
+# Start backend
+python server.py  # Should print NEXUS_SERVER_READY:8765
+
+# In another terminal, start frontend
+cd nexus-ui && npm run tauri dev
+
+# Type check
+cd nexus-ui && npx tsc --noEmit
+```
+
+### Submodule: open-webSearch
+
+The `open-webSearch/` directory is a git submodule containing the web search aggregator. It aggregates DuckDuckGo, Bing, Brave, Wikipedia, and Arxiv search engines.
+
+```bash
+# Update submodule to latest
+cd open-webSearch
+git pull origin main
+cd ..
+git add open-webSearch
+git commit -m "chore: update open-webSearch submodule"
+```
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| `pip install -e .` fails | Ensure Python 3.10+ and pip are up to date |
+| `npm install` network errors | Use `npm install --registry https://registry.npmmirror.com` |
+| Tauri build fails | Ensure Rust toolchain is installed via rustup |
+| `open-webSearch` not working | Run `cd open-webSearch && npm install && npm run build` |
+| Port 8765 in use | Kill existing process or change port in server.py |
+| Port 3210 in use | open-webSearch default port; restart app to clear |
+
 ## Backend: `app/` Directory
 
 ### Database (`app/db.py`)

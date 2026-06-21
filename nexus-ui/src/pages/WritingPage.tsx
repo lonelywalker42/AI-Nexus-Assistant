@@ -156,6 +156,14 @@ export default function WritingPage() {
 
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contentRef = useRef(content);
+  const titleRef = useRef(title);
+  const activeDocRef = useRef(activeDoc);
+
+  // Keep refs in sync
+  useEffect(() => { contentRef.current = content; }, [content]);
+  useEffect(() => { titleRef.current = title; }, [title]);
+  useEffect(() => { activeDocRef.current = activeDoc; }, [activeDoc]);
 
   // Load documents on mount
   useEffect(() => {
@@ -195,6 +203,20 @@ export default function WritingPage() {
     scheduleAutoSave();
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
   }, [content, title, scheduleAutoSave]);
+
+  // Save immediately when content/title changes (debounced)
+  // Also save on component unmount to prevent data loss on page switch
+  useEffect(() => {
+    return () => {
+      // Save on unmount (page switch) using refs for latest values
+      const doc = activeDocRef.current;
+      const c = contentRef.current;
+      const t = titleRef.current;
+      if (doc && (c || t)) {
+        writingApi.update(doc.id, { content: c, title: t }).catch(console.error);
+      }
+    };
+  }, []); // Only run on unmount
 
   // Update word count
   useEffect(() => {

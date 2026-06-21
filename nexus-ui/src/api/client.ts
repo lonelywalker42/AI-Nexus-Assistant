@@ -569,7 +569,7 @@ export interface WritingDocument {
 export const writingApi = {
   list: (document_type?: string) => {
     const p = document_type ? `?document_type=${document_type}` : "";
-    request<{ documents: WritingDocument[] }>(`/api/writing/documents${p}`);
+    return request<{ documents: WritingDocument[] }>(`/api/writing/documents${p}`);
   },
   get: (id: string) => request<WritingDocument>(`/api/writing/documents/${id}`),
   create: (data: { title?: string; content?: string; document_type?: string }) =>

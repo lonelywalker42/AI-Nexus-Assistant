@@ -416,6 +416,38 @@ export default function SettingsPage() {
             >启动服务</button>
           )}
         </div>
+
+        {/* open-webSearch 配置指南 */}
+        <details className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          <summary className="cursor-pointer font-medium" style={{ color: "var(--accent-blue)" }}>📖 配置指南</summary>
+          <div className="mt-3 space-y-3 pl-3 border-l-2" style={{ borderColor: "var(--border-color)" }}>
+            <div>
+              <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>便携版 (Portable)</p>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>下载安装 <a href="https://nodejs.org" target="_blank" className="underline" style={{ color: "var(--accent-blue)" }}>Node.js</a> (推荐 LTS 版本)</li>
+                <li>安装完成后<strong>重启应用</strong></li>
+                <li>点击上方「启动服务」按钮</li>
+                <li>如果仍无法启动，检查系统 PATH 是否包含 Node.js 路径</li>
+              </ol>
+            </div>
+            <div>
+              <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>安装程序版 (Installer)</p>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>安装程序会自动检测 Node.js</li>
+                <li>如未安装，会提示下载安装</li>
+                <li>安装 Node.js 后重启应用即可</li>
+              </ol>
+            </div>
+            <div>
+              <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>常见问题</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>启动失败：确保 Node.js 已安装且在 PATH 中</li>
+                <li>搜索超时：网络环境可能导致搜索较慢，请耐心等待</li>
+                <li>服务端口被占用：默认端口 3210，如有冲突请重启应用</li>
+              </ul>
+            </div>
+          </div>
+        </details>
       </div>
 
       {/* v3.6.0: MinerU PDF 转换 */}
@@ -607,6 +639,38 @@ function MinerUSection() {
           >{loading ? "安装中..." : "安装 MinerU"}</button>
         )}
       </div>
+
+      {/* MinerU 配置指南 */}
+      <details className="text-xs" style={{ color: "var(--text-secondary)" }}>
+        <summary className="cursor-pointer font-medium" style={{ color: "var(--accent-blue)" }}>📖 配置指南</summary>
+        <div className="mt-3 space-y-3 pl-3 border-l-2" style={{ borderColor: "var(--border-color)" }}>
+          <div>
+            <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>便携版 (Portable)</p>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>确保已安装 Python 3.8+ 并在 PATH 中</li>
+              <li>点击上方「安装 MinerU」按钮</li>
+              <li>安装过程需要下载约 2GB 依赖，请耐心等待</li>
+              <li>安装完成后状态会自动更新为「已安装」</li>
+            </ol>
+          </div>
+          <div>
+            <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>安装程序版 (Installer)</p>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>安装程序已内置 Python 环境</li>
+              <li>点击「安装 MinerU」即可自动配置</li>
+              <li>如遇权限问题，请以管理员身份运行应用</li>
+            </ol>
+          </div>
+          <div>
+            <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>常见问题</p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li>安装失败：检查网络连接，或尝试手动安装 <code>pip install magic-pdf</code></li>
+              <li>转换效果差：MinerU 对扫描版 PDF 效果有限，建议使用文字版 PDF</li>
+              <li>占用空间大：MinerU 依赖约 2GB，可在不使用时卸载释放空间</li>
+            </ul>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

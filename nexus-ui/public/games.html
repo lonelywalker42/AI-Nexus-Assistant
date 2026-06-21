@@ -35,6 +35,185 @@ let currentGame = null; // null = menu
 let gameInstance = null;
 let animFrame = null;
 
+// ── Progress Save/Load ──
+const PROGRESS_KEY = 'nexus-game-progress';
+function saveGameProgress(gameKey, state) {
+  try {
+    const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+    all[gameKey] = { state, timestamp: Date.now() };
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
+  } catch {}
+}
+function loadGameProgress(gameKey) {
+  try {
+    const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+    return all[gameKey] || null;
+  } catch { return null; }
+}
+function clearGameProgress(gameKey) {
+  try {
+    const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+    delete all[gameKey];
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+// ── High Scores ──
+const SCORES_KEY = 'nexus-game-scores';
+const MAX_SCORES = 7;
+function saveHighScore(gameKey, score, extra) {
+  try {
+    const all = JSON.parse(localStorage.getItem(SCORES_KEY) || '{}');
+    if (!all[gameKey]) all[gameKey] = [];
+    all[gameKey].push({ score, ...extra, timestamp: Date.now() });
+    all[gameKey].sort((a, b) => b.score - a.score);
+    all[gameKey] = all[gameKey].slice(0, MAX_SCORES);
+    localStorage.setItem(SCORES_KEY, JSON.stringify(all));
+  } catch {}
+}
+function getHighScores(gameKey) {
+  try {
+    const all = JSON.parse(localStorage.getItem(SCORES_KEY) || '{}');
+    return all[gameKey] || [];
+  } catch { return []; }
+}
+function getHighScore(gameKey) {
+  const scores = getHighScores(gameKey);
+  return scores.length > 0 ? scores[0].score : 0;
+}
+
+function showHighScores(gameKey) {
+  const scores = getHighScores(gameKey);
+  const gameNames = { '2048': '2 0 4 8', 'tetris': 'TETRIS', 'shooter': 'SHOOTER', 'wordhopper': 'WORD HOP' };
+  let selected = -1; // -1 = back button
+
+  function drawScores() {
+    ctx.fillStyle = C.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Title
+    ctx.fillStyle = C.green;
+    ctx.font = '22px Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = C.green;
+    ctx.shadowBlur = 8;
+    ctx.fillText(gameNames[gameKey] || gameKey, W/2, 60);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = C.amber;
+    ctx.font = '16px Consolas, monospace';
+    ctx.fillText('HIGH SCORES', W/2, 90);
+
+    if (scores.length === 0) {
+      ctx.fillStyle = C.dim;
+      ctx.font = '14px Consolas, monospace';
+      ctx.fillText('暂无记录', W/2, H/2);
+    } else {
+      // Header
+      ctx.fillStyle = C.dim;
+      ctx.font = '11px Consolas, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('RANK', 80, 130);
+      ctx.fillText('SCORE', 180, 130);
+      ctx.fillText('DATE', 300, 130);
+
+      // Scores
+      scores.forEach((s, i) => {
+        const y = 155 + i * 40;
+        const isNew = s.timestamp > Date.now() - 60000; // Highlight if within last minute
+
+        // Rank
+        ctx.fillStyle = i === 0 ? C.yellow : i < 3 ? C.amber : C.dim;
+        ctx.font = '14px Consolas, monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${i + 1}.`, 80, y);
+
+        // Score
+        ctx.fillStyle = isNew ? C.green : C.white;
+        ctx.font = '16px Consolas, monospace';
+        ctx.fillText(s.score.toString(), 180, y);
+
+        // Date
+        ctx.fillStyle = C.dim;
+        ctx.font = '10px Consolas, monospace';
+        const date = new Date(s.timestamp);
+        ctx.fillText(date.toLocaleDateString(), 300, y);
+
+        // Extra info (max tile for 2048, lines for tetris, etc.)
+        if (s.maxTile) {
+          ctx.fillStyle = C.dim;
+          ctx.font = '9px Consolas, monospace';
+          ctx.fillText(`Max: ${s.maxTile}`, 300, y + 14);
+        }
+        if (s.lines) {
+          ctx.fillStyle = C.dim;
+          ctx.font = '9px Consolas, monospace';
+          ctx.fillText(`Lines: ${s.lines}`, 300, y + 14);
+        }
+        if (s.wordsCompleted) {
+          ctx.fillStyle = C.dim;
+          ctx.font = '9px Consolas, monospace';
+          ctx.fillText(`Words: ${s.wordsCompleted}`, 300, y + 14);
+        }
+      });
+    }
+
+    // Back button
+    const by = H - 60;
+    ctx.strokeStyle = selected === 0 ? C.amber : C.dim;
+    ctx.lineWidth = selected === 0 ? 2 : 1;
+    ctx.strokeRect(W/2 - 60, by, 120, 35);
+    ctx.fillStyle = selected === 0 ? C.amber : C.green;
+    ctx.font = '14px Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('BACK', W/2, by + 22);
+
+    // Controls
+    ctx.fillStyle = C.dark;
+    ctx.font = '10px Consolas, monospace';
+    ctx.fillText('ESC BACK', W/2, H - 15);
+  }
+
+  function scoresKey(e) {
+    if (e.key === 'Escape' || e.key === 'Enter') {
+      document.removeEventListener('keydown', scoresKey);
+      canvas.removeEventListener('click', scoresClick);
+      canvas.removeEventListener('mousemove', scoresMove);
+      // Return to game over screen
+      if (gameInstance) gameInstance.draw();
+      else backToMenu();
+    }
+  }
+
+  function scoresClick(e) {
+    const rect = canvas.getBoundingClientRect();
+    const my = (e.clientY - rect.top) * (H / rect.height);
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const by = H - 60;
+    if (mx > W/2 - 60 && mx < W/2 + 60 && my > by && my < by + 35) {
+      document.removeEventListener('keydown', scoresKey);
+      canvas.removeEventListener('click', scoresClick);
+      canvas.removeEventListener('mousemove', scoresMove);
+      if (gameInstance) gameInstance.draw();
+      else backToMenu();
+    }
+  }
+
+  function scoresMove(e) {
+    const rect = canvas.getBoundingClientRect();
+    const my = (e.clientY - rect.top) * (H / rect.height);
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const by = H - 60;
+    selected = (mx > W/2 - 60 && mx < W/2 + 60 && my > by && my < by + 35) ? 0 : -1;
+    drawScores();
+  }
+
+  drawScores();
+  document.addEventListener('keydown', scoresKey);
+  canvas.addEventListener('click', scoresClick);
+  canvas.addEventListener('mousemove', scoresMove);
+}
+
 // ══════════════════════════════════════════════
 //  MENU
 // ══════════════════════════════════════════════
@@ -83,12 +262,20 @@ function drawMenu() {
     // Name
     ctx.fillStyle = currentGame === g.key ? C.amber : C.green;
     ctx.font = '20px Consolas, monospace';
-    ctx.fillText(g.name, W/2, y + 35);
+    ctx.fillText(g.name, W/2, y + 30);
 
     // Description
     ctx.fillStyle = C.dim;
     ctx.font = '11px Consolas, monospace';
-    ctx.fillText(g.desc, W/2, y + 58);
+    ctx.fillText(g.desc, W/2, y + 48);
+
+    // High score
+    const highScore = getHighScore(g.key);
+    if (highScore > 0) {
+      ctx.fillStyle = C.yellow;
+      ctx.font = '10px Consolas, monospace';
+      ctx.fillText('HI: ' + highScore, W/2, y + 65);
+    }
   });
 
   // Controls hint
@@ -137,11 +324,137 @@ function startGame(key) {
   else if (key === 'tetris') gameInstance = new GameTetris();
   else if (key === 'shooter') gameInstance = new GameShooter();
   else if (key === 'wordhopper') gameInstance = new GameWordHopper();
-  gameInstance.init();
+
+  // Check for saved progress
+  const saved = loadGameProgress(key);
+  if (saved && saved.state && !saved.state.over) {
+    // Show restore prompt
+    showRestorePrompt(key, saved.state);
+  } else {
+    gameInstance.init();
+  }
+}
+
+function showRestorePrompt(key, savedState) {
+  let selected = 0; // 0 = restore, 1 = new game
+  const options = ['恢复进度', '重新开始'];
+
+  function drawPrompt() {
+    ctx.fillStyle = C.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Title
+    ctx.fillStyle = C.green;
+    ctx.font = '20px Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = C.green;
+    ctx.shadowBlur = 8;
+    ctx.fillText('发现存档', W/2, 180);
+    ctx.shadowBlur = 0;
+
+    // Saved info
+    ctx.fillStyle = C.dim;
+    ctx.font = '12px Consolas, monospace';
+    const timeStr = new Date(savedState.timestamp || Date.now()).toLocaleString();
+    ctx.fillText('存档时间: ' + timeStr, W/2, 220);
+    if (savedState.score !== undefined) {
+      ctx.fillText('分数: ' + savedState.score, W/2, 245);
+    }
+
+    // Options
+    options.forEach((opt, i) => {
+      const y = 320 + i * 60;
+      const x = W/2 - 100;
+      const bw = 200, bh = 45;
+
+      ctx.strokeStyle = selected === i ? C.amber : C.dim;
+      ctx.lineWidth = selected === i ? 2 : 1;
+      ctx.strokeRect(x, y, bw, bh);
+
+      if (selected === i) {
+        ctx.fillStyle = 'rgba(0,255,65,0.05)';
+        ctx.fillRect(x+1, y+1, bw-2, bh-2);
+      }
+
+      ctx.fillStyle = selected === i ? C.amber : C.green;
+      ctx.font = '16px Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(opt, W/2, y + 28);
+    });
+
+    // Controls hint
+    ctx.fillStyle = C.dark;
+    ctx.font = '10px Consolas, monospace';
+    ctx.fillText('↑↓ SELECT  ·  ENTER CONFIRM', W/2, H - 40);
+  }
+
+  function promptKey(e) {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      selected = (selected + 1) % 2;
+      drawPrompt();
+    } else if (e.key === 'Enter') {
+      document.removeEventListener('keydown', promptKey);
+      if (selected === 0) {
+        // Restore progress
+        gameInstance.init(savedState);
+      } else {
+        // New game
+        clearGameProgress(key);
+        gameInstance.init();
+      }
+    } else if (e.key === 'Escape') {
+      document.removeEventListener('keydown', promptKey);
+      backToMenu();
+    }
+  }
+
+  // Mouse support
+  function promptClick(e) {
+    const rect = canvas.getBoundingClientRect();
+    const my = (e.clientY - rect.top) * (H / rect.height);
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    options.forEach((_, i) => {
+      const y = 320 + i * 60;
+      if (mx > W/2-100 && mx < W/2+100 && my > y && my < y+45) {
+        document.removeEventListener('keydown', promptKey);
+        canvas.removeEventListener('click', promptClick);
+        if (i === 0) {
+          gameInstance.init(savedState);
+        } else {
+          clearGameProgress(key);
+          gameInstance.init();
+        }
+      }
+    });
+  }
+
+  function promptMouseMove(e) {
+    const rect = canvas.getBoundingClientRect();
+    const my = (e.clientY - rect.top) * (H / rect.height);
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    let newSelected = selected;
+    options.forEach((_, i) => {
+      const y = 320 + i * 60;
+      if (mx > W/2-100 && mx < W/2+100 && my > y && my < y+45) newSelected = i;
+    });
+    if (newSelected !== selected) { selected = newSelected; drawPrompt(); }
+  }
+
+  drawPrompt();
+  document.addEventListener('keydown', promptKey);
+  canvas.addEventListener('click', promptClick);
+  canvas.addEventListener('mousemove', promptMouseMove);
 }
 
 function backToMenu() {
-  if (gameInstance) { gameInstance.destroy(); gameInstance = null; }
+  if (gameInstance) {
+    // Save progress before destroying (if game has saveProgress method and game is not over)
+    if (gameInstance.saveProgress && !gameInstance.over) {
+      gameInstance.saveProgress();
+    }
+    gameInstance.destroy();
+    gameInstance = null;
+  }
   currentGame = null;
   document.addEventListener('keydown', menuKey);
   drawMenu();
@@ -153,13 +466,24 @@ function backToMenu() {
 class Game2048 {
   constructor() { this.grid = []; this.score = 0; this.over = false; this.won = false; }
 
-  init() {
-    this.grid = Array.from({length:4}, () => Array(4).fill(0));
-    this.score = 0; this.over = false; this.won = false;
-    this.spawn(); this.spawn();
+  init(savedState) {
+    if (savedState) {
+      this.grid = savedState.grid;
+      this.score = savedState.score;
+      this.over = savedState.over || false;
+      this.won = savedState.won || false;
+    } else {
+      this.grid = Array.from({length:4}, () => Array(4).fill(0));
+      this.score = 0; this.over = false; this.won = false;
+      this.spawn(); this.spawn();
+    }
     this.draw();
     this._keyH = (e) => this.key(e);
     document.addEventListener('keydown', this._keyH);
+  }
+
+  saveProgress() {
+    saveGameProgress('2048', { grid: this.grid, score: this.score, over: this.over, won: this.won });
   }
 
   destroy() { document.removeEventListener('keydown', this._keyH); }
@@ -189,7 +513,12 @@ class Game2048 {
     for (let i=0;i<(4-dir)%4;i++) b = rot(b);
     for (let r=0;r<4;r++) for(let c=0;c<4;c++) if(b[r][c]!==g[r][c]) moved=true;
     if (moved) { this.grid=b; this.spawn(); }
-    if (!this.canMove()) this.over = true;
+    if (!this.canMove()) {
+      this.over = true;
+      // Save high score
+      saveHighScore('2048', this.score, { maxTile: Math.max(...this.grid.flat()) });
+      clearGameProgress('2048');
+    }
     this.draw();
   }
 
@@ -206,6 +535,7 @@ class Game2048 {
     if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault();
     if (this.over && e.key==='r') { this.init(); return; }
     if (e.key==='Escape') { backToMenu(); return; }
+    if (this.over && (e.key==='h' || e.key==='H')) { showHighScores('2048'); return; }
     if (this.over) return;
     const map = {ArrowLeft:0,ArrowDown:1,ArrowRight:2,ArrowUp:3};
     if (map[e.key]!==undefined) this.move(map[e.key]);
@@ -246,9 +576,23 @@ class Game2048 {
       ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,W,H);
       ctx.fillStyle = this.won ? C.yellow : C.red;
       ctx.font = '28px Consolas, monospace'; ctx.textAlign = 'center';
-      ctx.fillText(this.won ? 'YOU WIN!' : 'GAME OVER', W/2, H/2 - 20);
-      ctx.fillStyle = C.dim; ctx.font = '14px Consolas, monospace';
-      ctx.fillText('Press R to restart · ESC for menu', W/2, H/2 + 20);
+      ctx.fillText(this.won ? 'YOU WIN!' : 'GAME OVER', W/2, H/2 - 40);
+
+      // Show score
+      ctx.fillStyle = C.amber;
+      ctx.font = '18px Consolas, monospace';
+      ctx.fillText('SCORE: ' + this.score, W/2, H/2 - 5);
+
+      // Show high score
+      const hi = getHighScore('2048');
+      if (hi > 0) {
+        ctx.fillStyle = C.yellow;
+        ctx.font = '12px Consolas, monospace';
+        ctx.fillText('BEST: ' + hi, W/2, H/2 + 20);
+      }
+
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
+      ctx.fillText('R restart · ESC menu · H scores', W/2, H/2 + 50);
     }
   }
 }
@@ -272,15 +616,33 @@ class GameTetris {
     ];
   }
 
-  init() {
-    this.board = Array.from({length:this.ROWS},()=>Array(this.COLS).fill(0));
-    this.score=0; this.lines=0; this.level=1; this.over=false; this.paused=false;
-    this.next = this.randomPiece();
-    this.spawn();
+  init(savedState) {
+    if (savedState) {
+      this.board = savedState.board;
+      this.score = savedState.score;
+      this.lines = savedState.lines;
+      this.level = savedState.level;
+      this.over = savedState.over || false;
+      this.paused = false;
+      this.piece = savedState.piece;
+      this.next = savedState.next;
+    } else {
+      this.board = Array.from({length:this.ROWS},()=>Array(this.COLS).fill(0));
+      this.score=0; this.lines=0; this.level=1; this.over=false; this.paused=false;
+      this.next = this.randomPiece();
+      this.spawn();
+    }
     this.lastTime = performance.now();
     this._keyH = (e)=>this.key(e);
     document.addEventListener('keydown', this._keyH);
     this.loop();
+  }
+
+  saveProgress() {
+    saveGameProgress('tetris', {
+      board: this.board, score: this.score, lines: this.lines,
+      level: this.level, over: this.over, piece: this.piece, next: this.next
+    });
   }
 
   destroy() { document.removeEventListener('keydown',this._keyH); if(this._raf)cancelAnimationFrame(this._raf); }
@@ -293,7 +655,11 @@ class GameTetris {
   spawn() {
     this.piece = this.next;
     this.next = this.randomPiece();
-    if (!this.valid(this.piece.shape,this.piece.x,this.piece.y)) this.over=true;
+    if (!this.valid(this.piece.shape,this.piece.x,this.piece.y)) {
+      this.over=true;
+      saveHighScore('tetris', this.score, { lines: this.lines, level: this.level });
+      clearGameProgress('tetris');
+    }
   }
 
   valid(shape,ox,oy) {
@@ -351,6 +717,7 @@ class GameTetris {
   key(e) {
     if(e.key==='Escape'){backToMenu();return;}
     if(e.key==='p'){this.paused=!this.paused;if(!this.paused)this.lastTime=performance.now();this.draw();return;}
+    if(this.over&&(e.key==='h'||e.key==='H')){showHighScores('tetris');return;}
     if(this.over||this.paused) return;
     const p=this.piece;
     if(e.key==='ArrowLeft'&&this.valid(p.shape,p.x-1,p.y)){e.preventDefault();p.x--;}
@@ -399,7 +766,16 @@ class GameTetris {
     if(this.paused){ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,0,W,H);ctx.fillStyle=C.amber;ctx.font='28px Consolas,monospace';ctx.textAlign='center';ctx.fillText('PAUSED',W/2,H/2);}
 
     // Game over
-    if(this.over){ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,0,W,H);ctx.fillStyle=C.red;ctx.font='28px Consolas,monospace';ctx.textAlign='center';ctx.fillText('GAME OVER',W/2,H/2-20);ctx.fillStyle=C.dim;ctx.font='14px Consolas,monospace';ctx.fillText('ESC for menu',W/2,H/2+20);}
+    if(this.over){
+      ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,0,W,H);
+      ctx.fillStyle=C.red;ctx.font='28px Consolas,monospace';ctx.textAlign='center';
+      ctx.fillText('GAME OVER',W/2,H/2-40);
+      ctx.fillStyle=C.amber;ctx.font='18px Consolas,monospace';
+      ctx.fillText('SCORE: '+this.score,W/2,H/2-10);
+      const hi=getHighScore('tetris');
+      if(hi>0){ctx.fillStyle=C.yellow;ctx.font='12px Consolas,monospace';ctx.fillText('BEST: '+hi,W/2,H/2+15);}
+      ctx.fillStyle=C.dim;ctx.font='12px Consolas,monospace';ctx.fillText('ESC menu · H scores',W/2,H/2+45);
+    }
   }
 }
 
@@ -419,13 +795,28 @@ class GameShooter {
     this.keys={};
   }
 
-  init() {
-    this.invulnerable=3;
-    this.showHelp=true;
+  init(savedState) {
+    if (savedState) {
+      this.score = savedState.score;
+      this.hp = savedState.hp;
+      this.maxHp = savedState.maxHp;
+      this.survivalTime = savedState.survivalTime;
+      this.bulletPower = savedState.bulletPower;
+      this.over = savedState.over || false;
+      this.invulnerable = 2;
+      this.showHelp = false;
+    } else {
+      this.invulnerable=3;
+      this.showHelp=true;
+      this.score=0; this.hp=3; this.maxHp=3; this.survivalTime=0;
+      this.bulletPower=1; this.over=false;
+    }
+    this.bullets=[]; this.enemies=[]; this.particles=[]; this.powerups=[];
     this._keyD=(e)=>{
       this.keys[e.key]=true;
       if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();
       if(e.key==='Escape')backToMenu();
+      if(this.over&&(e.key==='h'||e.key==='H')){showHighScores('shooter');return;}
       if(this.showHelp&&(e.key==='Enter'||e.key===' '))this.showHelp=false;
     };
     this._keyU=(e)=>{this.keys[e.key]=false;};
@@ -433,6 +824,13 @@ class GameShooter {
     document.addEventListener('keyup',this._keyU);
     this.lastTime=performance.now();
     this.loop();
+  }
+
+  saveProgress() {
+    saveGameProgress('shooter', {
+      score: this.score, hp: this.hp, maxHp: this.maxHp,
+      survivalTime: this.survivalTime, bulletPower: this.bulletPower, over: this.over
+    });
   }
 
   destroy(){document.removeEventListener('keydown',this._keyD);document.removeEventListener('keyup',this._keyU);if(this._raf)cancelAnimationFrame(this._raf);}
@@ -544,7 +942,11 @@ class GameShooter {
           // Lose power-ups on hit
           if(this.bulletPower>1) this.bulletPower--;
           for(let k=0;k<12;k++) this.particles.push({x:p.x,y:p.y,dx:(Math.random()-0.5)*200,dy:(Math.random()-0.5)*200,life:0.8,max:0.8,color:C.red});
-          if(this.hp<=0) this.over=true;
+          if(this.hp<=0) {
+            this.over=true;
+            saveHighScore('shooter', this.score, { survivalTime: Math.floor(this.survivalTime) });
+            clearGameProgress('shooter');
+          }
           break;
         }
       }
@@ -694,11 +1096,13 @@ class GameShooter {
     if(this.over){
       ctx.fillStyle='rgba(0,0,0,0.75)';ctx.fillRect(0,0,W,H);
       ctx.textAlign='center';
-      ctx.fillStyle=C.red;ctx.font='28px Consolas,monospace';ctx.fillText('GAME OVER',W/2,H/2-40);
-      ctx.fillStyle=C.amber;ctx.font='16px Consolas,monospace';ctx.fillText('Score: '+this.score,W/2,H/2);
+      ctx.fillStyle=C.red;ctx.font='28px Consolas,monospace';ctx.fillText('GAME OVER',W/2,H/2-50);
+      ctx.fillStyle=C.amber;ctx.font='18px Consolas,monospace';ctx.fillText('Score: '+this.score,W/2,H/2-15);
       const m=Math.floor(this.survivalTime/60);const s=Math.floor(this.survivalTime%60);
-      ctx.fillStyle=C.cyan;ctx.font='14px Consolas,monospace';ctx.fillText(`Survived: ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`,W/2,H/2+25);
-      ctx.fillStyle=C.dim;ctx.font='12px Consolas,monospace';ctx.fillText('ESC for menu',W/2,H/2+55);
+      ctx.fillStyle=C.cyan;ctx.font='14px Consolas,monospace';ctx.fillText(`Survived: ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`,W/2,H/2+10);
+      const hi=getHighScore('shooter');
+      if(hi>0){ctx.fillStyle=C.yellow;ctx.font='12px Consolas,monospace';ctx.fillText('BEST: '+hi,W/2,H/2+35);}
+      ctx.fillStyle=C.dim;ctx.font='12px Consolas,monospace';ctx.fillText('ESC menu · H scores',W/2,H/2+60);
     }
   }
 }
@@ -772,13 +1176,13 @@ class GameWordHopper {
       ['congress','n.','国会'],['conscience','n.','良心'],['conscious','adj.','有意识的'],
       ['consensus','n.','共识'],['consequence','n.','后果'],['conserve','v.','保存'],
       ['considerable','adj.','相当大的'],['consist','v.','由...组成'],['consistent','adj.','一致的'],
-      ['constant','adj.',' constant'],['constitute','v.','构成'],['construct','v.','构建'],
+      ['constant','adj.','持续的；恒定的'],['constitute','v.','构成'],['construct','v.','构建'],
       ['consult','v.','咨询'],['consume','v.','消耗'],['contact','v./n.','接触'],
       ['contain','v.','包含'],['contemporary','adj.','当代的'],['contempt','n.','蔑视'],
       ['content','n./adj.','内容；满足的'],['contest','n./v.','竞争'],['context','n.','上下文'],
       ['contract','n.','合同'],['contradict','v.','矛盾'],['contrary','adj.','相反的'],
       ['contrast','n./v.','对比'],['contribute','v.','贡献'],['controversial','adj.','有争议的'],
-      ['convention','n.',' convention'],['convert','v.','转换'],['convey','v.','传达'],
+      ['convention','n.','大会；惯例'],['convert','v.','转换'],['convey','v.','传达'],
       ['convince','v.','说服'],['cooperate','v.','合作'],['cope','v.','应对'],
       ['core','n./adj.','核心'],['corporate','adj.','公司的'],['correspond','v.','对应'],
       ['corrupt','adj.','腐败的'],['counsel','n./v.','建议'],['counterpart','n.','对应物'],
@@ -810,7 +1214,7 @@ class GameWordHopper {
       ['dispute','n./v.','争论'],['dissolve','v.','溶解'],['distinct','adj.','不同的'],
       ['distinguish','v.','区分'],['distribute','v.','分配'],['disturb','v.','打扰'],
       ['diverse','adj.','多样的'],['divorce','n./v.','离婚'],['document','n./v.','文档；记录'],
-      ['domestic','adj.',' domestic'],['dominant','adj.','占主导的'],['donate','v.','捐赠'],
+      ['domestic','adj.','国内的；家庭的'],['dominant','adj.','占主导的'],['donate','v.','捐赠'],
       ['doubt','n./v.','怀疑'],['draft','n./v.','草案；起草'],['dramatic','adj.','戏剧性的'],
       ['drift','v./n.','漂流'],['drought','n.','干旱'],['dump','v./n.','倾倒'],
       ['durable','adj.','耐用的'],['duration','n.','持续时间'],['dynamic','adj.','动态的'],
@@ -822,15 +1226,15 @@ class GameWordHopper {
       ['enable','v.','使能够'],['encounter','v./n.','遭遇'],['encourage','v.','鼓励'],
       ['engage','v.','从事；吸引'],['enhance','v.','增强'],['enormous','adj.','巨大的'],
       ['enquire','v.','询问'],['ensure','v.','确保'],['enterprise','n.','企业'],
-      ['enthusiasm','n.','热情'],['entire','adj.',' entire'],['entity','n.','实体'],
+      ['enthusiasm','n.','热情'],['entire','adj.','整个的；全部的'],['entity','n.','实体'],
       ['environment','n.','环境'],['episode','n.','插曲'],['equivalent','adj./n.','等价的'],
       ['era','n.','时代'],['erode','v.','侵蚀'],['error','n.','错误'],
-      ['escape','v./n.','逃跑'],['essential','adj.',' essential'],['establish','v.','建立'],
+      ['escape','v./n.','逃跑'],['essential','adj.','必要的；本质的'],['establish','v.','建立'],
       ['estimate','v./n.','估计'],['evaluate','v.','评估'],['evidence','n.','证据'],
       ['evolution','n.','进化'],['evolve','v.','发展'],['exaggerate','v.','夸张'],
-      ['exceed','v.','超过'],['exception','n.','例外'],['excess','n./adj.',' excess'],
+      ['exceed','v.','超过'],['exception','n.','例外'],['excess','n./adj.','过量；过度的'],
       ['exclude','v.','排除'],['execute','v.','执行'],['exert','v.','施加'],
-      ['exhaust','v./n.',' exhaust'],['exhibit','v./n.','展览'],['expand','v.','扩展'],
+      ['exhaust','v./n.','耗尽；排气'],['exhibit','v./n.','展览'],['expand','v.','扩展'],
       ['expense','n.','费用'],['expert','n./adj.','专家'],['explicit','adj.','明确的'],
       ['exploit','v./n.','开发；利用'],['explore','v.','探索'],['export','v./n.','出口'],
       ['expose','v.','暴露'],['extend','v.','延伸'],['extent','n.','程度'],
@@ -839,49 +1243,49 @@ class GameWordHopper {
       // F
       ['fabric','n.','织物'],['facilitate','v.','促进'],['factor','n.','因素'],
       ['faculty','n.','能力；全体教员'],['fade','v.','褪色'],['failure','n.','失败'],
-      ['fame','n.','名声'],['fancy','adj./v.',' fancy'],['fascinating','adj.','迷人的'],
+      ['fame','n.','名声'],['fancy','adj./v.','花哨的；想象'],['fascinating','adj.','迷人的'],
       ['fatal','adj.','致命的'],['fate','n.','命运'],['fault','n.','过错'],
-      ['favor','n./v.',' favor'],['feasible','adj.','可行的'],['feature','n.','特征'],
-      ['federal','adj.','联邦的'],['feedback','n.','反馈'],['fierce','adj.',' fierce'],
-      ['figure','n./v.','人物；计算'],['file','n./v.','文件；提交'],['finance','n.',' finance'],
+      ['favor','n./v.','恩惠；赞同'],['feasible','adj.','可行的'],['feature','n.','特征'],
+      ['federal','adj.','联邦的'],['feedback','n.','反馈'],['fierce','adj.','激烈的；凶猛的'],
+      ['figure','n./v.','人物；计算'],['file','n./v.','文件；提交'],['finance','n.','金融；财政'],
       ['flaw','n.','缺陷'],['flee','v.','逃跑'],['flexible','adj.','灵活的'],
       ['float','v.','漂浮'],['flourish','v.','繁荣'],['flow','v./n.','流动'],
       ['fluent','adj.','流利的'],['focus','v./n.','聚焦'],['forbid','v.','禁止'],
       ['forecast','v./n.','预测'],['foresee','v.','预见'],['forgive','v.','原谅'],
-      ['format','n.','格式'],['former','adj.',' former'],['formula','n.','公式'],
+      ['format','n.','格式'],['former','adj.','以前的；前者'],['formula','n.','公式'],
       ['fortune','n.','财富'],['forum','n.','论坛'],['fossil','n.','化石'],
       ['foundation','n.','基础'],['fraction','n.','分数'],['fragile','adj.','脆弱的'],
       ['framework','n.','框架'],['frequent','adj.','频繁的'],['friction','n.','摩擦'],
       ['frontier','n.','前沿'],['frustrate','v.','使沮丧'],['fulfill','v.','履行'],
-      ['function','n./v.','功能；运行'],['fund','n./v.','基金；资助'],['fundamental','adj.',' fundamental'],
+      ['function','n./v.','功能；运行'],['fund','n./v.','基金；资助'],['fundamental','adj.','根本的；基本的'],
       ['funeral','n.','葬礼'],['furious','adj.','狂怒的'],['furnish','v.','提供；装修'],
       // G
       ['gap','n.','差距'],['gather','v.','聚集'],['gaze','v./n.','凝视'],
       ['gender','n.','性别'],['gene','n.','基因'],['generate','v.','生成'],
       ['genius','n.','天才'],['genuine','adj.','真正的'],['gesture','n./v.','手势'],
       ['global','adj.','全球的'],['glory','n.','光荣'],['govern','v.','统治'],
-      ['grab','v.','抓取'],['grace','n.','优雅'],['gradual','adj.',' gradual'],
+      ['grab','v.','抓取'],['grace','n.','优雅'],['gradual','adj.','逐渐的；渐进的'],
       ['grant','v./n.','授予'],['graphic','adj.','图形的'],['grasp','v./n.','掌握'],
       ['grateful','adj.','感激的'],['grave','adj./n.','严重的；坟墓'],['gravity','n.','重力'],
       ['greet','v.','问候'],['grief','n.','悲伤'],['gross','adj.','总的'],
-      ['guarantee','v./n.','保证'],['guard','v./n.','守卫'],['guide','v./n.',' guide'],
+      ['guarantee','v./n.','保证'],['guard','v./n.','守卫'],['guide','v./n.','指导；指南'],
       ['guilty','adj.','有罪的'],
       // H
-      ['halt','v./n.','停止'],['handle','v./n.','处理'],['harbor','n./v.',' harbor'],
-      ['harmony','n.','和谐'],['harsh','adj.',' harsh'],['harvest','n./v.',' harvest'],
+      ['halt','v./n.','停止'],['handle','v./n.','处理'],['harbor','n./v.','港口；庇护'],
+      ['harmony','n.','和谐'],['harsh','adj.','严厉的；恶劣的'],['harvest','n./v.','收获；收割'],
       ['haste','n.','匆忙'],['hatred','n.','仇恨'],['haunt','v.','萦绕'],
-      ['hazard','n.','危险'],['heal','v.','治愈'],['heap','n./v.',' heap'],
+      ['hazard','n.','危险'],['heal','v.','治愈'],['heap','n./v.','堆；堆积'],
       ['hesitate','v.','犹豫'],['highlight','v./n.','强调'],['hint','n./v.','暗示'],
-      ['historical','adj.','历史的'],['hollow','adj.','空洞的'],['honor','n./v.',' honor'],
+      ['historical','adj.','历史的'],['hollow','adj.','空洞的'],['honor','n./v.','荣誉；尊敬'],
       ['horizon','n.','地平线'],['horrible','adj.','可怕的'],['hostile','adj.','敌对的'],
-      ['household','n./adj.',' household'],['humble','adj.',' humble'],['hunger','n.','饥饿'],
+      ['household','n./adj.','家庭；家务的'],['humble','adj.','谦逊的；卑微的'],['hunger','n.','饥饿'],
       // I
-      ['identical','adj.',' identical'],['identify','v.','识别'],['identity','n.','身份'],
+      ['identical','adj.','相同的；一模一样的'],['identify','v.','识别'],['identity','n.','身份'],
       ['ignore','v.','忽视'],['illustrate','v.','说明'],['image','n.','图像'],
-      ['imaginary','adj.','想象的'],['immediate','adj.',' immediate'],['immense','adj.','巨大的'],
+      ['imaginary','adj.','想象的'],['immediate','adj.','立即的；直接的'],['immense','adj.','巨大的'],
       ['immune','adj.','免疫的'],['impact','n./v.','影响'],['implement','v./n.','实施'],
-      ['implication','n.','含义'],['implicit','adj.',' implicit'],['imply','v.','暗示'],
-      ['impose','v.','强加'],['impress','v.',' impress'],['impulse','n.','冲动'],
+      ['implication','n.','含义'],['implicit','adj.','含蓄的；暗示的'],['imply','v.','暗示'],
+      ['impose','v.','强加'],['impress','v.','给…留下深刻印象'],['impulse','n.','冲动'],
       ['incident','n.','事件'],['incline','v./n.','倾斜'],['include','v.','包括'],
       ['income','n.','收入'],['incredible','adj.','难以置信的'],['independent','adj.','独立的'],
       ['index','n.','索引'],['indicate','v.','表明'],['individual','adj./n.','个人的'],
@@ -889,254 +1293,254 @@ class GameWordHopper {
       ['infant','n.','婴儿'],['infect','v.','感染'],['infer','v.','推断'],
       ['inflation','n.','通货膨胀'],['influence','n./v.','影响'],['inform','v.','通知'],
       ['ingredient','n.','成分'],['inherent','adj.','固有的'],['initial','adj.','初始的'],
-      ['initiate','v.','发起'],['initiative','n.',' initiative'],['inner','adj.','内部的'],
+      ['initiate','v.','发起'],['initiative','n.','主动性；倡议'],['inner','adj.','内部的'],
       ['innocent','adj.','无辜的'],['innovation','n.','创新'],['input','n./v.','输入'],
       ['inquire','v.','询问'],['insert','v.','插入'],['insight','n.','洞察力'],
       ['inspect','v.','检查'],['inspire','v.','启发'],['install','v.','安装'],
-      ['instance','n.','实例'],['instinct','n.','本能'],['institute','n./v.',' institute'],
+      ['instance','n.','实例'],['instinct','n.','本能'],['institute','n./v.','研究所；设立'],
       ['institution','n.','机构'],['instruct','v.','指导'],['instrument','n.','仪器'],
-      ['insurance','n.','保险'],['integrate','v.','整合'],['intellectual','adj./n.',' intellectual'],
-      ['intelligence','n.',' intelligence'],['intend','v.','打算'],['intense','adj.',' intense'],
+      ['insurance','n.','保险'],['integrate','v.','整合'],['intellectual','adj./n.','知识分子；智力的'],
+      ['intelligence','n.','智力；情报'],['intend','v.','打算'],['intense','adj.','强烈的；紧张的'],
       ['interact','v.','互动'],['interest','n./v.','兴趣'],['interfere','v.','干扰'],
       ['interior','adj./n.','内部的'],['interpret','v.','解释'],['interval','n.','间隔'],
-      ['intimate','adj.',' intimate'],['invade','v.','入侵'],['investigate','v.','调查'],
+      ['intimate','adj.','亲密的；私人的'],['invade','v.','入侵'],['investigate','v.','调查'],
       ['invest','v.','投资'],['invisible','adj.','看不见的'],['involve','v.','涉及'],
       ['isolate','v.','隔离'],['issue','n./v.','问题；发行'],['item','n.','项目'],
       // J
-      ['jail','n./v.','监狱'],['jam','n./v.','堵塞'],['joint','adj./n.',' joint'],
-      ['journal','n.','期刊'],['journey','n.','旅程'],['judge','v./n.',' judge'],
-      ['junction','n.','交叉路口'],['junior','adj.',' junior'],['justice','n.','正义'],
+      ['jail','n./v.','监狱'],['jam','n./v.','堵塞'],['joint','adj./n.','联合的；关节'],
+      ['journal','n.','期刊'],['journey','n.','旅程'],['judge','v./n.','判断；法官'],
+      ['junction','n.','交叉路口'],['junior','adj.','初级的；年少的'],['justice','n.','正义'],
       ['justify','v.','证明...正当'],
       // K
-      ['keen','adj.',' keen'],['keyboard','n.','键盘'],['kidney','n.','肾脏'],
+      ['keen','adj.','敏锐的；热切的'],['keyboard','n.','键盘'],['kidney','n.','肾脏'],
       ['kingdom','n.','王国'],['kneel','v.','跪下'],['knit','v.','编织'],
       ['knob','n.','旋钮'],['knowledge','n.','知识'],
       // L
-      ['label','n./v.','标签'],['lack','v./n.','缺乏'],['landscape','n.',' landscape'],
+      ['label','n./v.','标签'],['lack','v./n.','缺乏'],['landscape','n.','风景；景观'],
       ['lane','n.','车道'],['launch','v./n.','发射'],['laundry','n.','洗衣房'],
       ['layer','n.','层'],['layout','n.','布局'],['league','n.','联盟'],
-      ['lean','v./adj.','倾斜；瘦的'],['leap','v./n.','跳跃'],['lecture','n./v.',' lecture'],
-      ['legal','adj.','法律的'],['legend','n.',' legend'],['legislation','n.',' legislation'],
-      ['leisure','n.',' leisure'],['lens','n.','透镜'],['liberal','adj.',' liberal'],
+      ['lean','v./adj.','倾斜；瘦的'],['leap','v./n.','跳跃'],['lecture','n./v.','讲座；演讲'],
+      ['legal','adj.','法律的'],['legend','n.','传说；传奇'],['legislation','n.','立法；法规'],
+      ['leisure','n.','闲暇；休闲'],['lens','n.','透镜'],['liberal','adj.','自由的；开明的'],
       ['liberate','v.','解放'],['liberty','n.','自由'],['license','n.','许可证'],
-      ['likely','adj./adv.',' likely'],['limit','n./v.','限制'],['linear','adj.','线性的'],
+      ['likely','adj./adv.','可能的；大概'],['limit','n./v.','限制'],['linear','adj.','线性的'],
       ['linguistic','adj.','语言学的'],['link','v./n.','链接'],['liquid','n./adj.','液体'],
-      ['literacy','n.',' literacy'],['literary','adj.','文学的'],['literature','n.',' literature'],
-      ['load','v./n.','负载'],['loan','n./v.','贷款'],['local','adj.',' local'],
+      ['literacy','n.','读写能力；素养'],['literary','adj.','文学的'],['literature','n.','文学；文献'],
+      ['load','v./n.','负载'],['loan','n./v.','贷款'],['local','adj.','当地的；本地的'],
       ['locate','v.','定位'],['logic','n.','逻辑'],['logical','adj.','逻辑的'],
       ['loose','adj.','松的'],['loss','n.','损失'],['loyal','adj.','忠诚的'],
-      ['luggage','n.','行李'],['lump','n./v.','肿块'],['luxury','n.',' luxury'],
+      ['luggage','n.','行李'],['lump','n./v.','肿块'],['luxury','n.','奢侈；奢华'],
       // M
-      ['magnet','n.','磁铁'],['magnitude','n.',' magnitude'],['maintain','v.','维护'],
+      ['magnet','n.','磁铁'],['magnitude','n.','巨大；量级'],['maintain','v.','维护'],
       ['major','adj.','主要的'],['majority','n.','多数'],['manage','v.','管理'],
-      ['manifest','v./adj.',' manifest'],['manipulate','v.','操纵'],['manner','n.','方式'],
-      ['manual','adj./n.',' manual'],['manufacture','v./n.','制造'],['margin','n.','边缘'],
-      ['marine','adj.','海洋的'],['market','n.','市场'],['mass','n./adj.',' mass'],
-      ['massive','adj.',' massive'],['master','n./v.',' master'],['mature','adj./v.',' mature'],
-      ['maximum','adj./n.',' maximum'],['mechanism','n.','机制'],['media','n.','媒体'],
-      ['medium','adj./n.',' medium'],['mental','adj.',' mental'],['mention','v./n.','提及'],
-      ['merchant','n.','商人'],['mercy','n.',' mercy'],['mere','adj.',' mere'],
-      ['merit','n.',' merit'],['method','n.','方法'],['migrate','v.','迁移'],
-      ['military','adj.','军事的'],['mineral','n.','矿物'],['minimum','adj./n.',' minimum'],
-      ['minister','n.','部长'],['minor','adj.',' minor'],['minority','n.','少数'],
-      ['miracle','n.','奇迹'],['mission','n.',' mission'],['mobile','adj.',' mobile'],
-      ['moderate','adj.',' moderate'],['modify','v.','修改'],['module','n.','模块'],
-      ['moist','adj.','潮湿的'],['momentum','n.',' momentum'],['monopoly','n.','垄断'],
+      ['manifest','v./adj.','表明；明显的'],['manipulate','v.','操纵'],['manner','n.','方式'],
+      ['manual','adj./n.','手册；手动的'],['manufacture','v./n.','制造'],['margin','n.','边缘'],
+      ['marine','adj.','海洋的'],['market','n.','市场'],['mass','n./adj.','大量；质量'],
+      ['massive','adj.','巨大的；大规模的'],['master','n./v.','主人；精通'],['mature','adj./v.','成熟的；到期的'],
+      ['maximum','adj./n.','最大值；最大的'],['mechanism','n.','机制'],['media','n.','媒体'],
+      ['medium','adj./n.','中等的；媒介'],['mental','adj.','心理的；精神的'],['mention','v./n.','提及'],
+      ['merchant','n.','商人'],['mercy','n.','仁慈；怜悯'],['mere','adj.','仅仅的；只不过的'],
+      ['merit','n.','优点；功绩'],['method','n.','方法'],['migrate','v.','迁移'],
+      ['military','adj.','军事的'],['mineral','n.','矿物'],['minimum','adj./n.','最小值；最低的'],
+      ['minister','n.','部长'],['minor','adj.','次要的；少数的'],['minority','n.','少数'],
+      ['miracle','n.','奇迹'],['mission','n.','使命；任务'],['mobile','adj.','移动的；手机'],
+      ['moderate','adj.','适度的；温和的'],['modify','v.','修改'],['module','n.','模块'],
+      ['moist','adj.','潮湿的'],['momentum','n.','势头；动量'],['monopoly','n.','垄断'],
       ['moral','adj.','道德的'],['moreover','adv.','此外'],['mortgage','n./v.','抵押'],
       ['motion','n.','运动'],['motivate','v.','激励'],['motive','n.','动机'],
-      ['mount','v./n.',' mount'],['municipal','adj.',' municipal'],['mutual','adj.',' mutual'],
+      ['mount','v./n.','登上；山'],['municipal','adj.','市政的；市的'],['mutual','adj.','相互的；共同的'],
       // N
-      ['naked','adj.','裸体的'],['narrative','n./adj.',' narrative'],['nasty','adj.',' nasty'],
-      ['national','adj.',' national'],['native','adj.',' native'],['navigate','v.','导航'],
-      ['neat','adj.','整洁的'],['negative','adj.',' negative'],['neglect','v./n.',' neglect'],
+      ['naked','adj.','裸体的'],['narrative','n./adj.','叙述；叙事的'],['nasty','adj.','令人不快的；恶劣的'],
+      ['national','adj.','国家的；民族的'],['native','adj.','本地的；土著的'],['navigate','v.','导航'],
+      ['neat','adj.','整洁的'],['negative','adj.','消极的；否定的'],['neglect','v./n.','忽视；疏忽'],
       ['negotiate','v.','谈判'],['nerve','n.','神经'],['network','n.','网络'],
-      ['neutral','adj.','中性的'],['nevertheless','adv.',' nevertheless'],['noble','adj.',' noble'],
-      ['norm','n.','规范'],['notable','adj.',' notable'],['notion','n.','概念'],
-      ['novel','n./adj.','小说；新颖的'],['nuclear','adj.','核的'],['numerous','adj.',' numerous'],
+      ['neutral','adj.','中性的'],['nevertheless','adv.','然而；不过'],['noble','adj.','高尚的；贵族的'],
+      ['norm','n.','规范'],['notable','adj.','值得注意的；显著的'],['notion','n.','概念'],
+      ['novel','n./adj.','小说；新颖的'],['nuclear','adj.','核的'],['numerous','adj.','众多的；大量的'],
       // O
       ['obey','v.','服从'],['object','n./v.','物体；反对'],['objective','n./adj.','目标；客观的'],
       ['obligation','n.','义务'],['observe','v.','观察'],['obstacle','n.','障碍'],
-      ['obtain','v.','获得'],['obvious','adj.',' obvious'],['occasion','n.','场合'],
+      ['obtain','v.','获得'],['obvious','adj.','明显的；显而易见的'],['occasion','n.','场合'],
       ['occupy','v.','占用'],['occur','v.','发生'],['odd','adj.','奇怪的'],
-      ['offend','v.','冒犯'],['offer','v./n.','提供'],['official','adj./n.',' official'],
+      ['offend','v.','冒犯'],['offer','v./n.','提供'],['official','adj./n.','官方的；官员'],
       ['operate','v.','操作'],['opponent','n.','对手'],['opportunity','n.','机会'],
-      ['oppose','v.','反对'],['opposite','adj./n.',' opposite'],['option','n.','选项'],
-      ['orbit','n./v.','轨道'],['organ','n.','器官'],['orient','v.',' orient'],
-      ['origin','n.','起源'],['original','adj.',' original'],['outcome','n.','结果'],
+      ['oppose','v.','反对'],['opposite','adj./n.','相反的；对面的'],['option','n.','选项'],
+      ['orbit','n./v.','轨道'],['organ','n.','器官'],['orient','v.','使适应；东方'],
+      ['origin','n.','起源'],['original','adj.','原始的；独创的'],['outcome','n.','结果'],
       ['outlet','n.','出口'],['outline','n./v.','大纲'],['output','n.','输出'],
-      ['outstanding','adj.',' outstanding'],['overall','adj./adv.',' overall'],['overcome','v.','克服'],
+      ['outstanding','adj.','杰出的；未解决的'],['overall','adj./adv.','总体的；全面的'],['overcome','v.','克服'],
       ['overlook','v.','忽略'],['overtake','v.','超越'],['overview','n.','概述'],
       // P
       ['pace','n./v.','步调'],['package','n./v.','包裹'],['pale','adj.','苍白的'],
       ['panel','n.','面板'],['panic','n./v.','恐慌'],['parallel','adj./n.','平行的'],
-      ['participate','v.','参与'],['particular','adj.',' particular'],['passage','n.','段落'],
+      ['participate','v.','参与'],['particular','adj.','特定的；特别的'],['passage','n.','段落'],
       ['passion','n.','热情'],['passive','adj.','被动的'],['patent','n.','专利'],
-      ['pattern','n.','模式'],['pause','v./n.','暂停'],['peak','n./adj.',' peak'],
-      ['peculiar','adj.',' peculiar'],['peer','n.','同龄人'],['penalty','n.','惩罚'],
-      ['perceive','v.','感知'],['percentage','n.','百分比'],['perception','n.',' perception'],
-      ['perform','v.','执行'],['permanent','adj.',' permanent'],['permit','v./n.','许可'],
+      ['pattern','n.','模式'],['pause','v./n.','暂停'],['peak','n./adj.','顶峰；高峰的'],
+      ['peculiar','adj.','奇怪的；特有的'],['peer','n.','同龄人'],['penalty','n.','惩罚'],
+      ['perceive','v.','感知'],['percentage','n.','百分比'],['perception','n.','感知；认识'],
+      ['perform','v.','执行'],['permanent','adj.','永久的；持久的'],['permit','v./n.','许可'],
       ['persist','v.','坚持'],['personal','adj.','个人的'],['perspective','n.','视角'],
       ['persuade','v.','说服'],['petition','n./v.','请愿'],['phase','n.','阶段'],
-      ['phenomenon','n.','现象'],['philosophy','n.','哲学'],['physical','adj.',' physical'],
+      ['phenomenon','n.','现象'],['philosophy','n.','哲学'],['physical','adj.','物理的；身体的'],
       ['pioneer','n./v.','先驱'],['plant','n./v.','工厂；种植'],['platform','n.','平台'],
-      ['plead','v.','恳求'],['pledge','v./n.',' pledge'],['plot','n./v.','情节；密谋'],
-      ['plug','n./v.','插头；堵塞'],['plunge','v./n.',' plunge'],['plus','prep./n.',' plus'],
-      ['poison','n./v.','毒药'],['policy','n.','政策'],['polish','v./n.',' polish'],
+      ['plead','v.','恳求'],['pledge','v./n.','保证；誓言'],['plot','n./v.','情节；密谋'],
+      ['plug','n./v.','插头；堵塞'],['plunge','v./n.','骤降；跳入'],['plus','prep./n.','加；加号'],
+      ['poison','n./v.','毒药'],['policy','n.','政策'],['polish','v./n.','磨光；润色'],
       ['poll','n./v.','民意调查'],['pollute','v.','污染'],['pool','n./v.','池塘；集中'],
       ['popular','adj.','流行的'],['populate','v.','居住'],['portion','n.','部分'],
-      ['portrait','n.','肖像'],['pose','v./n.',' pose'],['positive','adj.',' positive'],
-      ['possess','v.','拥有'],['postpone','v.','推迟'],['potential','adj./n.',' potential'],
-      ['pour','v.','倾倒'],['poverty','n.','贫困'],['practical','adj.',' practical'],
-      ['pray','v.','祈祷'],['precaution','n.','预防'],['precede','v.',' precede'],
-      ['precious','adj.',' precious'],['precise','adj.',' precise'],['predict','v.','预测'],
-      ['prefer','v.','更喜欢'],['prejudice','n.','偏见'],['preliminary','adj.',' preliminary'],
-      ['premise','n.','前提'],['premium','n./adj.',' premium'],['preserve','v.','保存'],
-      ['press','v./n.',' press'],['pressure','n.','压力'],['prestige','n.',' prestige'],
-      ['presume','v.',' presuming'],['prevail','v.','盛行'],['prevent','v.','防止'],
-      ['previous','adj.',' previous'],['primarily','adv.',' primarily'],['primary','adj.',' primary'],
-      ['prime','adj./n.',' prime'],['primitive','adj.','原始的'],['principal','adj./n.',' principal'],
-      ['principle','n.','原则'],['prior','adj.',' prior'],['priority','n.','优先权'],
+      ['portrait','n.','肖像'],['pose','v./n.','造成；姿势'],['positive','adj.','积极的；肯定的'],
+      ['possess','v.','拥有'],['postpone','v.','推迟'],['potential','adj./n.','潜在的；潜力'],
+      ['pour','v.','倾倒'],['poverty','n.','贫困'],['practical','adj.','实际的；实用的'],
+      ['pray','v.','祈祷'],['precaution','n.','预防'],['precede','v.','先于；在…之前'],
+      ['precious','adj.','珍贵的；宝贵的'],['precise','adj.','精确的；准确的'],['predict','v.','预测'],
+      ['prefer','v.','更喜欢'],['prejudice','n.','偏见'],['preliminary','adj.','初步的；预备的'],
+      ['premise','n.','前提'],['premium','n./adj.','额外费用；优质的'],['preserve','v.','保存'],
+      ['press','v./n.','按；新闻界'],['pressure','n.','压力'],['prestige','n.','威望；声望'],
+      ['presume','v.','假定；推测'],['prevail','v.','盛行'],['prevent','v.','防止'],
+      ['previous','adj.','以前的；先前的'],['primarily','adv.','主要地；首先'],['primary','adj.','主要的；初级的'],
+      ['prime','adj./n.','首要的；全盛期'],['primitive','adj.','原始的'],['principal','adj./n.','主要的；校长'],
+      ['principle','n.','原则'],['prior','adj.','先前的；优先的'],['priority','n.','优先权'],
       ['privilege','n.','特权'],['probe','v./n.','探测'],['proceed','v.','继续'],
       ['process','n./v.','过程；处理'],['produce','v.','生产'],['profession','n.','职业'],
-      ['professional','adj./n.',' professional'],['profile','n.',' profile'],['profit','n./v.','利润'],
-      ['profound','adj.','深刻的'],['program','n./v.','程序'],['progress','n./v.',' progress'],
-      ['prohibit','v.','禁止'],['project','n./v.','项目'],['prominent','adj.',' prominent'],
-      ['promote','v.','促进'],['prompt','adj./v.',' prompt'],['proof','n.',' proof'],
+      ['professional','adj./n.','专业的；职业人员'],['profile','n.','简介；轮廓'],['profit','n./v.','利润'],
+      ['profound','adj.','深刻的'],['program','n./v.','程序'],['progress','n./v.','进步；进展'],
+      ['prohibit','v.','禁止'],['project','n./v.','项目'],['prominent','adj.','突出的；著名的'],
+      ['promote','v.','促进'],['prompt','adj./v.','迅速的；促使'],['proof','n.','证据；证明'],
       ['proper','adj.','适当的'],['proportion','n.','比例'],['proposal','n.','提案'],
       ['propose','v.','提议'],['prospect','n.','前景'],['prosperous','adj.','繁荣的'],
       ['protect','v.','保护'],['protest','v./n.','抗议'],['prove','v.','证明'],
       ['provide','v.','提供'],['provoke','v.','激怒'],['publish','v.','出版'],
       ['purchase','v./n.','购买'],['pursue','v.','追求'],
       // Q
-      ['qualify','v.',' qualify'],['quantity','n.','数量'],['quarter','n.','四分之一'],
+      ['qualify','v.','使合格；具有资格'],['quantity','n.','数量'],['quarter','n.','四分之一'],
       ['quote','v./n.','引用'],
       // R
-      ['race','n./v.',' race'],['radical','adj.',' radical'],['range','n./v.','范围'],
-      ['rank','n./v.',' rank'],['rapid','adj.',' rapid'],['rare','adj.',' rare'],
-      ['rate','n./v.',' rate'],['ratio','n.','比率'],['rational','adj.',' rational'],
-      ['raw','adj.',' raw'],['react','v.','反应'],['reality','n.','现实'],
-      ['realm','n.','领域'],['reasonable','adj.',' reasonable'],['rebel','v./n.',' rebel'],
+      ['race','n./v.','比赛；种族'],['radical','adj.','激进的；根本的'],['range','n./v.','范围'],
+      ['rank','n./v.','等级；排名'],['rapid','adj.','迅速的；快的'],['rare','adj.','罕见的；稀有的'],
+      ['rate','n./v.','速率；评价'],['ratio','n.','比率'],['rational','adj.','理性的；合理的'],
+      ['raw','adj.','生的；原始的'],['react','v.','反应'],['reality','n.','现实'],
+      ['realm','n.','领域'],['reasonable','adj.','合理的；公道的'],['rebel','v./n.','反叛；叛军'],
       ['recall','v.','回忆'],['receive','v.','接收'],['recent','adj.','最近的'],
-      ['recognition','n.',' recognition'],['recognize','v.','识别'],['recommend','v.','推荐'],
-      ['recover','v.','恢复'],['recruit','v./n.',' recruit'],['reform','v./n.','改革'],
-      ['refuse','v.','拒绝'],['regard','v./n.',' regard'],['region','n.','地区'],
-      ['register','v./n.',' register'],['regulate','v.','调节'],['reject','v.','拒绝'],
-      ['relate','v.','关联'],['release','v./n.','释放'],['relevant','adj.',' relevant'],
-      ['relief','n.',' relief'],['relieve','v.','减轻'],['rely','v.','依赖'],
-      ['remain','v.','剩余'],['remark','n./v.',' remark'],['remarkable','adj.',' remarkable'],
-      ['remedy','n./v.',' remedy'],['remote','adj.',' remote'],['remove','v.','移除'],
-      ['render','v.',' render'],['renew','v.','更新'],['rent','v./n.','租金'],
-      ['repair','v./n.',' repair'],['repeat','v.','重复'],['replace','v.','替换'],
+      ['recognition','n.','认可；识别'],['recognize','v.','识别'],['recommend','v.','推荐'],
+      ['recover','v.','恢复'],['recruit','v./n.','招募；新成员'],['reform','v./n.','改革'],
+      ['refuse','v.','拒绝'],['regard','v./n.','认为；尊重'],['region','n.','地区'],
+      ['register','v./n.','登记；注册'],['regulate','v.','调节'],['reject','v.','拒绝'],
+      ['relate','v.','关联'],['release','v./n.','释放'],['relevant','adj.','相关的；有关的'],
+      ['relief','n.','解脱；救济'],['relieve','v.','减轻'],['rely','v.','依赖'],
+      ['remain','v.','剩余'],['remark','n./v.','评论；言论'],['remarkable','adj.','显著的；非凡的'],
+      ['remedy','n./v.','补救；治疗'],['remote','adj.','遥远的；偏远的'],['remove','v.','移除'],
+      ['render','v.','使成为；提供'],['renew','v.','更新'],['rent','v./n.','租金'],
+      ['repair','v./n.','修理；修复'],['repeat','v.','重复'],['replace','v.','替换'],
       ['represent','v.','代表'],['reproduce','v.','复制'],['reputation','n.','声誉'],
-      ['request','v./n.','请求'],['require','v.','要求'],['rescue','v./n.',' rescue'],
-      ['research','n./v.','研究'],['resemble','v.','类似'],['reserve','v./n.',' reserve'],
+      ['request','v./n.','请求'],['require','v.','要求'],['rescue','v./n.','营救；解救'],
+      ['research','n./v.','研究'],['resemble','v.','类似'],['reserve','v./n.','保留；储备'],
       ['reside','v.','居住'],['resign','v.','辞职'],['resist','v.','抵抗'],
-      ['resolve','v.','解决'],['resort','v./n.',' resort'],['resource','n.','资源'],
+      ['resolve','v.','解决'],['resort','v./n.','求助；度假胜地'],['resource','n.','资源'],
       ['respond','v.','回应'],['response','n.','回应'],['restore','v.','恢复'],
       ['restrict','v.','限制'],['retain','v.','保留'],['retire','v.','退休'],
-      ['reveal','v.','揭示'],['revenue','n.','收入'],['reverse','v./adj.',' reverse'],
-      ['revise','v.','修订'],['revolution','n.','革命'],['reward','n./v.',' reward'],
-      ['rid','v.',' rid'],['rigid','adj.',' rigid'],['risk','n./v.','风险'],
-      ['rival','n./adj.',' rival'],['robot','n.','机器人'],['role','n.','角色'],
-      ['root','n.','根源'],['rotate','v.','旋转'],['rough','adj.',' rough'],
-      ['rouse','v.','唤醒'],['routine','n./adj.',' routine'],['royal','adj.',' royal'],
-      ['rub','v.','摩擦'],['ruin','v./n.',' ruin'],['rural','adj.',' rural'],
-      ['rush','v./n.',' rush'],
+      ['reveal','v.','揭示'],['revenue','n.','收入'],['reverse','v./adj.','逆转；相反的'],
+      ['revise','v.','修订'],['revolution','n.','革命'],['reward','n./v.','奖励；报酬'],
+      ['rid','v.','使摆脱；去除'],['rigid','adj.','严格的；僵硬的'],['risk','n./v.','风险'],
+      ['rival','n./adj.','竞争对手；对抗的'],['robot','n.','机器人'],['role','n.','角色'],
+      ['root','n.','根源'],['rotate','v.','旋转'],['rough','adj.','粗糙的；大致的'],
+      ['rouse','v.','唤醒'],['routine','n./adj.','常规；日常的'],['royal','adj.','皇家的；王室的'],
+      ['rub','v.','摩擦'],['ruin','v./n.','毁灭；废墟'],['rural','adj.','农村的；乡下的'],
+      ['rush','v./n.','冲；急忙'],
       // S
-      ['sacrifice','v./n.',' sacrifice'],['sake','n.','缘故'],['sample','n.','样本'],
+      ['sacrifice','v./n.','牺牲；祭品'],['sake','n.','缘故'],['sample','n.','样本'],
       ['satellite','n.','卫星'],['satisfy','v.','满足'],['scale','n./v.','规模'],
-      ['scatter','v.',' scatter'],['scene','n.','场景'],['schedule','n./v.',' schedule'],
-      ['scheme','n.',' scheme'],['scholar','n.','学者'],['scope','n.','范围'],
-      ['scratch','v./n.',' scratch'],['screen','n./v.','屏幕'],['secure','adj./v.',' secure'],
-      ['seek','v.','寻找'],['seize','v.',' seize'],['select','v.','选择'],
-      ['senior','adj.',' senior'],['sense','n./v.','感觉'],['sensitive','adj.','敏感的'],
+      ['scatter','v.','散开；分散'],['scene','n.','场景'],['schedule','n./v.','日程；安排'],
+      ['scheme','n.','方案；阴谋'],['scholar','n.','学者'],['scope','n.','范围'],
+      ['scratch','v./n.','抓；划痕'],['screen','n./v.','屏幕'],['secure','adj./v.','安全的；获得'],
+      ['seek','v.','寻找'],['seize','v.','抓住；夺取'],['select','v.','选择'],
+      ['senior','adj.','高级的；年长的'],['sense','n./v.','感觉'],['sensitive','adj.','敏感的'],
       ['sequence','n.','序列'],['series','n.','系列'],['serve','v.','服务'],
       ['session','n.','会议'],['settle','v.','解决'],['severe','adj.','严重的'],
       ['shallow','adj.','浅的'],['shame','n.','羞耻'],['shape','n./v.','形状'],
-      ['shelter','n./v.',' shelter'],['shift','v./n.',' shift'],['shrink','v.','收缩'],
-      ['signal','n./v.','信号'],['significant','adj.',' significant'],['similar','adj.',' similar'],
-      ['simplify','v.','简化'],['simultaneously','adv.',' simultaneously'],['single','adj.',' single'],
-      ['site','n.','地点'],['situation','n.','情况'],['sketch','n./v.',' sketch'],
-      ['skill','n.','技能'],['skip','v.','跳过'],['slap','v./n.',' slap'],
-      ['slave','n.','奴隶'],['slender','adj.',' slender'],['slide','v./n.',' slide'],
-      ['slight','adj.','轻微的'],['slim','adj.',' slim'],['slip','v./n.',' slip'],
-      ['slope','n./v.','斜坡'],['smart','adj.',' smart'],['smooth','adj.',' smooth'],
-      ['snap','v./n.',' snap'],['soak','v.','浸泡'],['social','adj.','社会的'],
-      ['software','n.','软件'],['solar','adj.','太阳的'],['sole','adj./n.',' sole'],
+      ['shelter','n./v.','庇护所；遮蔽'],['shift','v./n.','转变；轮班'],['shrink','v.','收缩'],
+      ['signal','n./v.','信号'],['significant','adj.','重要的；显著的'],['similar','adj.','相似的；类似的'],
+      ['simplify','v.','简化'],['simultaneously','adv.','同时地'],['single','adj.','单一的；单身的'],
+      ['site','n.','地点'],['situation','n.','情况'],['sketch','n./v.','素描；概述'],
+      ['skill','n.','技能'],['skip','v.','跳过'],['slap','v./n.','拍打；掌掴'],
+      ['slave','n.','奴隶'],['slender','adj.','苗条的；纤细的'],['slide','v./n.','滑动；幻灯片'],
+      ['slight','adj.','轻微的'],['slim','adj.','苗条的；微小的'],['slip','v./n.','滑倒；溜走'],
+      ['slope','n./v.','斜坡'],['smart','adj.','聪明的；时髦的'],['smooth','adj.','光滑的；顺利的'],
+      ['snap','v./n.','折断；快照'],['soak','v.','浸泡'],['social','adj.','社会的'],
+      ['software','n.','软件'],['solar','adj.','太阳的'],['sole','adj./n.','唯一的；鞋底'],
       ['solemn','adj.','庄严的'],['solid','adj./n.','固体'],['solution','n.','解决方案'],
-      ['solve','v.','解决'],['somewhat','adv.',' somewhat'],['sophisticated','adj.',' sophisticated'],
-      ['source','n.','来源'],['specific','adj.',' specific'],['speculate','v.','推测'],
+      ['solve','v.','解决'],['somewhat','adv.','稍微；有点'],['sophisticated','adj.','复杂的；精密的'],
+      ['source','n.','来源'],['specific','adj.','具体的；特定的'],['speculate','v.','推测'],
       ['spill','v.','溢出'],['spin','v./n.','旋转'],['spirit','n.','精神'],
-      ['split','v./n.','分裂'],['sponsor','v./n.',' sponsor'],['spot','n./v.',' spot'],
-      ['spread','v./n.',' spread'],['spy','n./v.','间谍'],['squeeze','v.',' squeeze'],
+      ['split','v./n.','分裂'],['sponsor','v./n.','赞助；赞助者'],['spot','n./v.','发现；斑点'],
+      ['spread','v./n.','传播；蔓延'],['spy','n./v.','间谍'],['squeeze','v.','挤压；榨取'],
       ['stable','adj./n.','稳定的'],['staff','n.','员工'],['stage','n.','阶段'],
-      ['stake','n.',' stake'],['stale','adj.',' stale'],['standard','n./adj.','标准'],
+      ['stake','n.','利害关系；桩'],['stale','adj.','不新鲜的；陈旧的'],['standard','n./adj.','标准'],
       ['starve','v.','挨饿'],['state','n./v.','状态；陈述'],['statistic','n.','统计'],
-      ['status','n.','地位'],['steady','adj.',' steady'],['steep','adj.','陡峭的'],
-      ['stem','n./v.',' stem'],['stimulate','v.','刺激'],['stir','v.','搅拌'],
-      ['stock','n./v.','库存'],['storey','n.','楼层'],['strain','n./v.',' strain'],
+      ['status','n.','地位'],['steady','adj.','稳定的；平稳的'],['steep','adj.','陡峭的'],
+      ['stem','n./v.','茎；源自'],['stimulate','v.','刺激'],['stir','v.','搅拌'],
+      ['stock','n./v.','库存'],['storey','n.','楼层'],['strain','n./v.','拉伤；压力'],
       ['strategy','n.','战略'],['strength','n.','力量'],['stress','n./v.','压力'],
-      ['stretch','v./n.','伸展'],['strict','adj.','严格的'],['strike','v./n.',' strike'],
-      ['string','n.','字符串'],['strip','n./v.',' strip'],['stroke','n./v.',' stroke'],
-      ['structure','n.','结构'],['stuff','n./v.',' stuff'],['subject','n./adj.','主题'],
-      ['submit','v.','提交'],['subsequent','adj.',' subsequent'],['substance','n.','物质'],
-      ['substitute','n./v.','替代'],['subtle','adj.',' subtle'],['succeed','v.','成功'],
-      ['sufficient','adj.',' sufficient'],['suggest','v.','建议'],['suit','v./n.',' suit'],
-      ['summarize','v.','总结'],['summit','n.','峰会'],['superficial','adj.',' superficial'],
-      ['superior','adj.',' superior'],['supplement','n./v.',' supplement'],['supply','v./n.','供应'],
+      ['stretch','v./n.','伸展'],['strict','adj.','严格的'],['strike','v./n.','罢工；打击'],
+      ['string','n.','字符串'],['strip','n./v.','剥去；条带'],['stroke','n./v.','中风；一笔'],
+      ['structure','n.','结构'],['stuff','n./v.','东西；填塞'],['subject','n./adj.','主题'],
+      ['submit','v.','提交'],['subsequent','adj.','随后的；后来的'],['substance','n.','物质'],
+      ['substitute','n./v.','替代'],['subtle','adj.','微妙的；精妙的'],['succeed','v.','成功'],
+      ['sufficient','adj.','足够的；充分的'],['suggest','v.','建议'],['suit','v./n.','适合；西装'],
+      ['summarize','v.','总结'],['summit','n.','峰会'],['superficial','adj.','表面的；肤浅的'],
+      ['superior','adj.','优越的；上级'],['supplement','n./v.','补充；增刊'],['supply','v./n.','供应'],
       ['support','v./n.','支持'],['suppose','v.','假设'],['suppress','v.','镇压'],
-      ['supreme','adj.',' supreme'],['surplus','n./adj.',' surplus'],['surrender','v./n.',' surrender'],
+      ['supreme','adj.','至高的；最高的'],['surplus','n./adj.','剩余；过剩的'],['surrender','v./n.','投降；放弃'],
       ['surround','v.','包围'],['survey','n./v.','调查'],['survive','v.','幸存'],
-      ['suspect','v./n.','怀疑'],['suspend','v.','暂停'],['sustain','v.',' sustain'],
-      ['swallow','v./n.','吞咽'],['swear','v.','发誓'],['sweep','v./n.',' sweep'],
-      ['swell','v.','膨胀'],['swift','adj.',' swift'],['swing','v./n.',' swing'],
+      ['suspect','v./n.','怀疑'],['suspend','v.','暂停'],['sustain','v.','维持；支撑'],
+      ['swallow','v./n.','吞咽'],['swear','v.','发誓'],['sweep','v./n.','打扫；席卷'],
+      ['swell','v.','膨胀'],['swift','adj.','迅速的；敏捷的'],['swing','v./n.','摇摆；秋千'],
       ['switch','v./n.','开关'],['symbol','n.','符号'],['sympathy','n.','同情'],
-      ['symptom','n.','症状'],['synthetic','adj.',' synthetic'],['system','n.','系统'],
+      ['symptom','n.','症状'],['synthetic','adj.','合成的；人造的'],['system','n.','系统'],
       // T
-      ['tackle','v./n.','处理'],['talent','n.',' talent'],['target','n./v.','目标'],
-      ['technique','n.','技术'],['technology','n.','技术'],['temporary','adj.',' temporary'],
-      ['tend','v.',' tendency'],['terminal','adj./n.',' terminal'],['territory','n.','领土'],
+      ['tackle','v./n.','处理'],['talent','n.','才能；天赋'],['target','n./v.','目标'],
+      ['technique','n.','技术'],['technology','n.','技术'],['temporary','adj.','临时的；暂时的'],
+      ['tend','v.','倾向；趋向'],['terminal','adj./n.','终端；晚期的'],['territory','n.','领土'],
       ['testify','v.','作证'],['theme','n.','主题'],['theory','n.','理论'],
-      ['therapy','n.',' therapy'],['thorough','adj.',' thorough'],['threat','n.','威胁'],
-      ['thrive','v.','繁荣'],['tide','n.','潮汐'],['tight','adj.',' tight'],
+      ['therapy','n.','治疗；疗法'],['thorough','adj.','彻底的；全面的'],['threat','n.','威胁'],
+      ['thrive','v.','繁荣'],['tide','n.','潮汐'],['tight','adj.','紧的；紧密的'],
       ['tissue','n.','组织'],['title','n./v.','标题'],['tolerate','v.','容忍'],
-      ['tone','n.',' tone'],['topic','n.','主题'],['tough','adj.',' tough'],
-      ['trace','n./v.',' trace'],['tradition','n.','传统'],['tragedy','n.','悲剧'],
-      ['trait','n.','特征'],['transaction','n.',' transaction'],['transform','v.','转换'],
-      ['transmit','v.','传输'],['transport','v./n.','运输'],['trap','n./v.',' trap'],
-      ['treasure','n.',' treasure'],['treat','v.',' treat'],['treaty','n.','条约'],
+      ['tone','n.','语气；音调'],['topic','n.','主题'],['tough','adj.','艰难的；坚韧的'],
+      ['trace','n./v.','追踪；痕迹'],['tradition','n.','传统'],['tragedy','n.','悲剧'],
+      ['trait','n.','特征'],['transaction','n.','交易；事务'],['transform','v.','转换'],
+      ['transmit','v.','传输'],['transport','v./n.','运输'],['trap','n./v.','陷阱；困住'],
+      ['treasure','n.','珍宝；珍爱'],['treat','v.','对待；治疗'],['treaty','n.','条约'],
       ['tremendous','adj.','巨大的'],['trend','n.','趋势'],['trial','n.','试验'],
-      ['tribute','n.',' tribute'],['trigger','v./n.',' trigger'],['triumph','n./v.',' triumph'],
+      ['tribute','n.','颂词；贡品'],['trigger','v./n.','触发；扳机'],['triumph','n./v.','胜利；凯旋'],
       ['troop','n.','军队'],['tropical','adj.','热带的'],['trust','v./n.','信任'],
-      ['tube','n.','管子'],['tune','n./v.',' tune'],['tunnel','n.','隧道'],
-      ['turbulent','adj.',' turbulent'],['tutor','n./v.',' tutor'],['twist','v./n.',' twist'],
+      ['tube','n.','管子'],['tune','n./v.','曲调；调节'],['tunnel','n.','隧道'],
+      ['turbulent','adj.','动荡的；湍流的'],['tutor','n./v.','导师；辅导'],['twist','v./n.','扭动；转折'],
       // U
-      ['ultimate','adj.',' ultimate'],['undergo','v.','经历'],['underlie','v.',' underlie'],
-      ['undertake','v.','承担'],['unemployment','n.','失业'],['uniform','n./adj.',' uniform'],
-      ['unique','adj.',' unique'],['unite','v.','统一'],['universal','adj.',' universal'],
-      ['urban','adj.','城市的'],['urge','v./n.',' urge'],['urgent','adj.','紧急的'],
-      ['utility','n.','效用'],['utilize','v.','利用'],['utter','adj./v.',' utter'],
+      ['ultimate','adj.','最终的；极限的'],['undergo','v.','经历'],['underlie','v.','构成…的基础'],
+      ['undertake','v.','承担'],['unemployment','n.','失业'],['uniform','n./adj.','制服；统一的'],
+      ['unique','adj.','独特的；唯一的'],['unite','v.','统一'],['universal','adj.','普遍的；全球的'],
+      ['urban','adj.','城市的'],['urge','v./n.','敦促；冲动'],['urgent','adj.','紧急的'],
+      ['utility','n.','效用'],['utilize','v.','利用'],['utter','adj./v.','完全的；说出'],
       // V
       ['vague','adj.','模糊的'],['valid','adj.','有效的'],['valley','n.','山谷'],
-      ['vanish','v.','消失'],['variable','adj./n.',' variable'],['vary','v.','变化'],
-      ['vast','adj.',' vast'],['vehicle','n.','车辆'],['venture','n./v.',' venture'],
+      ['vanish','v.','消失'],['variable','adj./n.','变量；可变的'],['vary','v.','变化'],
+      ['vast','adj.','广阔的；巨大的'],['vehicle','n.','车辆'],['venture','n./v.','冒险；风险投资'],
       ['verify','v.','验证'],['version','n.','版本'],['vertical','adj.','垂直的'],
       ['vessel','n.','容器；船'],['victim','n.','受害者'],['video','n./adj.','视频'],
       ['viewpoint','n.','观点'],['violate','v.','违反'],['violence','n.','暴力'],
       ['virtual','adj.','虚拟的'],['virtue','n.','美德'],['visible','adj.','可见的'],
-      ['vision','n.','视觉'],['visual','adj.','视觉的'],['vital','adj.',' vital'],
+      ['vision','n.','视觉'],['visual','adj.','视觉的'],['vital','adj.','至关重要的；生命的'],
       ['vivid','adj.','生动的'],['volume','n.','音量；卷'],['voluntary','adj.','自愿的'],
       ['vote','n./v.','投票'],['vulnerable','adj.','脆弱的'],
       // W
       ['wage','n./v.','工资'],['wander','v.','漫步'],['warehouse','n.','仓库'],
-      ['warrant','n./v.',' warrent'],['wealth','n.','财富'],['weapon','n.','武器'],
-      ['weave','v.','编织'],['welfare','n.','福利'],['whereas','conj.',' whereas'],
+      ['warrant','n./v.','授权令；保证'],['wealth','n.','财富'],['weapon','n.','武器'],
+      ['weave','v.','编织'],['welfare','n.','福利'],['whereas','conj.','然而；鉴于'],
       ['whisper','v./n.','耳语'],['wicked','adj.','邪恶的'],['widen','v.','加宽'],
-      ['wisdom','n.','智慧'],['withdraw','v.','撤回'],['withstand','v.',' withstand'],
+      ['wisdom','n.','智慧'],['withdraw','v.','撤回'],['withstand','v.','承受；抵挡'],
       ['witness','n./v.','目击者'],['workshop','n.','研讨会'],['worship','v./n.','崇拜'],
-      ['worthwhile','adj.','值得的'],['wound','n./v.',' wound'],['wrap','v.','包裹'],
+      ['worthwhile','adj.','值得的'],['wound','n./v.','伤口；使受伤'],['wrap','v.','包裹'],
       // Y
-      ['yield','v./n.',' yield'],
+      ['yield','v./n.','产出；让步'],
       // Z
       ['zone','n.','区域'],
     ];
@@ -1168,10 +1572,44 @@ class GameWordHopper {
     this.wordsCompleted = 0;
   }
 
-  init() {
+  init(savedState) {
+    if (savedState) {
+      this.score = savedState.score;
+      this.combo = savedState.combo;
+      this.maxCombo = savedState.maxCombo;
+      this.level = savedState.level;
+      this.lives = savedState.lives;
+      this.totalChars = savedState.totalChars;
+      this.correctChars = savedState.correctChars;
+      this.errorChars = savedState.errorChars;
+      this.wordsCompleted = savedState.wordsCompleted;
+      this.over = savedState.over || false;
+      this.showTutorial = false;
+      this.activeWords = [];
+      this.targetWord = null;
+      this.flashAlpha = 0;
+      this.hitLabel = '';
+      this.hitLabelTimer = 0;
+      this.destroyedEffects = [];
+    }
     this._keyH = (e) => this.key(e);
     document.addEventListener('keydown', this._keyH);
-    this.drawTutorial();
+    if (savedState) {
+      this.startTime = performance.now();
+      this.lastSpawn = 0;
+      this.loop();
+    } else {
+      this.drawTutorial();
+    }
+  }
+
+  saveProgress() {
+    saveGameProgress('wordhopper', {
+      score: this.score, combo: this.combo, maxCombo: this.maxCombo,
+      level: this.level, lives: this.lives, totalChars: this.totalChars,
+      correctChars: this.correctChars, errorChars: this.errorChars,
+      wordsCompleted: this.wordsCompleted, over: this.over
+    });
   }
 
   destroy() {
@@ -1265,6 +1703,7 @@ class GameWordHopper {
         gameInstance.init();
         return;
       }
+      if (e.key === 'h' || e.key === 'H') { showHighScores('wordhopper'); return; }
       if (e.key === 'Escape') { backToMenu(); return; }
       return;
     }
@@ -1376,6 +1815,8 @@ class GameWordHopper {
         }
         if (this.lives <= 0) {
           this.over = true;
+          saveHighScore('wordhopper', this.score, { wordsCompleted: this.wordsCompleted, wpm: Math.round(this.wordsCompleted / ((performance.now() - this.startTime) / 60000)) });
+          clearGameProgress('wordhopper');
         }
         return false;
       }
@@ -1547,17 +1988,19 @@ class GameWordHopper {
       ctx.textAlign = 'center';
       ctx.fillStyle = C.red;
       ctx.font = '28px Consolas, monospace';
-      ctx.fillText('GAME OVER', W/2, H/2 - 60);
+      ctx.fillText('GAME OVER', W/2, H/2 - 70);
       ctx.fillStyle = C.amber;
-      ctx.font = '16px Consolas, monospace';
-      ctx.fillText('Score: ' + Math.floor(this.score), W/2, H/2 - 20);
+      ctx.font = '18px Consolas, monospace';
+      ctx.fillText('Score: ' + Math.floor(this.score), W/2, H/2 - 35);
       ctx.fillStyle = C.green;
       ctx.font = '14px Consolas, monospace';
-      ctx.fillText(wpm + ' WPM  ·  ' + accuracy + '% Accuracy', W/2, H/2 + 10);
-      ctx.fillText('Level ' + this.level + '  ·  Max Combo ' + this.maxCombo, W/2, H/2 + 35);
+      ctx.fillText(wpm + ' WPM  ·  ' + accuracy + '% Accuracy', W/2, H/2 - 5);
+      ctx.fillText('Level ' + this.level + '  ·  Max Combo ' + this.maxCombo, W/2, H/2 + 20);
+      const hi = getHighScore('wordhopper');
+      if (hi > 0) { ctx.fillStyle = C.yellow; ctx.font = '12px Consolas, monospace'; ctx.fillText('BEST: ' + hi, W/2, H/2 + 45); }
       ctx.fillStyle = C.dim;
       ctx.font = '12px Consolas, monospace';
-      ctx.fillText('R to retry  ·  ESC for menu', W/2, H/2 + 70);
+      ctx.fillText('R retry · ESC menu · H scores', W/2, H/2 + 75);
     }
   }
 }
