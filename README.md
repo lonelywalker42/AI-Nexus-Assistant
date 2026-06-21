@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献管理、试验管理、知识库、AI对话、音乐播放、电子书阅读的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v3.6.0-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v3.7.0-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,7 +16,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v3.6.0 |
+| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v3.7.0 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ## 功能模块
@@ -45,8 +45,8 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 
 | 模块 | 功能 |
 |------|------|
-| **音乐** | 唱片旋转UI、频谱可视化(Web Audio API + Canvas)、jsmediatags元数据提取(标题/艺术家/封面/歌词)、文件夹加载、顺序/循环/随机播放、IndexedDB持久化(懒加载架构)、播放进度同步到时钟 |
-| **书架** | 书脊风格网格、EPUB/TXT/MD阅读器、书籍详情(封面/作者/简介)、阅读进度持久化、IndexedDB懒加载、Markdown渲染+数学公式 |
+| **音乐** | 唱片旋转UI、频谱可视化(Web Audio API + Canvas)、jsmediatags元数据提取(标题/艺术家/封面/歌词)、文件夹加载、顺序/循环/随机播放、自定义列表排序(文件名/标题/艺术家)、IndexedDB持久化(懒加载架构)、播放进度同步到时钟 |
+| **书架** | 书脊风格网格、EPUB/TXT/MD/PDF阅读器、书本翻页UI(左右点击+键盘方向键+翻页动画)、护眼模式(暖色调背景)、PDF原页渲染(canvas)、书籍详情(封面/作者/简介)、阅读进度持久化、IndexedDB懒加载、Markdown渲染+数学公式 |
 | **素材库** | 即将推出 |
 
 ### 时钟窗口(辉光管时钟)
@@ -54,7 +54,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 - CSS辉光管效果 + 透明模式
 - **音乐播放器**: 文件夹加载、频谱可视化、顺序/随机播放
 - **倒计时**: 自定义时长、结束提示音(可自定义)、手动停止按钮
-- **游戏机模式**: 2048 / Tetris / 射击 / Word Hopper打字练习(复古像素风格、CRT扫描线、CET-6词汇)
+- **游戏机模式**: 2048 / Tetris / 射击 / Word Hopper打字练习(复古像素风格、CRT扫描线、CET-6词汇、进度保存、历史最高分排行榜)
 - 右键原生菜单、双击返回主窗口、滚轮缩放(0.6x-2.5x)
 - 窗口关闭时自动隐藏(不销毁)，保留播放状态
 
@@ -65,8 +65,8 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 - 应用名称自定义
 - 数据备份与恢复(.db + .db-wal + .db-shm 完整三文件)
 - ZIP导出/导入
-- 联网搜索服务状态
-- MinerU PDF转换引擎(可选安装~2GB，保留公式/图片/表格)
+- 联网搜索服务状态 + 配置指南(便携版/安装程序)
+- MinerU PDF转换引擎(可选安装~2GB，保留公式/图片/表格) + 配置指南
 
 ## 技术架构
 
