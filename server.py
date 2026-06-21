@@ -202,6 +202,45 @@ def get_system_info():
 
 
 # ══════════════════════════════════════════════════════════════
+#  行为埋点 & 研究洞察
+# ══════════════════════════════════════════════════════════════
+
+@app.post("/api/metrics/event")
+def record_metric_event(data: dict):
+    """记录行为事件"""
+    from app.services import metrics_service
+    db = get_session()
+    try:
+        metrics_service.record_event(
+            db,
+            category=data.get("category", ""),
+            action=data.get("action", ""),
+            target_id=data.get("target_id", ""),
+            target_name=data.get("target_name", ""),
+            **{k: v for k, v in data.items() if k not in ("category", "action", "target_id", "target_name")}
+        )
+        return {"status": "ok"}
+    finally:
+        db.close()
+
+
+@app.get("/api/insights")
+def get_insights():
+    """获取研究洞察数据"""
+    from app.services import metrics_service
+    db = get_session()
+    try:
+        return {
+            "hot_keywords": metrics_service.get_hot_keywords(db, top_k=15),
+            "most_read": metrics_service.get_most_read_papers(db, top_k=10),
+            "weekly_trend": metrics_service.get_weekly_read_trend(db, weeks=12),
+            "recent_reads": metrics_service.get_recent_reads(db, limit=15),
+        }
+    finally:
+        db.close()
+
+
+# ══════════════════════════════════════════════════════════════
 #  任务
 # ══════════════════════════════════════════════════════════════
 
@@ -506,6 +545,12 @@ def search_literature(body: SearchRequest):
             )
             db.add(record)
             db.commit()
+
+            # 记录搜索行为埋点
+            from app.services import metrics_service
+            metrics_service.record_search(db, body.query,
+                                         source=",".join(body.sources) if body.sources else "all",
+                                         result_count=len(papers))
         finally:
             db.close()
 
@@ -1139,6 +1184,103 @@ def create_paper(body: PaperCreate):
         db.close()
 
 
+@app.get("/api/papers/stats")
+def get_paper_stats():
+    db = get_session()
+    try:
+        return paper_service.get_paper_stats(db)
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/fts-search")
+def fts_search_papers(q: str = "", limit: int = 50):
+    """FTS5 全文搜索文献（比 LIKE 查询更快）"""
+    if not q.strip():
+        return {"papers": [], "count": 0}
+    db = get_session()
+    try:
+        from app.search.fts import search_papers_fts
+        results = search_papers_fts(db, q, limit)
+        return {"papers": results, "count": len(results)}
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/hybrid-search")
+def hybrid_search_papers(q: str = "", limit: int = 20):
+    """混合搜索（FTS5 + 向量 RRF 融合）"""
+    if not q.strip():
+        return {"papers": [], "count": 0}
+    db = get_session()
+    try:
+        from app.search.hybrid import search_with_fallback
+        results = search_with_fallback(db, q, top_k=limit)
+        return {"papers": results, "count": len(results)}
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/build-vectors")
+def build_paper_vectors(model: str = "all-MiniLM-L6-v2", rebuild: bool = False):
+    """构建论文向量索引"""
+    db = get_session()
+    try:
+        from app.search.vectors import build_vectors
+        from app.utils.paths import get_data_dir
+        result = build_vectors(db, str(get_data_dir() / "pdfs"), model_name=model, rebuild=rebuild)
+        return result
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/export")
+def export_papers(fmt: str = "bibtex", ids: str = ""):
+    """批量导出文献（BibTeX / RIS）"""
+    db = get_session()
+    try:
+        from app.models.paper import Paper
+        id_list = [i.strip() for i in ids.split(",") if i.strip()] if ids else []
+        if id_list:
+            papers = db.query(Paper).filter(Paper.id.in_(id_list)).all()
+        else:
+            papers = db.query(Paper).all()
+
+        if not papers:
+            return {"content": "", "count": 0, "format": fmt}
+
+        if fmt == "bibtex":
+            content = _export_bibtex(papers)
+        elif fmt == "ris":
+            content = _export_ris(papers)
+        else:
+            content = _export_bibtex(papers)
+
+        return {"content": content, "count": len(papers), "format": fmt}
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/search")
+def search_papers_for_mention(q: str = "", limit: int = 10):
+    """供 @引用使用的文献搜索"""
+    db = get_session()
+    try:
+        papers = paper_service.get_papers(db, search=q)
+        def _safe_authors(s):
+            if not s:
+                return []
+            try:
+                return json.loads(s)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        return [{"id": p.id, "title": p.title,
+                 "authors": _safe_authors(p.authors),
+                 "year": p.year} for p in papers[:limit]]
+    finally:
+        db.close()
+
+
 @app.get("/api/papers/{paper_id}")
 def get_paper(paper_id: str):
     db = get_session()
@@ -1146,7 +1288,27 @@ def get_paper(paper_id: str):
         paper = paper_service.get_paper(db, paper_id)
         if not paper:
             raise HTTPException(404, "Paper not found")
+        # 记录阅读行为埋点
+        from app.services import metrics_service
+        metrics_service.record_paper_view(db, paper_id, paper.title)
         return _paper_to_dict(paper)
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/{paper_id}/pdf")
+def get_paper_pdf(paper_id: str):
+    """提供 PDF 文件流（用于 iframe 预览）"""
+    from fastapi.responses import FileResponse
+    db = get_session()
+    try:
+        paper = paper_service.get_paper(db, paper_id)
+        if not paper or not paper.local_path:
+            raise HTTPException(404, "PDF 文件不存在")
+        import os
+        if not os.path.exists(paper.local_path):
+            raise HTTPException(404, "PDF 文件未找到")
+        return FileResponse(paper.local_path, media_type="application/pdf")
     finally:
         db.close()
 
@@ -1232,10 +1394,9 @@ def generate_paper_summary(paper_id: str):
 
 @app.post("/api/papers/import-pdf")
 async def import_paper_pdf(request: Request):
-    """导入 PDF 到文献库 — 使用 AI 提取元数据"""
+    """导入 PDF 到文献库 — 三级元数据提取（PyMuPDF → 正则 → AI）"""
     import urllib.parse
     import tempfile
-    import re
 
     # 检查 fitz 可用性
     try:
@@ -1255,7 +1416,11 @@ async def import_paper_pdf(request: Request):
         tmp_path = tmp.name
 
     try:
-        # 提取 PDF 文本
+        # 第一级：PyMuPDF 内置元数据 + 正则提取
+        from app.services.pdf_service import extract_pdf_metadata
+        meta = extract_pdf_metadata(tmp_path)
+
+        # 提取全文文本用于 AI 兜底
         doc = fitz.open(tmp_path)
         text = ""
         for page in doc:
@@ -1266,11 +1431,13 @@ async def import_paper_pdf(request: Request):
             raise HTTPException(400, "PDF 无法提取文本（可能是扫描版或纯图片 PDF）")
 
         lines = [l.strip() for l in text.split("\n") if l.strip()]
-        title = lines[0][:200] if lines else filename.replace(".pdf", "")
+        fallback_title = lines[0][:200] if lines else filename.replace(".pdf", "")
 
-        # AI 提取元数据 — 使用详细 prompt
-        ai = get_ai()
-        system_prompt = """你是学术文献分析助手。请从以下学术论文文本中提取元数据。
+        # 第二级：AI 提取元数据（补充缺失字段）
+        need_ai = not meta.get("title") or not meta.get("authors") or not meta.get("abstract")
+        if need_ai:
+            ai = get_ai()
+            system_prompt = """你是学术文献分析助手。请从以下学术论文文本中提取元数据。
 
 要求：
 1. 仔细阅读文本，提取准确的标题、作者、年份、期刊/会议名、DOI、摘要
@@ -1282,28 +1449,33 @@ async def import_paper_pdf(request: Request):
 返回格式：
 {"title":"...","authors":["FirstName LastName", "..."],"year":2024,"journal":"...","doi":"...","abstract":"...","summary":"中文摘要..."}"""
 
-        result = ai.chat([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": text[:8000]}
-        ])
+            result = ai.chat([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text[:8000]}
+            ])
+            ai_meta = _parse_ai_json(result.get("content", ""))
 
-        content = result.get("content", "")
-
-        # 解析 JSON — 支持多种格式
-        meta = _parse_ai_json(content)
-
-        # JSON 解析失败时重试
-        if not meta or not meta.get("title"):
-            retry_prompt = f"""请从以下文本中提取文献元数据，只返回纯JSON，不要包含```json```标记：
+            # JSON 解析失败时重试
+            if not ai_meta or not ai_meta.get("title"):
+                retry_prompt = f"""请从以下文本中提取文献元数据，只返回纯JSON，不要包含```json```标记：
 {{"title":"...","authors":["..."],"year":2024,"journal":"...","doi":"...","abstract":"...","summary":"..."}}
 
 文本内容：
 {text[:6000]}"""
-            result2 = ai.chat([{"role": "user", "content": retry_prompt}])
-            meta = _parse_ai_json(result2.get("content", ""))
+                result2 = ai.chat([{"role": "user", "content": retry_prompt}])
+                ai_meta = _parse_ai_json(result2.get("content", ""))
 
+            # 合并：AI 结果补充缺失字段（不覆盖已提取的）
+            for key in ["title", "authors", "year", "doi", "abstract", "journal"]:
+                if key not in meta or not meta[key]:
+                    if ai_meta.get(key):
+                        meta[key] = ai_meta[key]
+            if ai_meta.get("summary"):
+                meta["summary"] = ai_meta["summary"]
+
+        # 兜底标题
         if not meta.get("title"):
-            meta["title"] = title
+            meta["title"] = fallback_title
 
         # 确保 authors 是列表
         if isinstance(meta.get("authors"), str):
@@ -1316,6 +1488,18 @@ async def import_paper_pdf(request: Request):
             meta["year"] = int(meta.get("year", 0))
         except (ValueError, TypeError):
             meta["year"] = 0
+
+        # DOI 去重检查
+        doi = str(meta.get("doi", "")).strip().lower()
+        if doi:
+            db = get_session()
+            try:
+                from sqlalchemy import func
+                existing = db.query(Paper).filter(func.lower(Paper.doi) == doi).first()
+                if existing:
+                    return _paper_to_dict(existing)
+            finally:
+                db.close()
 
         # 保存 PDF 文件
         pdf_dir = data_dir / "pdfs"
@@ -1338,7 +1522,7 @@ async def import_paper_pdf(request: Request):
         try:
             paper = paper_service.create_paper(
                 db,
-                title=str(meta.get("title", title))[:200],
+                title=str(meta.get("title", fallback_title))[:200],
                 authors=json.dumps(meta.get("authors", []), ensure_ascii=False),
                 year=meta.get("year", 0),
                 doi=str(meta.get("doi", ""))[:200],
@@ -1397,31 +1581,294 @@ def _parse_ai_json(content: str) -> dict:
     return {}
 
 
-@app.get("/api/papers/stats")
-def get_paper_stats():
+@app.post("/api/topics/build")
+def build_topics(min_topic_size: int = 3):
+    """构建主题模型"""
     db = get_session()
     try:
-        return paper_service.get_paper_stats(db)
+        from app.search.topics import build_topics
+        result = build_topics(db, min_topic_size=min_topic_size)
+        return result
     finally:
         db.close()
 
 
-@app.get("/api/papers/search")
-def search_papers_for_mention(q: str = "", limit: int = 10):
-    """供 @引用使用的文献搜索"""
+@app.get("/api/topics")
+def get_topics():
+    """获取主题概览"""
     db = get_session()
     try:
-        papers = paper_service.get_papers(db, search=q)
-        def _safe_authors(s):
-            if not s:
-                return []
-            try:
-                return json.loads(s)
-            except (json.JSONDecodeError, TypeError):
-                return []
-        return [{"id": p.id, "title": p.title,
-                 "authors": _safe_authors(p.authors),
-                 "year": p.year} for p in papers[:limit]]
+        from app.search.topics import get_topic_overview
+        return get_topic_overview(db)
+    finally:
+        db.close()
+
+
+@app.get("/api/topics/{topic_id}/papers")
+def get_topic_papers(topic_id: int):
+    """获取主题下的论文"""
+    db = get_session()
+    try:
+        from app.search.topics import get_topic_papers
+        return {"papers": get_topic_papers(db, topic_id)}
+    finally:
+        db.close()
+
+
+# ══════════════════════════════════════════════════════════════
+#  引用图谱
+# ══════════════════════════════════════════════════════════════
+
+@app.post("/api/citations/build")
+def build_citations():
+    """构建引用关系"""
+    db = get_session()
+    try:
+        from app.services.citation_service import build_citations
+        return build_citations(db)
+    finally:
+        db.close()
+
+
+@app.get("/api/citations/{paper_id}/references")
+def get_paper_references(paper_id: str):
+    """获取论文的参考文献（正向引用）"""
+    db = get_session()
+    try:
+        from app.services.citation_service import get_references
+        return {"references": get_references(db, paper_id)}
+    finally:
+        db.close()
+
+
+@app.get("/api/citations/{paper_id}/citing")
+def get_paper_citing(paper_id: str):
+    """获取引用此论文的其他论文（反向引用）"""
+    db = get_session()
+    try:
+        from app.services.citation_service import get_citing_papers
+        return {"citing": get_citing_papers(db, paper_id)}
+    finally:
+        db.close()
+
+
+@app.get("/api/citations/stats")
+def get_citation_stats():
+    """获取引用统计"""
+    db = get_session()
+    try:
+        from app.services.citation_service import get_citation_stats
+        return get_citation_stats(db)
+    finally:
+        db.close()
+
+
+@app.post("/api/citations/check")
+def check_citations(data: dict):
+    """检查文内引用"""
+    text = data.get("text", "")
+    if not text:
+        return {"citations": []}
+    db = get_session()
+    try:
+        import re
+        from app.models.paper import Paper
+        from sqlalchemy import func
+
+        # 提取文内引用
+        # 模式1: Author (Year)
+        narrative = re.findall(r'([A-Z][a-z]+(?:\s+(?:and|&|et al\.?)\s+[A-Z][a-z]+)*)\s*\((\d{4})\)', text)
+        # 模式2: (Author, Year)
+        parenthetical = re.findall(r'\(([A-Z][a-z]+(?:\s+(?:and|&|et al\.?)\s+[A-Z][a-z]+)*),?\s*(\d{4})\)', text)
+
+        citations = []
+        for author, year in narrative + parenthetical:
+            # 在库中查找
+            papers = db.query(Paper).filter(
+                Paper.authors.ilike(f"%{author}%"),
+                Paper.year == int(year)
+            ).all()
+
+            status = "NOT_IN_LIBRARY"
+            paper_id = None
+            if papers:
+                status = "VERIFIED"
+                paper_id = papers[0].id
+
+            citations.append({
+                "author": author,
+                "year": int(year),
+                "status": status,
+                "paper_id": paper_id,
+            })
+
+        return {"citations": citations}
+    finally:
+        db.close()
+
+
+# ══════════════════════════════════════════════════════════════
+#  高级导出
+# ══════════════════════════════════════════════════════════════
+
+@app.post("/api/export/docx")
+def export_docx(data: dict):
+    """导出为 DOCX"""
+    content = data.get("content", "")
+    title = data.get("title", "文档")
+    if not content:
+        raise HTTPException(400, "内容不能为空")
+
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    from app.services.export_service import export_docx
+    result = export_docx(content, tmp_path, title)
+
+    if result["status"] == "ok":
+        from fastapi.responses import FileResponse
+        return FileResponse(tmp_path, filename=f"{title}.docx",
+                           media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    else:
+        raise HTTPException(500, result.get("message", "导出失败"))
+
+
+@app.get("/api/export/refs")
+def export_refs(fmt: str = "gb7714", ids: str = ""):
+    """导出参考文献列表"""
+    db = get_session()
+    try:
+        from app.services.export_service import export_markdown_refs
+        id_list = [i.strip() for i in ids.split(",") if i.strip()] if ids else None
+        content = export_markdown_refs(db, id_list, style=fmt)
+        return {"content": content, "count": content.count("\n") + 1 if content else 0, "format": fmt}
+    finally:
+        db.close()
+
+
+# ══════════════════════════════════════════════════════════════
+#  工作区
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/api/workspaces")
+def list_workspaces():
+    """获取所有工作区"""
+    from app.services import workspace_service
+    db = get_session()
+    try:
+        return {"workspaces": workspace_service.get_workspaces(db)}
+    finally:
+        db.close()
+
+
+@app.post("/api/workspaces")
+def create_workspace(data: dict):
+    """创建工作区"""
+    from app.services import workspace_service
+    db = get_session()
+    try:
+        ws = workspace_service.create_workspace(
+            db,
+            name=data.get("name", "未命名工作区"),
+            description=data.get("description", ""),
+            paper_ids=data.get("paper_ids", []),
+        )
+        return ws
+    finally:
+        db.close()
+
+
+@app.get("/api/workspaces/{workspace_id}")
+def get_workspace(workspace_id: str):
+    """获取单个工作区"""
+    from app.services import workspace_service
+    db = get_session()
+    try:
+        ws = workspace_service.get_workspace(db, workspace_id)
+        if not ws:
+            raise HTTPException(404, "工作区不存在")
+        return ws
+    finally:
+        db.close()
+
+
+@app.put("/api/workspaces/{workspace_id}")
+def update_workspace(workspace_id: str, data: dict):
+    """更新工作区"""
+    from app.services import workspace_service
+    db = get_session()
+    try:
+        ws = workspace_service.update_workspace(db, workspace_id, **data)
+        if not ws:
+            raise HTTPException(404, "工作区不存在")
+        return ws
+    finally:
+        db.close()
+
+
+@app.delete("/api/workspaces/{workspace_id}")
+def delete_workspace(workspace_id: str):
+    """删除工作区"""
+    from app.services import workspace_service
+    db = get_session()
+    try:
+        ok = workspace_service.delete_workspace(db, workspace_id)
+        if not ok:
+            raise HTTPException(404, "工作区不存在")
+        return {"status": "ok"}
+    finally:
+        db.close()
+
+
+@app.post("/api/workspaces/{workspace_id}/papers")
+def add_papers_to_workspace(workspace_id: str, data: dict):
+    """向工作区添加论文"""
+    from app.services import workspace_service
+    db = get_session()
+    try:
+        ws = workspace_service.add_papers_to_workspace(db, workspace_id, data.get("paper_ids", []))
+        if not ws:
+            raise HTTPException(404, "工作区不存在")
+        return ws
+    finally:
+        db.close()
+
+
+@app.delete("/api/workspaces/{workspace_id}/papers")
+def remove_papers_from_workspace(workspace_id: str, data: dict):
+    """从工作区移除论文"""
+    from app.services import workspace_service
+    db = get_session()
+    try:
+        ws = workspace_service.remove_papers_from_workspace(db, workspace_id, data.get("paper_ids", []))
+        if not ws:
+            raise HTTPException(404, "工作区不存在")
+        return ws
+    finally:
+        db.close()
+
+
+@app.get("/api/workspaces/{workspace_id}/papers")
+def get_workspace_papers(workspace_id: str):
+    """获取工作区中的论文"""
+    from app.services import workspace_service
+    db = get_session()
+    try:
+        papers = workspace_service.get_workspace_papers(db, workspace_id)
+        return {"papers": papers, "count": len(papers)}
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/fts-rebuild")
+def fts_rebuild():
+    """重建 FTS5 全文索引"""
+    db = get_session()
+    try:
+        from app.search.fts import rebuild_fts
+        rebuild_fts(db)
+        return {"status": "ok", "message": "FTS5 索引已重建"}
     finally:
         db.close()
 
@@ -2436,23 +2883,30 @@ def enhanced_search(req: dict):
 
 @app.post("/api/papers/batch-import")
 def batch_import_papers(data: dict):
-    """批量导入文献（从搜索结果）"""
+    """批量导入文献（从搜索结果）— DOI 优先去重"""
     papers_data = data.get("papers", [])
     db = get_session()
     try:
         imported = 0
         skipped = 0
         for p in papers_data:
-            # Check for duplicate by title
             title = p.get("title", "")
             if not title:
                 continue
+            # DOI 去重（优先）
+            doi = str(p.get("doi", "")).strip().lower()
+            if doi:
+                from sqlalchemy import func
+                existing = db.query(Paper).filter(func.lower(Paper.doi) == doi).first()
+                if existing:
+                    skipped += 1
+                    continue
+            # 标题去重（降级）
             existing = db.query(Paper).filter(Paper.title == title).first()
             if existing:
                 skipped += 1
                 continue
-            from app.services import paper_service
-            paper_service.create_from_search(db, p)
+            paper_service.save_from_search(db, p)
             imported += 1
         return {"imported": imported, "skipped": skipped}
     finally:

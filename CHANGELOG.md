@@ -1,5 +1,32 @@
 # Changelog
 
+## v3.5.0 (2026-06-21) — 科研助手功能增强（参考 ScholarAIO）
+
+### 新增
+- **PDF 元数据自动提取**: PyMuPDF 内置元数据 + 正则 + OpenAlex API 三级提取
+- **DOI 去重机制**: 优先按 DOI 去重，降级到标题匹配
+- **FTS5 全文索引**: SQLite FTS5 虚拟表 + 自动同步触发器，替代 LIKE 查询
+- **批量 BibTeX/RIS 导出**: 支持选择性导出
+- **分层阅读**: 元数据 → 摘要 → 全文三层切换
+- **阅读/搜索行为埋点**: 热词统计、高频阅读、阅读趋势
+- **向量语义搜索**: sentence-transformers + FAISS
+- **RRF 混合搜索**: FTS5 + 向量 RRF 融合排序（k=60）
+- **BERTopic 主题聚类**: 自动主题发现
+- **引用图谱**: DOI 正则提取 + 正向/反向/共同引用
+- **文内引用检查**: Author (Year) 格式识别 + 库内验证
+- **DOCX 导出**: Markdown → DOCX 转换
+- **工作区**: 论文子集管理
+
+### 新增 API 端点
+- `/api/papers/fts-search` — FTS5 全文搜索
+- `/api/papers/hybrid-search` — 混合搜索
+- `/api/papers/build-vectors` — 构建向量索引
+- `/api/papers/export` — 批量导出
+- `/api/topics` — 主题概览
+- `/api/citations/*` — 引用图谱
+- `/api/workspaces` — 工作区管理
+- `/api/insights` — 研究洞察
+
 ## v3.4.1 (2026-06-21) — 播放同步 + Word Hopper + Bug修复
 
 ### 修复

@@ -84,12 +84,19 @@ def delete_papers_batch(db: Session, paper_ids: list[str]) -> int:
 
 
 def save_from_search(db: Session, paper_data: dict) -> Paper:
-    """从搜索结果入库"""
-    # 检查是否已存在（按 title 去重）
+    """从搜索结果入库（DOI 优先去重 → 标题降级去重）"""
     title = paper_data.get("title", "")
     if not title:
         raise ValueError("文献标题不能为空")
 
+    # 1. DOI 去重（优先级最高）
+    doi = str(paper_data.get("doi", "")).strip().lower()
+    if doi:
+        existing = db.query(Paper).filter(func.lower(Paper.doi) == doi).first()
+        if existing:
+            return existing
+
+    # 2. 标题精确匹配去重（降级方案）
     existing = db.query(Paper).filter(Paper.title == title).first()
     if existing:
         return existing

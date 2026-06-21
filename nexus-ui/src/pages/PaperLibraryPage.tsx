@@ -49,6 +49,9 @@ export default function PaperLibraryPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
 
+  // 分层阅读
+  const [readingLevel, setReadingLevel] = useState<number>(1); // 1=元数据, 2=摘要, 3=全文
+
   const selected = papers.find(p => p.id === selectedId);
 
   const loadPapers = () => {
@@ -184,6 +187,7 @@ export default function PaperLibraryPage() {
     setShowDetail(true);
     setEditingNotes(false);
     setCitationFormat("gb7714");
+    setReadingLevel(1); // 重置为元数据层
   };
 
   const getSourceColor = (source: string) => {
@@ -340,7 +344,7 @@ export default function PaperLibraryPage() {
           )}
         </div>
 
-        {/* 详情面板（右侧滑出） */}
+        {/* 详情面板（右侧滑出）— 分层阅读 */}
         {showDetail && selected && (
           <div className="w-full lg:w-[420px] xl:flex-1 xl:max-w-[600px] flex-shrink-0 overflow-y-auto space-y-3 glass-card p-5 max-h-[calc(100vh-200px)]">
             {/* 关闭按钮 */}
@@ -357,80 +361,134 @@ export default function PaperLibraryPage() {
               </button>
             </div>
 
-            {/* 基本信息 */}
-            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-              {selected.authors.length > 0 && <span>{selected.authors.slice(0, 5).join(", ")}{selected.authors.length > 5 ? " 等" : ""}</span>}
-              {selected.year > 0 && <span>{selected.year}</span>}
-              {selected.journal && <span>{selected.journal}</span>}
-              {selected.doi && <a href={`https://doi.org/${selected.doi}`} target="_blank" rel="noopener"
-                className="text-xs" style={{ color: "var(--accent-blue)" }}>DOI: {selected.doi}</a>}
-            </div>
-
-            {/* 评分 */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>评分:</span>
-              {[1, 2, 3, 4, 5].map(s => (
-                <button key={s} onClick={() => handleStar(selected.id, s === selected.star_rating ? 0 : s)}
-                  className="cursor-pointer">
-                  <IconStar size={14} filled={s <= selected.star_rating}
-                    style={{ color: s <= selected.star_rating ? "#f59e0b" : "var(--text-muted)" }} />
+            {/* 分层阅读导航 */}
+            <div className="flex gap-1 p-0.5 rounded-lg" style={{ background: "var(--hover-bg)" }}>
+              {[
+                { level: 1, label: "元数据" },
+                { level: 2, label: "摘要" },
+                { level: 3, label: "全文" },
+              ].map(item => (
+                <button key={item.level}
+                  onClick={() => setReadingLevel(item.level)}
+                  className="flex-1 text-[10px] py-1.5 rounded-md transition-all cursor-pointer"
+                  style={{
+                    background: readingLevel === item.level ? "var(--glass-bg)" : "transparent",
+                    color: readingLevel === item.level ? "var(--accent-blue)" : "var(--text-muted)",
+                    boxShadow: readingLevel === item.level ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                  }}>
+                  {item.label}
                 </button>
               ))}
             </div>
 
-            {/* 标签 */}
-            {selected.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {selected.tags.map(tag => (
-                  <span key={tag} className="px-2 py-0.5 rounded-full text-[10px]"
-                    style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>{tag}</span>
+            {/* Level 1: 元数据（始终可见） */}
+            <div className="space-y-3">
+              {/* 基本信息 */}
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                {selected.authors.length > 0 && <span>{selected.authors.slice(0, 5).join(", ")}{selected.authors.length > 5 ? " 等" : ""}</span>}
+                {selected.year > 0 && <span>{selected.year}</span>}
+                {selected.journal && <span>{selected.journal}</span>}
+                {selected.doi && <a href={`https://doi.org/${selected.doi}`} target="_blank" rel="noopener"
+                  className="text-xs" style={{ color: "var(--accent-blue)" }}>DOI: {selected.doi}</a>}
+              </div>
+
+              {/* 评分 */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>评分:</span>
+                {[1, 2, 3, 4, 5].map(s => (
+                  <button key={s} onClick={() => handleStar(selected.id, s === selected.star_rating ? 0 : s)}
+                    className="cursor-pointer">
+                    <IconStar size={14} filled={s <= selected.star_rating}
+                      style={{ color: s <= selected.star_rating ? "#f59e0b" : "var(--text-muted)" }} />
+                  </button>
                 ))}
               </div>
-            )}
 
-            {/* 引用 */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>引用格式</h3>
-                <div className="flex gap-2 items-center">
-                  <select className="input-glass text-[10px] py-1" value={citationFormat}
-                    onChange={e => setCitationFormat(e.target.value)}>
-                    {CITATION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                  </select>
-                  <button className="btn-ghost text-[10px] py-1" onClick={handleCopyCitation}>
-                    {copied ? "已复制 ✓" : "复制"}
-                  </button>
+              {/* 标签 */}
+              {selected.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {selected.tags.map(tag => (
+                    <span key={tag} className="px-2 py-0.5 rounded-full text-[10px]"
+                      style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>{tag}</span>
+                  ))}
                 </div>
+              )}
+
+              {/* 引用 */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>引用格式</h3>
+                  <div className="flex gap-2 items-center">
+                    <select className="input-glass text-[10px] py-1" value={citationFormat}
+                      onChange={e => setCitationFormat(e.target.value)}>
+                      {CITATION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    </select>
+                    <button className="btn-ghost text-[10px] py-1" onClick={handleCopyCitation}>
+                      {copied ? "已复制 ✓" : "复制"}
+                    </button>
+                  </div>
+                </div>
+                <pre className="text-[10px] p-2 rounded-lg whitespace-pre-wrap break-all"
+                  style={{ background: "var(--hover-bg)", color: "var(--text-secondary)" }}>
+                  {citationText || "无引用数据"}
+                </pre>
               </div>
-              <pre className="text-[10px] p-2 rounded-lg whitespace-pre-wrap break-all"
-                style={{ background: "var(--hover-bg)", color: "var(--text-secondary)" }}>
-                {citationText || "无引用数据"}
-              </pre>
             </div>
 
-            {/* AI 摘要 */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>AI 摘要</h3>
-                <button className="btn-ghost text-[10px] py-1" onClick={() => handleAiSummary(selected.id)}>
-                  {selected.ai_summary ? "重新生成" : "生成摘要"}
-                </button>
-              </div>
-              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                {selected.ai_summary || "未生成 AI 摘要"}
-              </p>
-            </div>
+            {/* Level 2: 摘要（需要切换到摘要层） */}
+            {readingLevel >= 2 && (
+              <div className="space-y-3 pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
+                {/* AI 摘要 */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>AI 摘要</h3>
+                    <button className="btn-ghost text-[10px] py-1" onClick={() => handleAiSummary(selected.id)}>
+                      {selected.ai_summary ? "重新生成" : "生成摘要"}
+                    </button>
+                  </div>
+                  <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {selected.ai_summary || "未生成 AI 摘要"}
+                  </p>
+                </div>
 
-            {/* 原始摘要 */}
-            {selected.abstract && (
-              <div className="space-y-1">
-                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>原始摘要</h3>
-                <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{selected.abstract}</p>
+                {/* 原始摘要 */}
+                {selected.abstract && (
+                  <div className="space-y-1">
+                    <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>原始摘要</h3>
+                    <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{selected.abstract}</p>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* 笔记 */}
-            <div className="space-y-2">
+            {/* Level 3: 全文（需要切换到全文层） */}
+            {readingLevel >= 3 && (
+              <div className="space-y-3 pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
+                {selected.local_path ? (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>PDF 全文</h3>
+                    <div className="rounded-lg overflow-hidden" style={{ background: "var(--hover-bg)" }}>
+                      <iframe
+                        src={`http://127.0.0.1:8765/api/papers/${selected.id}/pdf`}
+                        className="w-full border-0"
+                        style={{ height: "500px" }}
+                        title="PDF 阅读器"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <IconFile size={32} style={{ color: "var(--text-muted)", margin: "0 auto" }} />
+                    <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+                      未关联 PDF 文件
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 笔记（始终可见） */}
+            <div className="space-y-2 pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>笔记</h3>
                 {!editingNotes ? (

@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献管理、试验管理、知识库、AI对话、音乐播放、电子书阅读的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v3.4.1-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v3.5.0-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,7 +16,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~72MB 单文件** | ✅ v3.4.1 |
+| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v3.5.0 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ## 功能模块
@@ -223,6 +223,7 @@ API 文档: `http://127.0.0.1:8765/docs`
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| v3.5.0 | 2026-06-21 | 科研助手功能增强（PDF元数据提取、FTS5索引、语义搜索、引用图谱、主题聚类、工作区） |
 | v3.1.0 | 2026-06-20 | 音乐播放器无缝切换、懒加载优化、Toast通知 |
 | v3.2.0 | 2026-06-20 | 写作工作台、布尔检索、智能综述、研究讨论、Markdown渲染升级 |
 | v3.3.0 | 2026-06-20 | Git集成、结构化参数、知识库增强搜索、网格视图 |
@@ -240,6 +241,10 @@ API 文档: `http://127.0.0.1:8765/docs`
 | v1.1.0 | 2026-06-13 | 原生菜单、暖色主题 |
 
 完整变更记录见 [CHANGELOG.md](nexus-ui/CHANGELOG.md)
+
+## 致谢
+
+- [ScholarAIO](https://github.com/ZimoLiao/scholaraio) — AI-Native Research Terminal，由 Zi-Mo Liao 开发（MIT 许可证）。ScholarAIO 的科研基础设施设计为本项目的文献管理、混合搜索、主题发现、引用图谱等功能改进提供了重要参考。详见 [docs/SCHOLARAIO_REFERENCE.md](docs/SCHOLARAIO_REFERENCE.md)。
 
 ## 许可
 

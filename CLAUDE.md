@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v3.4.1**.
+AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v3.5.0**.
 
 ## Dual Frontend Architecture
 
@@ -225,8 +225,11 @@ README.md                   # Project introduction
 CHANGELOG.md                # Version change log
 docs/PRD-v3.md              # Major version PRD document
 docs/DEV-PRACTICES.md       # Development testing best practices
+docs/SCHOLARAIO_REFERENCE.md # ScholarAIO 参考分析与改进方案
 app/                        # Python backend
 nexus-ui/                   # Tauri frontend
+reference/                  # 参考项目 (gitignore)
+  scholaraio/               # ScholarAIO 克隆
 release/                    # Build artifacts
   AI-Nexus-Assistant.exe    # Portable main program
   nexus_ui_lib.dll          # WebView2 loader

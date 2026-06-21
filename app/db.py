@@ -34,9 +34,18 @@ class Base(DeclarativeBase):
 
 
 def init_db():
-    """创建所有表"""
+    """创建所有表 + FTS5 索引"""
     import app.models  # noqa: F401 — 触发模型注册
     Base.metadata.create_all(bind=engine)
+
+    # 初始化 FTS5 全文索引
+    try:
+        from app.search.fts import init_fts
+        session = SessionLocal()
+        init_fts(session)
+        session.close()
+    except Exception as e:
+        print(f"[db] FTS5 初始化失败（非致命）: {e}")
 
 
 def get_session():

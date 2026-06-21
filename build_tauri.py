@@ -121,8 +121,12 @@ def step3_package():
     ows_dst = release_dir / "open-webSearch"
     if ows_src.exists():
         if ows_dst.exists():
-            shutil.rmtree(ows_dst)
-        ows_dst.mkdir(parents=True)
+            try:
+                shutil.rmtree(ows_dst)
+            except PermissionError:
+                print(f"  WARNING: 无法删除 {ows_dst}，跳过更新")
+        if not ows_dst.exists():
+            ows_dst.mkdir(parents=True)
         for item in ["build", "node_modules", "package.json"]:
             src_item = ows_src / item
             if src_item.exists():

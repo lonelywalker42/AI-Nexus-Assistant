@@ -7,6 +7,8 @@ from .knowledge import KnowledgeCard, Tag, CardTag
 from .chat import ChatSession, ChatMessage
 from .review import Review
 from .writing import WritingDocument
+from app.services.metrics_service import MetricEvent
+from app.services.workspace_service import Workspace
 
 __all__ = [
     "Task", "WeeklyPlan",
@@ -18,4 +20,6 @@ __all__ = [
     "ChatSession", "ChatMessage",
     "Review",
     "WritingDocument",
+    "MetricEvent",
+    "Workspace",
 ]

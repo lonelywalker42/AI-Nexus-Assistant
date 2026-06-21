@@ -32,6 +32,9 @@ data/chroma/
 # Original design documents (local reference only)
 original_design/
 
+# Reference projects (local only)
+reference/
+
 # OS
 .DS_Store
 Thumbs.db
