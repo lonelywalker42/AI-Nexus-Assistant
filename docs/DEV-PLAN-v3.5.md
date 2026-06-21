@@ -10,7 +10,7 @@
 |------|-----------|-------------------|
 | 形态 | Agent-first CLI + Claude Code Skills | Tauri 桌面应用（React + FastAPI） |
 | 交互 | 自然语言驱动，Agent 调用 skill | GUI 点击操作 |
-| PDF 解析 | MinerU（重依赖，~2GB） | PyMuPDF（轻量，~15MB） |
+| PDF 解析 | MinerU（重依赖，~2GB） | PyMuPDF（内置）+ MinerU（可选安装） |
 | 部署 | Python 虚拟环境 + Node.js | 单 exe 便携版 |
 
 ### 特性筛选矩阵
@@ -27,7 +27,7 @@
 | **BibTeX/RIS 导入** | ⭐⭐⭐ | 低 | ✅ 文件解析 | **纳入** |
 | **Inbox 分类管线** | ⭐⭐⭐ | 中 | ⚠️ 简化适配 | **纳入（简化版）** |
 | **联邦搜索** | ⭐⭐⭐ | 低 | ✅ arXiv + 本地库 | **纳入** |
-| **MinerU PDF 解析** | ⭐⭐⭐ | 高 | ❌ 依赖过重（~2GB） | 不纳入 |
+| **MinerU PDF 解析** | ⭐⭐⭐⭐⭐ | 中 | ✅ 可选安装 + 优雅降级 | **纳入** |
 | **AI for Science 运行时** | ⭐⭐ | 高 | ❌ 专业领域工具链 | 不纳入 |
 | **rsync 远程备份** | ⭐ | 中 | ❌ Windows 桌面环境不适用 | 不纳入 |
 | **本地 WebUI** | — | — | ❌ 已有 Tauri 前端 | 不适用 |
@@ -128,6 +128,124 @@ async def refetch_paper_pdf(paper_id: str):
 - `httpx` — 已有（AI 服务使用）
 - `beautifulsoup4` — 新增（HTML 解析，比正则更健壮）
 - `lxml` — 新增（BS4 解析器）
+
+---
+
+### Phase 1.5：MinerU PDF→Markdown 结构化转换
+
+> **目标**：将 PDF 转换为结构化 Markdown（保留公式、图片、表格、版面结构），供 LLM 高质量阅读。采用**可选安装 + 优雅降级**策略。
+
+#### 为什么需要 MinerU
+
+当前系统使用 PyMuPDF 提取 PDF 文本，存在以下问题：
+- **公式丢失**：数学公式变成乱码纯文本
+- **表格破碎**：多栏表格变成无结构文本流
+- **版面混乱**：双栏论文的左右栏文本混在一起
+- **图片丢失**：无法提取图片和图注
+
+MinerU（`magic-pdf`）解决这些问题，输出结构化 Markdown，LLM 可直接高质量阅读。
+
+#### 架构设计：三级降级
+
+```
+用户触发 PDF→Markdown 转换
+    │
+    ├─ MinerU 已安装？
+    │   ├─ 是 → MinerU 转换（最优质量）
+    │   │       └─ 失败？→ 降级到 PyMuPDF
+    │   └─ 否 → PyMuPDF 提取（基础质量）
+    │           └─ 显示提示："安装 MinerU 可获得更好的转换质量"
+    │
+    └─ 输出: paper.md 存储到论文目录
+```
+
+#### 1.5.1 后端：`app/services/pdf_converter.py`（新建）
+
+```python
+def check_mineru_available() -> bool:
+    """检测 MinerU 是否已安装（import magic_pdf）"""
+
+def convert_pdf_to_markdown(pdf_path: str, output_dir: str) -> dict:
+    """
+    自动选择转换器：
+    1. MinerU 可用 → magic_pdf 转换（保留公式/图片/表格）
+    2. MinerU 不可用 → PyMuPDF 提取纯文本
+    返回: {"method": "mineru"|"pymupdf", "output_path": str, "pages": int}
+    """
+
+def _convert_with_mineru(pdf_path: str, output_dir: str) -> dict:
+    """
+    调用 magic_pdf API：
+    - 解析 PDF → 结构化中间表示
+    - 输出 Markdown（含 LaTeX 公式、Markdown 表格、图片引用）
+    - 保留章节层级（H1/H2/H3）
+    """
+
+def _convert_with_pymupdf(pdf_path: str, output_dir: str) -> dict:
+    """
+    PyMuPDF 降级方案：
+    - 逐页提取文本块
+    - 按阅读顺序排列（处理双栏）
+    - 输出纯文本 Markdown（无公式/图片）
+    """
+```
+
+#### 1.5.2 MinerU 安装管理
+
+**设置页面**新增 MinerU 区域：
+- 状态指示：✅ 已安装 / ❌ 未安装
+- 安装按钮：`pip install magic-pdf[full]`（带进度条）
+- 卸载按钮
+- 说明文字：*"MinerU 可将 PDF 高质量转换为 Markdown，保留公式、图片和表格。安装后 LLM 阅读论文效果显著提升。约需 2GB 磁盘空间。"*
+
+**API 端点**：
+
+```python
+@app.get("/api/system/mineru-status")
+async def mineru_status():
+    """返回 MinerU 安装状态: {"available": true/false, "version": "..."}"""
+
+@app.post("/api/system/install-mineru")
+async def install_mineru():
+    """
+    后台安装 MinerU: pip install magic-pdf[full]
+    SSE 返回安装进度
+    """
+```
+
+#### 1.5.3 与阅读流程集成
+
+**论文入库时**自动触发转换：
+```
+PDF 导入/拉取 → 提取元数据 → 创建 Paper 记录 → 后台触发 PDF→Markdown 转换
+                                                            │
+                                                            └─ paper.md 存储到论文目录
+```
+
+**LLM 阅读时**优先使用 Markdown：
+- AI 摘要生成：读取 `paper.md` 而非原始 PDF
+- AI 对话引用：基于 Markdown 内容回答
+- 分层阅读 L4（全文）：显示渲染后的 Markdown 而非 PDF iframe
+
+**批量转换**：设置页面提供"批量转换所有 PDF"按钮，对已有论文库执行一次性转换。
+
+#### 1.5.4 前端：阅读体验升级
+
+PaperLibraryPage 分层阅读调整：
+- **L3（全文）**：两个子标签
+  - **Markdown 视图**（默认）：渲染后的 Markdown，含公式（KaTeX）、表格、图片
+  - **PDF 预览**：原始 PDF iframe（保留，用于查看排版）
+- 如果 `paper.md` 不存在，显示"未转换"提示 + "立即转换"按钮
+- 如果使用 PyMuPDF 降级转换，显示提示"安装 MinerU 可获得更好的转换质量"
+
+#### 1.5.5 依赖与打包
+
+| 方案 | 安装方式 | 包体积 | 转换质量 |
+|------|---------|--------|---------|
+| **基础（默认）** | PyMuPDF（已有） | 0 | ⭐⭐ 纯文本 |
+| **增强（可选）** | `pip install magic-pdf[full]` | ~2GB | ⭐⭐⭐⭐⭐ 结构化 Markdown |
+
+**打包策略**：MinerU **不包含**在 exe 中，作为可选运行时依赖。用户在设置页面按需安装。这避免了 exe 体积从 51MB 膨胀到 2GB+。
 
 ---
 
@@ -386,15 +504,16 @@ async def workspace_search(workspace_id: str, q: str):
 
 ## 三、新增依赖汇总
 
-| 包名 | 版本 | 用途 | 新增/已有 |
-|------|------|------|----------|
-| `httpx` | latest | HTTP 客户端（PDF 下载、arXiv API） | 已有 |
-| `beautifulsoup4` | latest | HTML 解析（PDF 链接提取） | **新增** |
-| `lxml` | latest | BS4 解析器 | **新增** |
-| `defusedxml` | latest | 安全 XML 解析（arXiv Atom API） | **新增** |
-| `bibtexparser` | latest | BibTeX 文件解析 | **新增** |
+| 包名 | 版本 | 用途 | 新增/已有 | 打包策略 |
+|------|------|------|----------|---------|
+| `httpx` | latest | HTTP 客户端（PDF 下载、arXiv API） | 已有 | 内置 |
+| `beautifulsoup4` | latest | HTML 解析（PDF 链接提取） | **新增** | 内置 |
+| `lxml` | latest | BS4 解析器 | **新增** | 内置 |
+| `defusedxml` | latest | 安全 XML 解析（arXiv Atom API） | **新增** | 内置 |
+| `bibtexparser` | latest | BibTeX 文件解析 | **新增** | 内置 |
+| `magic-pdf[full]` | latest | PDF→Markdown 结构化转换（MinerU） | **新增** | **可选运行时**（~2GB，用户按需安装） |
 
-`build_server.py` 需添加对应 `--hidden-import`。
+`build_server.py` 需添加对应 `--hidden-import`（不含 magic-pdf，它是运行时可选依赖）。
 
 ---
 
@@ -403,12 +522,13 @@ async def workspace_search(workspace_id: str, q: str):
 | 项目 | 值 |
 |------|-----|
 | 版本号 | v3.6.0 |
-| 主题 | 文献获取与质量管控 |
+| 主题 | 文献获取 + PDF 结构化转换 + 质量管控 |
 | 变更类型 | 功能增强（Minor） |
 
 ### 发布清单
 
-- [ ] Phase 1-6 代码完成
+- [ ] Phase 1 ~ 1.5 ~ 2-6 代码完成
+- [ ] MinerU 可选安装 + PyMuPDF 降级验证
 - [ ] `server.py` 新增端点测试
 - [ ] 前端 TypeScript 类型检查通过
 - [ ] `build_server.py` 更新 hidden imports
@@ -427,3 +547,6 @@ async def workspace_search(workspace_id: str, q: str):
 | arXiv 限速 | 批量导入慢 | 3 秒礼貌间隔 + 进度条显示 |
 | BS4/lxml 增加打包体积 | exe 变大 | BS4 ~200KB + lxml ~3MB，可接受 |
 | BibTeX 解析边界情况 | 导入失败 | 使用成熟库 bibtexparser + 异常捕获 + 部分导入 |
+| MinerU 安装失败 | 无法使用 PDF→Markdown | PyMuPDF 降级方案兜底，不影响核心功能 |
+| MinerU 转换耗时长 | 批量转换慢 | 后台异步转换 + 进度显示 + 单篇转换优先 |
+| MinerU 模型下载 | 首次使用需下载模型 | 设置页面提示 + 下载进度条 |
