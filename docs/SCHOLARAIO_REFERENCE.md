@@ -442,3 +442,324 @@ ScholarAIO 是 CLI + Agent Skills 架构，AI Nexus Assistant 是 GUI + API 架�
 | `/api/workspaces/{id}/papers` | GET/POST/DELETE | 工作区论文管理 |
 | `/api/metrics/event` | POST | 行为埋点 |
 | `/api/insights` | GET | 研究洞察 |
+
+---
+
+## 九、ScholarAIO 深度技术解析
+
+### 9.1 代码风格规范
+
+#### 导入组织
+
+所有文件以 `from __future__ import annotations` 开头（PEP 604 联合类型），导入顺序严格遵循：
+
+1. `from __future__ import annotations`
+2. 标准库（字母序）
+3. 第三方包
+4. 项目内部导入
+5. `TYPE_CHECKING` 守卫（仅类型检查器需要的导入）
+
+```python
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+from typing import TYPE_CHECKING
+
+import requests
+
+if TYPE_CHECKING:
+    import faiss
+    from scholaraio.core.config import Config
+```
+
+**重度可选依赖**（`faiss`、`torch`、`pymupdf`、`sentence_transformers`）通过 `TYPE_CHECKING` 守卫或函数内惰性导入，避免导入时失败。
+
+#### 文档字符串风格
+
+- 模块级文档字符串：中英双语（中文描述用途，英文描述 API 契约）
+- 函数/类文档字符串：Google 风格，包含 `Args:`、`Returns:`、`Raises:` 段落
+- 私有函数：简短英文文档字符串
+
+```python
+def build_index(papers_dir: Path, db_path: Path, rebuild: bool = False) -> int:
+    """建立或增量更新 SQLite FTS5 全文检索索引。
+
+    Args:
+        papers_dir: 已入库论文目录，扫描其中的 ``*.json``。
+        db_path: SQLite 数据库路径，不存在时自动创建。
+        rebuild: 为 ``True`` 时清空旧数据后重建。
+
+    Returns:
+        本次索引的论文数量。
+    """
+```
+
+#### 类型注解
+
+- 现代 Python 3.10+ 语法：`str | None`、`list[str]`、`dict[str, str]`
+- `@overload` 装饰器用于条件返回类型
+- `TypedDict` 用于结构化字典
+- `Literal` 类型用于约束字符串参数
+- 所有公共函数有完整的参数和返回类型注解
+
+#### 函数签名约定
+
+- 必需参数用位置参数
+- 可选筛选参数用 `*` 后的关键字参数
+- `cfg: Config | None = None` 作为标准可选配置参数
+- `rebuild: bool = False` 作为索引操作标准模式
+- `dry_run: bool = False` 贯穿所有 CLI 命令
+- `paper_ids: set[str] | None = None` 用于工作区范围限定
+
+```python
+def search(
+    query: str,
+    db_path: Path,
+    top_k: int | None = None,
+    cfg: Config | None = None,
+    *,
+    year: str | None = None,
+    journal: str | None = None,
+    paper_ids: set[str] | None = None,
+) -> list[dict]:
+```
+
+#### 注释密度
+
+- 区域分隔符：`# ============================================================================` 横幅注释
+- 子区域标记：`# -- FTS5 leg --`、`# -- Vector leg --`
+- 内联注释：仅用于解释非显而易见的逻辑
+- 不过度注释显而易见的代码
+
+---
+
+### 9.2 错误处理模式
+
+#### 优雅降级（Graceful Degradation）
+
+ScholarAIO 最核心的错误处理模式。以 `unified_search` 为例：
+
+```python
+# -- FTS5 leg --
+fts_results: list[dict] = []
+try:
+    fts_results = search(...)
+except FileNotFoundError:
+    pass
+
+# -- Vector leg (graceful degradation) --
+vec_results: list[dict] = []
+try:
+    from scholaraio.services.vectors import vsearch
+    vec_results = vsearch(...)
+except (FileNotFoundError, ImportError):
+    diagnostics["vector_degraded"] = True
+except Exception:
+    diagnostics["vector_degraded"] = True
+```
+
+关键特点：
+- **降级链**：主方案失败则尝试备选方案（MinerU 本地 → MinerU 云端 → Docling → PyMuPDF）
+- **`FileNotFoundError` 语义**：不是真正的文件缺失，而是"此功能未配置"的信号
+- **诊断字典**：结果包含 `diagnostics` 字典，告知调用方是否发生了降级
+- **无裸 `except`**：所有异常处理器捕获具体类型
+
+#### 步骤管道错误处理
+
+Ingest 管道中每个步骤返回 `StepResult` 枚举：
+
+```python
+class StepResult(Enum):
+    OK = "ok"
+    SKIP = "skip"
+    FAIL = "fail"
+```
+
+步骤通过 `ctx.status` 传递状态：`"pending"`、`"ingested"`、`"duplicate"`、`"needs_review"`、`"failed"`、`"skipped"`。失败项移至 `pending/` 目录供人工审查，而非删除。
+
+#### 日志模式
+
+```python
+_log = logging.getLogger("scholaraio.module_name")
+```
+
+三层输出：
+- 文件：DEBUG 级别，RotatingFileHandler
+- 控制台：INFO 级别，裸消息
+- `ui()` 函数：同时写入控制台和日志文件（替代 `print()`）
+
+第三方日志器抑制：`httpx`、`urllib3`、`sentence_transformers` 设为 WARNING；`modelscope` 设为 ERROR。
+
+---
+
+### 9.3 性能优化措施
+
+#### 增量索引构建（基于 Hash 的变更检测）
+
+`_index_hash()` 函数为每篇论文的索引字段计算 MD5 哈希。`build_index()` 时加载已有哈希，匹配则跳过：
+
+```python
+existing_hashes: dict[str, str] = {}
+if not rebuild:
+    for row in conn.execute("SELECT paper_id, content_hash FROM papers_hash"):
+        existing_hashes[row[0]] = row[1]
+
+h = _index_hash(meta)
+if not rebuild and existing_hashes.get(paper_id) == h:
+    continue  # 未变更，跳过
+```
+
+FTS5、向量、分块三个索引器共享相同的增量更新模式。
+
+#### 自适应 GPU 批处理
+
+1. **GPU 性能分析**：`_run_profile()` 在递增 token 长度（64, 128, 256...）下编码虚拟文本，测量每样本增量 GPU 内存。结果缓存至 `~/.cache/scholaraio/gpu_profile.json`
+
+2. **自适应批大小**：`_compute_batch_size()` 使用性能数据 + 0.85 安全因子计算最优批大小：`available = gpu_total * safety - baseline; bs = available / mem_per_sample`
+
+3. **桶式编码**：文本按 token 数排序，分组到 2 的幂次桶（64, 128, 256...），每个桶有独立最优批大小
+
+4. **OOM 重试减半**：`torch.cuda.OutOfMemoryError` 时批大小减半重试。批大小=1 仍 OOM 则降级到 CPU
+
+5. **二次外推**：超出分析范围的 token 长度，使用二次缩放估算内存（注意力机制为 O(n²)）
+
+#### FAISS 磁盘缓存
+
+- FAISS 索引和论文 ID 列表缓存为 `faiss.index` 和 `faiss_ids.json`
+- 内容变更时缓存失效，全量重建
+- 纯新增时向量增量追加到缓存索引：`faiss.index.add()`
+- ID 重叠时缓存失效（幂等重建）
+
+#### 分块策略
+
+- 章节由目录结构（`meta.json` 中的 TOC）或 Markdown 标题确定
+- 章节内段落按 ~4800 字符分组
+- 超大单段落在句子边界拆分（正则：`[.!?。！？]\s+`）
+- 小块合并直到达到目标大小
+- 每个分块有唯一 ID `{paper_id}:{seq:05d}` 和内容哈希用于增量更新
+
+#### Rsync 备份优化
+
+- `rsync -a --stats --human-readable` + 可选 `-z` 压缩
+- 三种传输模式：`default`（全量同步）、`append`（恢复部分传输）、`append-verify`（恢复+完整性校验）
+- SSH 选项：`BatchMode=yes` 防止交互式挂起，密码认证使用临时 `SSH_ASKPASS` 脚本
+
+---
+
+### 9.4 CLI 设计模式
+
+#### 命令结构
+
+- 使用 `argparse`，单层子命令（`explore`、`ws`、`export`、`migrate` 等为嵌套命令组）
+- 每个子命令定义在独立文件中（40+ 模块）
+- 命令处理函数签名：`def cmd_xxx(args: argparse.Namespace, cfg: Config) -> None`
+- 通过 `set_defaults(func=cmd_xxx)` 分发
+
+#### 运行时入口
+
+```python
+def main():
+    # 惰性加载：导入发生在 main() 内部，非模块级别
+    cfg = load_config()
+    ensure_dirs()
+    setup_logging()
+    # 迁移锁和布局版本检查
+    args.func(args, cfg)
+```
+
+---
+
+### 9.5 测试模式
+
+#### 测试结构
+
+- pytest + 类组织（`class TestXxx:`）
+- 命名约定：`test_` 前缀 + 描述性名称
+- 模块级文档字符串描述测试覆盖范围和不覆盖内容
+
+#### Fixture 设计
+
+```python
+@pytest.fixture
+def tmp_papers(tmp_path):
+    """创建临时论文目录，包含两篇示例论文"""
+    ...
+
+@pytest.fixture
+def tmp_db(tmp_path):
+    """返回临时 SQLite 数据库路径"""
+    ...
+```
+
+#### 测试类型
+
+| 类型 | 说明 |
+|------|------|
+| 契约测试 | 验证输出结构（搜索结果包含 `paper_id`、`title` 等） |
+| 边界测试 | 空输入、不存在路径、边界情况 |
+| Monkeypatch | 广泛使用 mock 外部服务 |
+| 错误路径测试 | 验证成功和失败路径 |
+| 集成测试 | 端到端流程（`build_index` → `search` → 验证结果） |
+| 无外部依赖 | 所有测试运行在本地临时文件上，不需要网络或 GPU |
+
+---
+
+### 9.6 配置系统
+
+#### 层次化 Dataclass 组合
+
+```python
+@dataclass
+class Config:
+    paths: PathsConfig
+    llm: LLMConfig
+    ingest: IngestConfig
+    embed: EmbedConfig
+    search: SearchConfig
+    topics: TopicsConfig
+    # ... 16 个子配置
+```
+
+#### 配置解析优先级
+
+1. 显式路径
+2. 环境变量 `SCHOLARAIO_CONFIG`
+3. 从 cwd 向上遍历 6 层
+4. `~/.scholaraio/config.yaml`
+
+#### API Key 解析链
+
+配置文件 → 通用环境变量 → 后端特定环境变量 → 回退
+
+#### 输入标准化
+
+```python
+_normalize_choice()      # 选择值标准化
+_normalize_positive_int() # 正整数标准化
+_bool_or_default()       # 布尔值标准化
+_coerce_str_list()       # 字符串列表强制转换
+```
+
+路径通过 `@property` 方法相对于 `_root` 解析。
+
+---
+
+### 9.7 关键设计模式总结
+
+| 模式 | 示例 | 文件 |
+|------|------|------|
+| 优雅降级 | FTS+向量搜索回退 | `index.py` |
+| Hash 增量更新 | 跳过未变更论文 | `index.py`, `vectors.py`, `chunks.py` |
+| 结果 Dataclass | `ConvertResult`, `BackupRunResult` | `mineru.py`, `backup.py` |
+| 上下文传递 | `InboxCtx` 管道步骤线程化 | `types.py`, `inbox_steps.py` |
+| 降级链 | MinerU → Docling → PyMuPDF | `inbox_steps.py` |
+| 惰性导入 | 重度依赖函数内导入 | `vectors.py`, `mineru.py` |
+| 模块级缓存 | `_model_cache`, `@lru_cache` | `vectors.py` |
+| 配置标准化 | 输入验证 + 安全默认值 | `config.py` |
+| `ui()` 双输出 | 用户消息同时写入控制台和日志 | `log.py` |
+| 步骤管道 | `StepResult` 枚举 + `InboxCtx` 状态机 | `types.py` |
+| 可 Monkeypatch | `_pipeline_attr()` 间接调用用于测试注入 | `inbox_steps.py` |
+| WAL 模式 SQLite | 所有 SQLite 操作使用 `PRAGMA journal_mode=WAL` | `index.py`, `chunks.py` |
+| Frozen Dataclass | 不可变值对象 | `mineru.py`, `chunks.py` |
