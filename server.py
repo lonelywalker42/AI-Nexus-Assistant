@@ -1116,6 +1116,16 @@ def list_tags():
         db.close()
 
 
+@app.get("/api/knowledge/tags/tree")
+def get_tag_tree():
+    """获取标签层级树结构"""
+    db = get_session()
+    try:
+        return knowledge_service.get_tag_tree(db)
+    finally:
+        db.close()
+
+
 # ══════════════════════════════════════════════════════════════
 #  文献库
 # ══════════════════════════════════════════════════════════════
@@ -2150,8 +2160,12 @@ async def stream_chat(body: ChatRequest):
     ai = get_ai()
 
     async def generate():
+        import time
+        start_time = time.time()
         full_thinking = ""
         full_content = ""
+        total_tokens = 0
+
         for chunk in ai.stream_chat(messages, model_id=body.model_id):
             data = json.dumps(chunk, ensure_ascii=False)
             yield f"data: {data}\n\n"
@@ -2159,6 +2173,21 @@ async def stream_chat(body: ChatRequest):
                 full_thinking += chunk["data"]
             elif chunk["type"] == "content":
                 full_content += chunk["data"]
+            # 从 chunk 中提取 token 使用量
+            if "usage" in chunk:
+                total_tokens = chunk["usage"].get("total_tokens", total_tokens)
+
+        # 计算耗时
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        # 如果没有从 chunk 获取到 token，估算（中文约 1.5 字/token，英文约 4 字符/token）
+        if total_tokens == 0:
+            char_count = len(full_content) + len(full_thinking)
+            total_tokens = max(int(char_count / 2), 1)
+
+        # 发送统计信息
+        stats = {"tokens": total_tokens, "duration_ms": duration_ms}
+        yield f"data: {json.dumps({'type': 'stats', 'data': stats}, ensure_ascii=False)}\n\n"
 
         # 保存 AI 回复
         db = get_session()
@@ -2835,12 +2864,24 @@ def writing_ai_operation(doc_id: str, data: dict):
 
         system_prompt = prompts.get(operation, prompts["polish"])
         ai = get_ai()
+
+        # 检查 AI 模型是否可用
+        if not ai._models:
+            return {"error": "未配置 AI 模型，请在设置中添加模型配置。", "operation": operation}
+
         result = ai.chat([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text[:8000]}
         ])
 
-        return {"result": result.get("content", ""), "operation": operation}
+        content = result.get("content", "")
+        # 检查是否返回了错误信息
+        if content.startswith("❌") or content.startswith("AI 调用失败"):
+            return {"error": content, "operation": operation}
+
+        return {"result": content, "operation": operation}
+    except Exception as e:
+        return {"error": f"AI 操作失败: {str(e)}", "operation": data.get("operation", "polish")}
     finally:
         db.close()
 
@@ -3041,6 +3082,154 @@ def import_from_url(data: dict):
             db.close()
     except Exception as e:
         return {"error": str(e)}
+
+
+# ══════════════════════════════════════════════════════════════
+#  科研 Agent 工作流
+# ══════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel as _BaseModel
+
+class AgentRequest(_BaseModel):
+    query: str
+    workflow_type: str = "review"  # review | writing | experiment
+    model_id: str | None = None
+    config: dict = {}
+
+class AgentWorkflowRequest(_BaseModel):
+    workflow_type: str
+    title: str
+    config: dict = {}
+
+# 全局 Agent 实例
+_agent_instances = {}
+
+def _get_agent(agent_type: str):
+    """获取或创建 Agent 实例"""
+    if agent_type not in _agent_instances:
+        ai = get_ai()
+        if agent_type == "review":
+            from app.ai.agents import LiteratureReviewAgent
+            _agent_instances[agent_type] = LiteratureReviewAgent(ai_router=ai)
+        elif agent_type == "writing":
+            from app.ai.agents import PaperWritingAgent
+            _agent_instances[agent_type] = PaperWritingAgent(ai_router=ai)
+        elif agent_type == "experiment":
+            from app.ai.agents import ExperimentDesignAgent
+            _agent_instances[agent_type] = ExperimentDesignAgent(ai_router=ai)
+        elif agent_type == "peer_review":
+            from app.ai.agents import PeerReviewAgent
+            _agent_instances[agent_type] = PeerReviewAgent(ai_router=ai)
+        elif agent_type == "debate":
+            from app.ai.agents import DebateAgent
+            _agent_instances[agent_type] = DebateAgent(ai_router=ai)
+    return _agent_instances.get(agent_type)
+
+
+@app.post("/api/agent/run")
+async def run_agent(body: AgentRequest):
+    """运行科研 Agent"""
+    try:
+        print(f"[agent] Running agent: type={body.workflow_type}, query={body.query[:50]}, model_id={body.model_id}", flush=True)
+
+        agent = _get_agent(body.workflow_type)
+        if not agent:
+            return {"error": f"未知的 Agent 类型: {body.workflow_type}"}
+
+        # 检查 AI 模型是否可用
+        ai = get_ai()
+        if not ai._models:
+            return {"error": "未配置 AI 模型，请在设置中添加模型配置。"}
+
+        if body.workflow_type == "review":
+            result = await agent.generate_review(body.query, body.model_id)
+        elif body.workflow_type == "writing":
+            chapters = body.config.get("chapters", ["abstract", "introduction", "methodology", "results", "discussion", "conclusion"])
+            result = await agent.write_paper(body.query, chapters, body.model_id)
+        elif body.workflow_type == "experiment":
+            result = await agent.design_experiment(body.query, body.model_id)
+        elif body.workflow_type == "peer_review":
+            content = body.config.get("content", "")
+            result = await agent.review_document(body.query, content, body.model_id)
+        elif body.workflow_type == "debate":
+            rounds = body.config.get("rounds", 2)
+            result = await agent.run_debate(body.query, body.model_id, rounds)
+        else:
+            return {"error": f"未知的 Agent 类型: {body.workflow_type}"}
+
+        print(f"[agent] Agent completed: status={result.get('status')}", flush=True)
+        return result
+    except Exception as e:
+        import traceback
+        error_tb = traceback.format_exc()
+        print(f"[agent] Agent error: {e}\n{error_tb}", flush=True)
+        return {"error": str(e), "traceback": error_tb}
+
+
+@app.get("/api/agent/debug/models")
+def debug_agent_models():
+    """调试：查看 AI 模型配置"""
+    ai = get_ai()
+    models = ai.get_all_models()
+    return {
+        "model_count": len(models),
+        "models": [
+            {
+                "id": m.id,
+                "name": m.name,
+                "base_url": m.base_url,
+                "model_name": m.model_name,
+                "protocol": m.protocol,
+                "purpose": m.purpose,
+                "is_active": m.is_active,
+            }
+            for m in models
+        ],
+    }
+
+
+@app.post("/api/agent/debug/test")
+def debug_agent_test(model_id: str = None):
+    """调试：测试 AI 连接"""
+    ai = get_ai()
+    if not ai._models:
+        return {"error": "未配置 AI 模型"}
+
+    model = ai._resolve_model(model_id, "chat")
+    if not model:
+        return {"error": "未找到可用模型"}
+
+    result = ai.chat([
+        {"role": "user", "content": "Hello, this is a test message. Please respond with 'OK'."}
+    ], purpose="chat", model_id=model_id)
+
+    return {
+        "model": {
+            "id": model.id,
+            "name": model.name,
+            "base_url": model.base_url,
+            "model_name": model.model_name,
+        },
+        "result": result,
+    }
+
+
+@app.get("/api/agent/workflows")
+def list_agent_workflows():
+    """列出所有 Agent 工作流"""
+    all_workflows = []
+    for agent in _agent_instances.values():
+        all_workflows.extend(agent.list_workflows())
+    return all_workflows
+
+
+@app.delete("/api/agent/workflows/{workflow_id}")
+def delete_agent_workflow(workflow_id: str):
+    """删除 Agent 工作流"""
+    for agent in _agent_instances.values():
+        if agent.delete_workflow(workflow_id):
+            return {"success": True}
+    return {"error": "工作流不存在"}
 
 
 if __name__ == "__main__":

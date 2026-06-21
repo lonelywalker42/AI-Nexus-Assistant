@@ -1,31 +1,46 @@
 # Changelog
 
-## v3.5.0 (2026-06-21) — 科研助手功能增强（参考 ScholarAIO）
+## v3.5.0 (2026-06-21) — 科研 Agent 工作流 + 体验优化
 
 ### 新增
-- **PDF 元数据自动提取**: PyMuPDF 内置元数据 + 正则 + OpenAlex API 三级提取
-- **DOI 去重机制**: 优先按 DOI 去重，降级到标题匹配
-- **FTS5 全文索引**: SQLite FTS5 虚拟表 + 自动同步触发器，替代 LIKE 查询
-- **批量 BibTeX/RIS 导出**: 支持选择性导出
-- **分层阅读**: 元数据 → 摘要 → 全文三层切换
-- **阅读/搜索行为埋点**: 热词统计、高频阅读、阅读趋势
-- **向量语义搜索**: sentence-transformers + FAISS
-- **RRF 混合搜索**: FTS5 + 向量 RRF 融合排序（k=60）
-- **BERTopic 主题聚类**: 自动主题发现
-- **引用图谱**: DOI 正则提取 + 正向/反向/共同引用
-- **文内引用检查**: Author (Year) 格式识别 + 库内验证
-- **DOCX 导出**: Markdown → DOCX 转换
-- **工作区**: 论文子集管理
+- **科研 Agent 工作流**: 文献综述、论文写作、实验设计、同行评审、多视角讨论 5 种 Agent
+- **停止生成按钮**: 流式输出时显示红色"停止生成"按钮，使用 AbortController 取消请求
+- **消息重新生成**: 最后一条 AI 回复 hover 显示 🔄 按钮，支持重新生成
+- **会话搜索**: AI 对话左侧增加搜索框，支持按标题过滤会话
+- **Token 统计**: 消息旁显示 token 消耗和响应时间
+- **侧边栏可折叠分组**: 点击组标题 (总览/科研助手/个人助手/设置) 可展开/收起
+- **知识卡片批量操作**: 批量模式下支持全选/多选 + 批量导出 JSON + 批量删除
+- **知识图谱可视化**: SVG 力导向图展示卡片关联，点击节点查看详情
+- **标签层级**: 支持 `#parent/child` 嵌套标签，新增 `/api/knowledge/tags/tree` 端点
+- **仪表盘图表**: 本周任务趋势柱状图 + 实验状态分布图
+- **实验并排对比**: 选择两个实验对比详情 (状态/目标/背景/结果)
+- **多视角讨论**: 4 个视角 (方法论/领域/批判/实践) 多轮辩论 + 综合分析
+- **MCP 协议基础**: 基础 MCP 客户端框架，支持工具发现和调用
+- **Generative UI**: 工具调用结果渲染为结构化卡片，显示摘要和结果数量
+- **OS 主题跟随**: 启动时检测 OS 暗色模式，自动切换主题
+- **备份系统升级**: 使用 `sqlite3.backup()` API，透明处理 WAL 模式
+- **搜索增强**: DOI 优先去重 + URL 规范化去重 + 加权排序 + per-source 超时控制
+- **引文验证**: 4 层验证 (arXiv ID/DOI/URL/标题)，自动移除伪造引文
+
+### 修复
+- **Agent 404 错误**: PyInstaller 打包时未包含 agent 模块，添加 hidden imports
+- **Agent 阻塞事件循环**: 所有 Agent 添加 `asyncio.to_thread()` 包装同步调用
+- **Writing AI 错误处理**: 后端增加模型检查 + 前端增加错误显示
+- **搜索 base_url 自动补全**: 自动补全 `/v1` 后缀，避免 404 错误
 
 ### 新增 API 端点
-- `/api/papers/fts-search` — FTS5 全文搜索
-- `/api/papers/hybrid-search` — 混合搜索
-- `/api/papers/build-vectors` — 构建向量索引
-- `/api/papers/export` — 批量导出
-- `/api/topics` — 主题概览
-- `/api/citations/*` — 引用图谱
-- `/api/workspaces` — 工作区管理
-- `/api/insights` — 研究洞察
+- `/api/agent/run` — 运行科研 Agent (review/writing/experiment/peer_review/debate)
+- `/api/agent/workflows` — 列出所有 Agent 工作流
+- `/api/agent/debug/models` — 调试：查看 AI 模型配置
+- `/api/agent/debug/test` — 调试：测试 AI 连接
+- `/api/knowledge/tags/tree` — 获取标签层级树结构
+
+### 新增文件
+- `app/ai/agents/` — Agent 模块 (workflow/review/writing/experiment/peer_review/debate)
+- `app/ai/mcp_client.py` — MCP 协议客户端基础实现
+- `nexus-ui/src/pages/ResearchAgentPage.tsx` — 科研 Agent UI 页面
+
+## v3.4.1 (2026-06-21) — 播放同步 + Word Hopper + Bug修复
 
 ## v3.4.1 (2026-06-21) — 播放同步 + Word Hopper + Bug修复
 

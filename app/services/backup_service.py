@@ -45,22 +45,31 @@ def _checkpoint_wal(db_path: Path):
 
 
 def _copy_db_files(src_db: Path, dst_db: Path):
-    """复制 .db 及 .db-wal、.db-shm 三个文件
+    """使用 sqlite3.backup() API 复制数据库
 
-    先尝试 checkpoint 减小 WAL 体积，再复制全部三个文件。
+    透明处理 WAL 模式，比手动复制三个文件更安全。
+    Python 3.7+ 内置支持。
     """
-    # 尝试 checkpoint（非必须，失败也继续复制）
-    _checkpoint_wal(src_db)
+    # 删除目标文件（backup API 要求目标不存在或为空）
+    for suffix in ["", "-wal", "-shm"]:
+        f = dst_db.with_suffix(dst_db.suffix + suffix) if suffix else dst_db
+        f.unlink(missing_ok=True)
 
-    # 复制 .db
-    shutil.copy2(src_db, dst_db)
-
-    # 复制 .db-wal 和 .db-shm（如果存在且非空）
-    for suffix in ["-wal", "-shm"]:
-        src_file = src_db.with_suffix(src_db.suffix + suffix)
-        dst_file = dst_db.with_suffix(dst_db.suffix + suffix)
-        if src_file.exists() and src_file.stat().st_size > 0:
-            shutil.copy2(src_file, dst_file)
+    try:
+        src = sqlite3.connect(str(src_db), timeout=10)
+        dst = sqlite3.connect(str(dst_db), timeout=10)
+        src.backup(dst)
+        dst.close()
+        src.close()
+    except Exception:
+        # 回退到传统方式
+        _checkpoint_wal(src_db)
+        shutil.copy2(src_db, dst_db)
+        for suffix in ["-wal", "-shm"]:
+            src_file = src_db.with_suffix(src_db.suffix + suffix)
+            dst_file = dst_db.with_suffix(dst_db.suffix + suffix)
+            if src_file.exists() and src_file.stat().st_size > 0:
+                shutil.copy2(src_file, dst_file)
 
 
 def _remove_db_files(db_path: Path):

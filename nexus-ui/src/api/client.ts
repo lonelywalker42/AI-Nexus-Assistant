@@ -286,33 +286,59 @@ export const chatApi = {
       method: "POST",
       body: JSON.stringify({ content, role: "user" }),
     }),
-  stream: async function* (sessionId: string, modelId?: string) {
+  stream: async function* (sessionId: string, modelId?: string, signal?: AbortSignal) {
     const res = await fetch(`${API_BASE}/api/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sessionId, model_id: modelId }),
+      signal,
     });
     const reader = res.body?.getReader();
     if (!reader) return;
     const decoder = new TextDecoder();
     let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6).trim();
-          if (data === "[DONE]") return;
-          try {
-            yield JSON.parse(data);
-          } catch {}
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") return;
+            try {
+              yield JSON.parse(data);
+            } catch {}
+          }
         }
       }
+    } finally {
+      reader.releaseLock();
     }
   },
+};
+
+// ── Agent ─────────────────────────────────────────────────
+
+export interface AgentRequest {
+  query: string;
+  workflow_type: string;
+  model_id?: string;
+  config?: Record<string, any>;
+}
+
+export const agentApi = {
+  run: (body: AgentRequest) =>
+    request<any>("/api/agent/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listWorkflows: () =>
+    request<any[]>("/api/agent/workflows"),
+  deleteWorkflow: (id: string) =>
+    request<any>(`/api/agent/workflows/${id}`, { method: "DELETE" }),
 };
 
 // ── Models ─────────────────────────────────────────────────

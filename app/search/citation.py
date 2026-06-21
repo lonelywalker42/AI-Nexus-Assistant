@@ -89,3 +89,107 @@ def format_gb(paper: dict, idx: int) -> str:
     # 清理
     s = s.replace("..", ".").replace(", ,", ",")
     return s
+
+
+# ── 引文验证 (4 层) ──────────────────────────────────────────
+
+import re as _re
+from urllib.parse import urlparse as _urlparse
+
+
+def _is_valid_arxiv_id(arxiv_id: str) -> bool:
+    """验证 arXiv ID 格式"""
+    if not arxiv_id:
+        return False
+    # 新格式: 2301.12345, 2301.12345v1
+    # 旧格式: hep-th/9901001
+    patterns = [
+        r'^\d{4}\.\d{4,5}(v\d+)?$',
+        r'^[a-z\-]+/\d{7}$',
+    ]
+    return any(_re.match(p, arxiv_id.strip()) for p in patterns)
+
+
+def _is_valid_doi(doi: str) -> bool:
+    """验证 DOI 格式"""
+    if not doi:
+        return False
+    doi = doi.strip()
+    # DOI 格式: 10.xxxx/yyyy
+    return bool(_re.match(r'^10\.\d{4,}/.+$', doi))
+
+
+def _has_url(text: str) -> bool:
+    """检查文本是否包含有效 URL"""
+    if not text:
+        return False
+    return bool(_re.search(r'https?://\S+', text))
+
+
+def verify_citation(paper: dict) -> dict:
+    """4 层引文验证 (参考 AutoResearchClaw)
+
+    返回:
+        {
+            "valid": bool,
+            "confidence": float (0-1),
+            "checks": {
+                "arxiv_id": bool,
+                "doi": bool,
+                "has_url": bool,
+                "title_not_empty": bool,
+            },
+            "issues": list[str]
+        }
+    """
+    checks = {
+        "arxiv_id": False,
+        "doi": False,
+        "has_url": False,
+        "title_not_empty": False,
+    }
+    issues = []
+
+    # 层 1: arXiv ID 验证
+    arxiv_id = paper.get("arxiv_id") or paper.get("arxivId") or ""
+    if arxiv_id:
+        checks["arxiv_id"] = _is_valid_arxiv_id(arxiv_id)
+        if not checks["arxiv_id"]:
+            issues.append(f"arXiv ID 格式无效: {arxiv_id}")
+
+    # 层 2: DOI 验证
+    doi = paper.get("doi") or ""
+    if doi:
+        checks["doi"] = _is_valid_doi(doi)
+        if not checks["doi"]:
+            issues.append(f"DOI 格式无效: {doi}")
+
+    # 层 3: URL 验证
+    url = paper.get("url") or ""
+    checks["has_url"] = _has_url(url)
+
+    # 层 4: 标题非空验证
+    title = paper.get("title") or ""
+    checks["title_not_empty"] = bool(title.strip())
+    if not checks["title_not_empty"]:
+        issues.append("标题为空")
+
+    # 计算置信度
+    passed = sum(checks.values())
+    total = len(checks)
+    confidence = passed / total
+
+    # 至少需要标题非空
+    valid = checks["title_not_empty"]
+
+    return {
+        "valid": valid,
+        "confidence": confidence,
+        "checks": checks,
+        "issues": issues,
+    }
+
+
+def batch_verify_citations(papers: list[dict]) -> list[dict]:
+    """批量引文验证，返回验证结果列表"""
+    return [verify_citation(p) for p in papers]

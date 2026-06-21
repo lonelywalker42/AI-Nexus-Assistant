@@ -12,6 +12,7 @@ import SettingsPage from "./pages/SettingsPage";
 import MusicPage from "./pages/MusicPage";
 import BookshelfPage from "./pages/BookshelfPage";
 import WritingPage from "./pages/WritingPage";
+import ResearchAgentPage from "./pages/ResearchAgentPage";
 import { dashboardApi } from "./api/client";
 import {
   IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat,
@@ -33,6 +34,7 @@ const PAGES = [
   { id: "experiments", label: "试验管理", icon: "flask", group: "research" },
   { id: "chat", label: "AI 对话", icon: "chat", group: "research" },
   { id: "writing", label: "写作", icon: "book", group: "research" },
+  { id: "agent", label: "科研Agent", icon: "brain", group: "research" },
   // 个人助手
   { id: "music", label: "音乐", icon: "music", group: "personal" },
   { id: "bookshelf", label: "书架", icon: "bookOpen", group: "personal" },
@@ -85,10 +87,15 @@ function App() {
   const [loading, setLoading] = useState(true);
   const { name } = useAppName();
 
-  // 初始化主题
+  // 初始化主题（跟随 OS 暗色模式）
   useEffect(() => {
-    const saved = localStorage.getItem("nexus-theme") || "light";
-    document.documentElement.setAttribute("data-theme", saved);
+    const saved = localStorage.getItem("nexus-theme");
+    if (saved) {
+      document.documentElement.setAttribute("data-theme", saved);
+    } else {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.setAttribute("data-theme", prefersDark ? "dark" : "light");
+    }
   }, []);
 
   useEffect(() => {
@@ -130,6 +137,7 @@ function App() {
       case "knowledge": return <KnowledgePage />;
       case "chat": return <ChatPage />;
       case "writing": return <WritingPage />;
+      case "agent": return <ResearchAgentPage />;
       case "music": return <MusicPage />;
       case "bookshelf": return <BookshelfPage />;
       case "materials": return (

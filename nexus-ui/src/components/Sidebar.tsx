@@ -27,7 +27,17 @@ const GROUPS: Array<{ key: string; label: string; badge?: string }> = [
 export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps) {
   const [showAbout, setShowAbout] = useState(false);
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const { name, subtitle } = useAppName();
+
+  const toggleGroup = (groupKey: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (showAbout && !sysInfo) {
@@ -52,9 +62,18 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
             const groupPages = pages.filter(p => p.group === group.key);
             if (groupPages.length === 0) return null;
 
+            const isCollapsed = collapsedGroups.has(group.key);
+
             return (
               <div key={group.key} className="mb-1">
-                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
+                <p
+                  className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer select-none"
+                  style={{ color: "var(--text-muted)" }}
+                  onClick={() => toggleGroup(group.key)}
+                  onMouseEnter={e => (e.currentTarget.style.color = "var(--text-secondary)")}
+                  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
+                >
+                  <span className="text-[8px] transition-transform" style={{ transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▼</span>
                   {group.label}
                   {group.badge && (
                     <span className="px-1.5 py-0 rounded text-[8px] font-medium"
@@ -63,7 +82,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
                     </span>
                   )}
                 </p>
-                {groupPages.map(page => (
+                {!isCollapsed && groupPages.map(page => (
                   <NavItem key={page.id} page={page} active={activePage === page.id} onClick={() => onNavigate(page.id)} />
                 ))}
               </div>
@@ -107,7 +126,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
           onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
         >
-          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v3.1.0</span>
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v3.5.0</span>
         </div>
       </aside>
 
@@ -124,7 +143,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
             <div className="text-center space-y-3">
               <div className="text-3xl font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>{name}</div>
               <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{name} Assistant</p>
-              <p className="text-xs" style={{ color: "var(--text-muted)" }}>v3.1.0</p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>v3.5.0</p>
               <div className="h-px" style={{ background: "var(--border-color)" }} />
               <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                 面向航空航天/控制领域科研人员的个人研究助手桌面应用。

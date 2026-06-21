@@ -127,6 +127,36 @@ def get_tags(db: Session, status: str = "") -> list[Tag]:
     return q.order_by(Tag.usage_count.desc()).all()
 
 
+def get_tag_tree(db: Session) -> dict:
+    """获取标签层级树结构
+
+    支持 #parent/child 格式的嵌套标签
+    返回格式: {"parent": {"child": {"usage_count": 5}, "_count": 10}, ...}
+    """
+    tags = get_tags(db)
+    tree = {}
+
+    for tag in tags:
+        name = tag.name
+        parts = name.split("/")
+        current = tree
+
+        for i, part in enumerate(parts):
+            if part not in current:
+                current[part] = {"_count": 0, "_children": {}}
+
+            if i == len(parts) - 1:
+                # 叶子节点，记录使用次数
+                current[part]["_count"] = tag.usage_count
+                current[part]["_name"] = name
+            else:
+                # 中间节点，累加使用次数
+                current[part]["_count"] = (current[part].get("_count", 0) or 0) + (tag.usage_count or 0)
+                current = current[part]["_children"]
+
+    return tree
+
+
 def get_card_tags(db: Session, card_id: str) -> list[Tag]:
     """获取卡片的所有标签"""
     tag_names = db.query(CardTag.tag_name).filter(CardTag.card_id == card_id).subquery()

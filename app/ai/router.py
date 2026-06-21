@@ -86,7 +86,14 @@ class AIRouter:
         except Exception as e:
             return {"thinking": "", "content": f"❌ openai 导入异常: {type(e).__name__}: {e}"}
 
-        client = openai.OpenAI(base_url=model.base_url, api_key=model.api_key)
+        # 确保 base_url 以 /v1 结尾
+        base_url = model.base_url.rstrip("/")
+        if not base_url.endswith("/v1"):
+            base_url += "/v1"
+
+        print(f"[router] Calling OpenAI API: base_url={base_url}, model={model.model_name}", flush=True)
+
+        client = openai.OpenAI(base_url=base_url, api_key=model.api_key)
         try:
             resp = client.chat.completions.create(
                 model=model.model_name,
@@ -99,9 +106,20 @@ class AIRouter:
             content = choice.message.content or ""
             if hasattr(choice.message, 'reasoning_content') and choice.message.reasoning_content:
                 thinking = choice.message.reasoning_content
+            print(f"[router] API call succeeded, content length={len(content)}", flush=True)
             return {"thinking": thinking, "content": content}
+        except openai.NotFoundError as e:
+            error_msg = f"❌ API 端点不存在 (404): base_url={base_url}, model={model.model_name}。请检查配置。错误: {e}"
+            print(f"[router] {error_msg}", flush=True)
+            return {"thinking": "", "content": error_msg}
+        except openai.AuthenticationError as e:
+            error_msg = f"❌ API 认证失败 (401): 请检查 API Key。错误: {e}"
+            print(f"[router] {error_msg}", flush=True)
+            return {"thinking": "", "content": error_msg}
         except Exception as e:
-            return {"thinking": "", "content": f"❌ AI 调用失败: {e}"}
+            error_msg = f"❌ AI 调用失败: {type(e).__name__}: {e}"
+            print(f"[router] {error_msg}", flush=True)
+            return {"thinking": "", "content": error_msg}
 
     def _call_anthropic(self, model: ModelConfig, messages: list[dict], **kwargs) -> dict:
         try:
@@ -171,7 +189,12 @@ class AIRouter:
             yield {"type": "content", "data": f"❌ openai 导入异常: {type(e).__name__}: {e}"}
             return
 
-        client = openai.OpenAI(base_url=model.base_url, api_key=model.api_key)
+        # 确保 base_url 以 /v1 结尾
+        base_url = model.base_url.rstrip("/")
+        if not base_url.endswith("/v1"):
+            base_url += "/v1"
+
+        client = openai.OpenAI(base_url=base_url, api_key=model.api_key)
         current_messages = list(messages)
 
         for round_num in range(self.MAX_TOOL_ROUNDS + 1):

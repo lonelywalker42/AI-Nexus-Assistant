@@ -38,6 +38,102 @@ export default function KnowledgePage() {
   const [allTags, setAllTags] = useState<{ name: string; usage_count: number }[]>([]);
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
+  // 知识图谱
+  const [showGraph, setShowGraph] = useState(false);
+  const [graphNodes, setGraphNodes] = useState<{ id: string; label: string; x: number; y: number; size: number; color: string }[]>([]);
+  const [graphEdges, setGraphEdges] = useState<{ from: string; to: string }[]>([]);
+
+  const buildGraph = () => {
+    // 构建知识图谱数据
+    const nodes: typeof graphNodes = [];
+    const edges: typeof graphEdges = [];
+    const tagMap = new Map<string, string[]>();
+
+    // 收集标签关联
+    cards.forEach(card => {
+      (card.tags || []).forEach(tag => {
+        if (!tagMap.has(tag)) tagMap.set(tag, []);
+        tagMap.get(tag)!.push(card.id);
+      });
+    });
+
+    // 创建节点
+    cards.forEach((card, i) => {
+      const angle = (i / cards.length) * Math.PI * 2;
+      const radius = 150;
+      nodes.push({
+        id: card.id,
+        label: card.title.slice(0, 15),
+        x: 200 + Math.cos(angle) * radius + (Math.random() - 0.5) * 50,
+        y: 200 + Math.sin(angle) * radius + (Math.random() - 0.5) * 50,
+        size: Math.max(8, Math.min(20, (card.star_rating || 1) * 4)),
+        color: CATEGORIES.find(c => c.key === card.source_type)?.color || "#64748b",
+      });
+    });
+
+    // 创建边（通过共同标签连接）
+    tagMap.forEach((cardIds, _tag) => {
+      for (let i = 0; i < cardIds.length; i++) {
+        for (let j = i + 1; j < cardIds.length; j++) {
+          edges.push({ from: cardIds[i], to: cardIds[j] });
+        }
+      }
+    });
+
+    setGraphNodes(nodes);
+    setGraphEdges(edges);
+    setShowGraph(true);
+  };
+
+  // 批量操作
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchMode, setBatchMode] = useState(false);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    if (selectedIds.size === cards.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(cards.map(c => c.id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`确定删除选中的 ${selectedIds.size} 张卡片？`)) return;
+    try {
+      for (const id of selectedIds) {
+        await knowledgeApi.deleteCard(id);
+      }
+      setSelectedIds(new Set());
+      setBatchMode(false);
+      loadCards();
+    } catch (err) {
+      alert("批量删除失败: " + err);
+    }
+  };
+
+  const handleBatchExport = () => {
+    if (selectedIds.size === 0) return;
+    const selected = cards.filter(c => selectedIds.has(c.id));
+    const data = JSON.stringify(selected, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `knowledge_cards_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // 防抖搜索
   const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {
@@ -294,6 +390,9 @@ export default function KnowledgePage() {
           <button className="btn-ghost text-xs py-2 flex items-center gap-1" onClick={() => setShowQuickNote(v => !v)}>
             <IconLightbulb size={13} /> 随手记
           </button>
+          <button className="btn-ghost text-xs py-2 flex items-center gap-1" onClick={buildGraph}>
+            📊 知识图谱
+          </button>
           <button className="btn-gradient btn-click text-xs py-2 px-3" onClick={handleCreate}>新建卡片</button>
         </div>
       </div>
@@ -397,7 +496,29 @@ export default function KnowledgePage() {
                 <span className="text-xs" style={{ color: viewMode === "grid" ? "var(--accent-blue)" : "var(--text-muted)" }}>⊞</span>
               </button>
             </div>
+            <button
+              className="px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
+              style={batchMode ? { background: "rgba(59,130,246,0.15)", color: "var(--accent-blue)" } : { background: "var(--hover-bg)", color: "var(--text-muted)" }}
+              onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}
+            >
+              {batchMode ? "取消" : "批量"}
+            </button>
           </div>
+          {/* 批量操作栏 */}
+          {batchMode && (
+            <div className="flex gap-2 items-center px-2 py-1.5 rounded-lg" style={{ background: "rgba(59,130,246,0.06)" }}>
+              <button className="text-xs cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={selectAll}>
+                {selectedIds.size === cards.length ? "取消全选" : "全选"}
+              </button>
+              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>已选 {selectedIds.size} 项</span>
+              {selectedIds.size > 0 && (
+                <>
+                  <button className="text-xs cursor-pointer" style={{ color: "#10b981" }} onClick={handleBatchExport}>导出</button>
+                  <button className="text-xs cursor-pointer" style={{ color: "#ef4444" }} onClick={handleBatchDelete}>删除</button>
+                </>
+              )}
+            </div>
+          )}
           {/* 标签筛选 */}
           {allTags.length > 0 && (
             <div className="flex gap-1 flex-wrap">
@@ -454,8 +575,17 @@ export default function KnowledgePage() {
             <div
               key={card.id}
               className="glass-card p-4 flex items-start gap-4 cursor-pointer glass-card-hover group"
-              onClick={() => handleCardClick(card)}
+              onClick={() => batchMode ? toggleSelect(card.id) : handleCardClick(card)}
             >
+              {batchMode && (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(card.id)}
+                  onChange={() => toggleSelect(card.id)}
+                  className="mt-1 flex-shrink-0"
+                  onClick={e => e.stopPropagation()}
+                />
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <h3 className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>{card.title}</h3>
@@ -607,6 +737,47 @@ export default function KnowledgePage() {
 
           <div className="flex gap-2 pt-2" style={{ borderTop: "1px solid var(--border-color)" }}>
             <button className="btn-ghost text-xs" onClick={() => handleDelete(selectedCard.id)}>删除卡片</button>
+          </div>
+        </div>
+      )}
+
+      {/* 知识图谱弹窗 */}
+      {showGraph && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
+          onClick={() => setShowGraph(false)}>
+          <div className="glass-card p-6 max-w-3xl w-full mx-4 max-h-[80vh] overflow-hidden animate-fade-in"
+            style={{ background: "var(--glass-bg)", backdropFilter: "blur(20px)" }}
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>知识图谱</h3>
+              <button className="btn-ghost text-xs" onClick={() => setShowGraph(false)}>关闭</button>
+            </div>
+            <div className="relative" style={{ height: "400px", background: "var(--hover-bg)", borderRadius: "12px" }}>
+              <svg width="100%" height="100%" viewBox="0 0 400 400">
+                {/* 边 */}
+                {graphEdges.map((edge, i) => {
+                  const from = graphNodes.find(n => n.id === edge.from);
+                  const to = graphNodes.find(n => n.id === edge.to);
+                  if (!from || !to) return null;
+                  return (
+                    <line key={i} x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+                      stroke="var(--border-color)" strokeWidth="1" opacity="0.5" />
+                  );
+                })}
+                {/* 节点 */}
+                {graphNodes.map(node => (
+                  <g key={node.id} onClick={() => { const card = cards.find(c => c.id === node.id); if (card) { setSelectedCard(card); setShowGraph(false); } }}
+                    style={{ cursor: "pointer" }}>
+                    <circle cx={node.x} cy={node.y} r={node.size} fill={node.color} opacity="0.8" />
+                    <text x={node.x} y={node.y + node.size + 12} textAnchor="middle" fontSize="10"
+                      fill="var(--text-secondary)">{node.label}</text>
+                  </g>
+                ))}
+              </svg>
+            </div>
+            <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+              节点大小表示评分，颜色表示来源分类，连线表示共同标签。点击节点查看详情。
+            </p>
           </div>
         </div>
       )}

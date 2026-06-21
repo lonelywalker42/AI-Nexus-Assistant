@@ -265,9 +265,14 @@ export default function WritingPage() {
     setAiResult("");
     try {
       const res = await writingApi.aiOperation(activeDoc.id, operation, text.slice(0, 8000));
-      setAiResult((res as any).result || "");
+      const data = res as any;
+      if (data.error) {
+        setAiResult(`❌ ${data.error}`);
+      } else {
+        setAiResult(data.result || "");
+      }
     } catch (err) {
-      setAiResult(`错误: ${err}`);
+      setAiResult(`❌ 请求失败: ${err}`);
     } finally {
       setAiLoading(false);
     }
@@ -285,9 +290,14 @@ export default function WritingPage() {
     setAiResult("");
     try {
       const res = await writingApi.aiOperation(activeDoc.id, "custom", `${customPrompt}\n\n${text.slice(0, 6000)}`);
-      setAiResult((res as any).result || "");
+      const data = res as any;
+      if (data.error) {
+        setAiResult(`❌ ${data.error}`);
+      } else {
+        setAiResult(data.result || "");
+      }
     } catch (err) {
-      setAiResult(`错误: ${err}`);
+      setAiResult(`❌ 请求失败: ${err}`);
     } finally {
       setAiLoading(false);
     }

@@ -28,6 +28,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const kb = data?.knowledge;
   const rate = monthly && monthly.total > 0 ? Math.round((monthly.done / monthly.total) * 100) : 0;
 
+  // 模拟最近 7 天任务完成数据（实际应从 API 获取）
+  const weeklyData = [3, 5, 2, 7, 4, 6, 3];
+  const maxVal = Math.max(...weeklyData, 1);
+  const weekDays = ["一", "二", "三", "四", "五", "六", "日"];
+
   return (
     <div className="space-y-5">
       <h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>仪表盘</h2>
@@ -39,6 +44,63 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         <StatCard title="知识卡片" value={String(kb?.total ?? 0)} subtitle={`${kb?.tag_count ?? 0} 个标签`} color="#8b5cf6" onClick={() => onNavigate?.("knowledge")} />
         <StatCard title="规划中试验" value={String(exps?.planning ?? 0)} subtitle="待启动" color="#64748b" onClick={() => onNavigate?.("experiments")} />
         <StatCard title="已完成试验" value={String(exps?.completed ?? 0)} subtitle="已归档" color="#34d399" onClick={() => onNavigate?.("experiments")} />
+      </div>
+
+      {/* 图表区域 */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* 任务完成趋势 */}
+        <div className="glass-card p-4">
+          <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>本周任务完成趋势</h3>
+          <div className="flex items-end gap-2 h-24">
+            {weeklyData.map((val, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full rounded-t transition-all"
+                  style={{
+                    height: `${(val / maxVal) * 100}%`,
+                    background: `linear-gradient(to top, var(--accent-blue), rgba(59,130,246,0.5))`,
+                    minHeight: "4px",
+                  }}
+                />
+                <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>周{weekDays[i]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 实验状态分布 */}
+        <div className="glass-card p-4">
+          <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>实验状态分布</h3>
+          <div className="flex items-center gap-4 h-24">
+            <div className="flex-1 flex items-end gap-1 h-full">
+              {[
+                { label: "规划", value: exps?.planning ?? 0, color: "#64748b" },
+                { label: "进行", value: exps?.running ?? 0, color: "#3b82f6" },
+                { label: "完成", value: exps?.completed ?? 0, color: "#10b981" },
+              ].map((item, i) => {
+                const total = (exps?.total ?? 1) || 1;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="text-[10px] font-medium" style={{ color: item.color }}>{item.value}</div>
+                    <div
+                      className="w-full rounded-t"
+                      style={{
+                        height: `${(item.value / total) * 100}%`,
+                        background: item.color,
+                        minHeight: "4px",
+                      }}
+                    />
+                    <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{item.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{exps?.total ?? 0}</div>
+              <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>总计</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="glass-card p-5">

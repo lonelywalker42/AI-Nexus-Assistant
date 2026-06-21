@@ -100,6 +100,7 @@ def build():
         "--hidden-import", "app.services.citation_service",
         "--hidden-import", "app.services.export_service",
         "--hidden-import", "app.services.workspace_service",
+        "--hidden-import", "app.services.writing_service",
         "--hidden-import", "app.search",
         "--hidden-import", "app.search.engine",
         "--hidden-import", "app.search.scorer",
@@ -127,6 +128,14 @@ def build():
         "--hidden-import", "app.ai.tools.knowledge_tool",
         "--hidden-import", "app.ai.tools.experiment_tool",
         "--hidden-import", "app.ai.tools.academic_tool",
+        "--hidden-import", "app.ai.agents",
+        "--hidden-import", "app.ai.agents.workflow",
+        "--hidden-import", "app.ai.agents.review_agent",
+        "--hidden-import", "app.ai.agents.writing_agent",
+        "--hidden-import", "app.ai.agents.experiment_agent",
+        "--hidden-import", "app.ai.agents.peer_review_agent",
+        "--hidden-import", "app.ai.agents.debate_agent",
+        "--hidden-import", "app.ai.mcp_client",
         "--hidden-import", "app.utils",
         "--hidden-import", "app.utils.paths",
         "--hidden-import", "app.db",
@@ -171,6 +180,13 @@ def build():
         size_mb = dst.stat().st_size / 1024 / 1024
         print(f"\nBuilt: {dst}")
         print(f"Size: {size_mb:.1f} MB")
+
+        # 同时复制到 Tauri binaries 目录（用于嵌入式 sidecar）
+        tauri_binaries = PROJECT_DIR / "nexus-ui" / "src-tauri" / "binaries"
+        if tauri_binaries.exists():
+            tauri_dst = tauri_binaries / f"{BINARY_NAME}.exe"
+            shutil.copy2(src, tauri_dst)
+            print(f"Copied to Tauri: {tauri_dst}")
     else:
         print(f"ERROR: {src} not found")
         sys.exit(1)

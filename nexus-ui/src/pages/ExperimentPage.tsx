@@ -44,10 +44,26 @@ export default function ExperimentPage() {
   // 结构化参数编辑
   const [paramEntries, setParamEntries] = useState<{ key: string; value: string }[]>([{ key: "", value: "" }]);
 
+  // 实验对比
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
+  const [showCompare, setShowCompare] = useState(false);
+
   const loadExperiments = () => experimentsApi.list(search, statusFilter).then(setExperiments).catch(console.error);
   useEffect(() => { loadExperiments(); }, [search, statusFilter]);
 
   const active = experiments.find(e => e.id === activeId);
+
+  const toggleCompareId = (id: string) => {
+    setCompareIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < 2) next.add(id);
+      return next;
+    });
+  };
+
+  const compareExps = experiments.filter(e => compareIds.has(e.id));
 
   // 同步编辑表单
   useEffect(() => {
@@ -229,11 +245,29 @@ export default function ExperimentPage() {
             </button>
           ))}
         </div>
+        <div className="flex gap-1 mb-1">
+          <button className="text-[10px] px-2 py-1 rounded cursor-pointer"
+            style={compareMode ? { background: "rgba(59,130,246,0.15)", color: "var(--accent-blue)" } : { background: "var(--hover-bg)", color: "var(--text-muted)" }}
+            onClick={() => { setCompareMode(!compareMode); setCompareIds(new Set()); }}>
+            {compareMode ? "取消对比" : "对比"}
+          </button>
+          {compareMode && compareIds.size === 2 && (
+            <button className="text-[10px] px-2 py-1 rounded cursor-pointer"
+              style={{ background: "rgba(16,185,129,0.15)", color: "#10b981" }}
+              onClick={() => setShowCompare(true)}>
+              查看对比
+            </button>
+          )}
+        </div>
         <div className="space-y-1.5 overflow-y-auto flex-1">
           {experiments.map(exp => (
-            <div key={exp.id} onClick={() => setActiveId(exp.id)}
+            <div key={exp.id} onClick={() => compareMode ? toggleCompareId(exp.id) : setActiveId(exp.id)}
               className="glass-card px-3 py-2.5 flex items-center gap-3 cursor-pointer transition-all"
-              style={activeId === exp.id ? { borderLeft: "3px solid var(--accent-blue)" } : {}}>
+              style={activeId === exp.id && !compareMode ? { borderLeft: "3px solid var(--accent-blue)" } : compareIds.has(exp.id) ? { borderLeft: "3px solid #10b981" } : {}}>
+              {compareMode && (
+                <input type="checkbox" checked={compareIds.has(exp.id)} onChange={() => toggleCompareId(exp.id)}
+                  className="flex-shrink-0" onClick={e => e.stopPropagation()} />
+              )}
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STATUS_COLORS[exp.status] || "#94a3b8" }} />
               <span className="text-sm truncate" style={{ color: "var(--text-primary)" }}>{exp.title}</span>
             </div>
@@ -605,6 +639,45 @@ export default function ExperimentPage() {
           </div>
         )}
       </div>
+
+      {/* 实验对比弹窗 */}
+      {showCompare && compareExps.length === 2 && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
+          onClick={() => setShowCompare(false)}>
+          <div className="glass-card p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto animate-fade-in"
+            style={{ background: "var(--glass-bg)", backdropFilter: "blur(20px)" }}
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>实验对比</h3>
+              <button className="btn-ghost text-xs" onClick={() => setShowCompare(false)}>关闭</button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {compareExps.map((exp, i) => (
+                <div key={exp.id} className="space-y-3">
+                  <h4 className="font-semibold" style={{ color: i === 0 ? "#3b82f6" : "#10b981" }}>{exp.title}</h4>
+                  <div className="space-y-2 text-sm">
+                    <div><strong>状态:</strong> {STATUS_LABELS[exp.status]}</div>
+                    <div><strong>目标:</strong> {exp.objective || "未设置"}</div>
+                    <div><strong>背景:</strong> {exp.background || "未设置"}</div>
+                    <div><strong>结果数:</strong> {exp.results?.length ?? 0}</div>
+                  </div>
+                  {exp.results && exp.results.length > 0 && (
+                    <div className="space-y-1">
+                      <strong className="text-xs">最新结果:</strong>
+                      {exp.results.slice(0, 3).map((r, j) => (
+                        <div key={j} className="text-xs p-2 rounded" style={{ background: "var(--hover-bg)" }}>
+                          <div><strong>v{r.version}</strong> - {r.description}</div>
+                          {r.conclusion && <div className="mt-1" style={{ color: "var(--text-muted)" }}>{r.conclusion}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
