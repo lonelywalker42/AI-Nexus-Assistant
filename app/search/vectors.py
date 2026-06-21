@@ -202,6 +202,88 @@ def _get_paper_ids(db: Session) -> list[str]:
         return []
 
 
+def search_neighbors(db: Session, paper_id: str, top_k: int = 10,
+                     model_name: str = "all-MiniLM-L6-v2") -> list[dict]:
+    """找到与指定论文语义最相似的论文（基于 FAISS 向量索引）。
+
+    用于论文详情页的"相关论文"推荐。
+
+    Args:
+        db: 数据库会话
+        paper_id: 目标论文 ID
+        top_k: 返回数量
+        model_name: 嵌入模型名
+
+    Returns:
+        list[dict]: 相似论文列表，含 score 字段
+    """
+    if not _check_faiss_available():
+        raise ImportError("faiss 未安装")
+
+    import numpy as np
+    import faiss
+
+    # 加载 FAISS 索引
+    index_path = _get_index_path(db)
+    if not os.path.exists(index_path):
+        raise FileNotFoundError("向量索引未构建")
+
+    index = faiss.read_index(index_path)
+    if index.ntotal == 0:
+        return []
+
+    # 获取论文 ID 列表
+    paper_ids = _get_paper_ids(db)
+    if paper_id not in paper_ids:
+        return []
+
+    # 获取目标论文的向量
+    target_idx = paper_ids.index(paper_id)
+    try:
+        result = db.execute(
+            text("SELECT embedding FROM paper_vectors WHERE paper_id = :pid"),
+            {"pid": paper_id}
+        )
+        row = result.fetchone()
+        if not row:
+            return []
+        target_vec = np.frombuffer(row[0], dtype=np.float32).reshape(1, -1)
+    except Exception:
+        return []
+
+    # 搜索（+1 是因为第一个结果是自身）
+    scores, indices = index.search(target_vec, min(top_k + 1, index.ntotal))
+
+    from app.models.paper import Paper
+    results = []
+    for score, idx in zip(scores[0], indices[0]):
+        if idx < 0 or idx >= len(paper_ids):
+            continue
+        pid = paper_ids[idx]
+        if pid == paper_id:
+            continue  # 跳过自身
+        paper = db.get(Paper, pid)
+        if paper:
+            authors = []
+            try:
+                authors = json.loads(paper.authors) if paper.authors else []
+            except (json.JSONDecodeError, TypeError):
+                pass
+            results.append({
+                "id": paper.id,
+                "title": paper.title,
+                "authors": authors,
+                "year": paper.year,
+                "doi": paper.doi,
+                "journal": paper.journal,
+                "score": float(score),
+            })
+        if len(results) >= top_k:
+            break
+
+    return results
+
+
 def _get_index_path(db: Session) -> str:
     """获取 FAISS 索引文件路径"""
     from app.utils.paths import get_data_dir

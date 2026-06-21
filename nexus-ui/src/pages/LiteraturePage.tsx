@@ -655,6 +655,28 @@ export default function LiteraturePage() {
                               >
                                 <IconBookmark size={14} />
                               </button>
+                              {/* v3.6.0: arXiv PDF 导入 */}
+                              {p.source === "arxiv" && p.arxiv_id && (
+                                <button
+                                  className="p-1.5 rounded-lg cursor-pointer transition-all duration-150"
+                                  style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}
+                                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(239,68,68,0.2)")}
+                                  onMouseLeave={e => (e.currentTarget.style.background = "rgba(239,68,68,0.1)")}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      const { arxivApi } = await import("../api/client");
+                                      await arxivApi.import(p.arxiv_id!);
+                                      alert("已从 arXiv 导入 PDF 并入库");
+                                    } catch (err) {
+                                      alert("导入失败: " + err);
+                                    }
+                                  }}
+                                  title="从 arXiv 导入 PDF"
+                                >
+                                  <IconUpload size={14} />
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>

@@ -133,6 +133,7 @@ export interface Paper {
   source: string;
   url: string;
   paper_type: string;
+  arxiv_id?: string;
 }
 
 export const searchApi = {
@@ -415,6 +416,81 @@ export const papersApi = {
   stats: () => request<{ total: number; by_source: Record<string, number>; rated: number }>("/api/papers/stats"),
   searchMention: (q: string, limit: number = 10) =>
     request<{ id: string; title: string; authors: string[]; year: number }[]>(`/api/papers/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+
+  // v3.6.0 新增: 出版社 PDF 拉取
+  fetchPdf: (doi: string, title: string = "") =>
+    request<PaperDetail>("/api/papers/fetch-pdf", { method: "POST", body: JSON.stringify({ doi, title }) }),
+  batchFetchPdf: (dois: string[]) =>
+    request<{ results: { doi: string; paper_id?: string; status: string; error?: string }[]; total: number; success: number }>(
+      "/api/papers/batch-fetch-pdf", { method: "POST", body: JSON.stringify({ dois }) }),
+  refetchPdf: (id: string) =>
+    request<{ success: boolean; pdf_path: string }>(`/api/papers/${id}/refetch-pdf`, { method: "POST" }),
+
+  // v3.6.0 新增: 论文笔记 CRUD
+  getNotes: (paperId: string) =>
+    request<{ id: string; content: string; created_at: string; updated_at?: string }[]>(`/api/papers/${paperId}/notes`),
+  createNote: (paperId: string, content: string) =>
+    request<{ id: string; content: string }>(`/api/papers/${paperId}/notes`, { method: "POST", body: JSON.stringify({ content }) }),
+  updateNote: (paperId: string, noteId: string, content: string) =>
+    request<{ id: string; content: string }>(`/api/papers/${paperId}/notes/${noteId}`, { method: "PUT", body: JSON.stringify({ content }) }),
+  deleteNote: (paperId: string, noteId: string) =>
+    request<{ success: boolean }>(`/api/papers/${paperId}/notes/${noteId}`, { method: "DELETE" }),
+
+  // v3.6.0 新增: 语义近邻推荐
+  neighbors: (paperId: string, topK: number = 10) =>
+    request<{ paper_id: string; neighbors: { id: string; title: string; authors: string[]; year: number; doi: string; journal: string; score: number }[] }>(
+      `/api/papers/${paperId}/neighbors?top_k=${topK}`),
+
+  // v3.6.0 新增: 元数据审计
+  audit: () => request<{ papers: { paper_id: string; title: string; issues: string[]; severity: string }[]; count: number }>("/api/papers/audit"),
+  auditStats: () => request<{ total: number; with_issues: number; by_issue_type: Record<string, number>; severity_counts: Record<string, number> }>("/api/papers/audit/stats"),
+
+  // v3.6.0 新增: BibTeX/RIS 导入
+  importBibtex: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/api/papers/import-bibtex`, { method: "POST", body: formData });
+    if (!res.ok) throw new Error(`Import failed: ${res.status}`);
+    return res.json() as Promise<{ results: { title: string; paper_id?: string; status: string }[]; total: number; imported: number }>;
+  },
+  importRis: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/api/papers/import-ris`, { method: "POST", body: formData });
+    if (!res.ok) throw new Error(`Import failed: ${res.status}`);
+    return res.json() as Promise<{ results: { title: string; paper_id?: string; status: string }[]; total: number; imported: number }>;
+  },
+};
+
+// ── arXiv ──────────────────────────────────────────────────
+
+export interface ArxivPaper {
+  title: string;
+  authors: string[];
+  abstract: string;
+  arxiv_id: string;
+  pdf_url: string;
+  published: string;
+  year: number;
+  categories: string[];
+  primary_category: string;
+  source: string;
+}
+
+export const arxivApi = {
+  search: (q: string, maxResults: number = 20) =>
+    request<{ papers: ArxivPaper[]; count: number }>(`/api/arxiv/search?q=${encodeURIComponent(q)}&max_results=${maxResults}`),
+  import: (arxivId: string) =>
+    request<PaperDetail>("/api/arxiv/import", { method: "POST", body: JSON.stringify({ arxiv_id: arxivId }) }),
+};
+
+// ── MinerU ─────────────────────────────────────────────────
+
+export const mineruApi = {
+  status: () => request<{ available: boolean; version: string }>("/api/system/mineru-status"),
+  convertMarkdown: (paperId: string) =>
+    request<{ success: boolean; method: string; output_path: string; pages: number }>(
+      `/api/papers/${paperId}/convert-markdown`, { method: "POST" }),
 };
 
 // ── Reviews (综述) ──────────────────────────────────────────

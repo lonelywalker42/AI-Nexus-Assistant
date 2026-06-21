@@ -3232,6 +3232,542 @@ def delete_agent_workflow(workflow_id: str):
     return {"error": "工作流不存在"}
 
 
+# ══════════════════════════════════════════════════════════════
+#  v3.6.0 新增端点 — 出版社 PDF 拉取 / arXiv / 多源导入 / 审计 / 笔记 / 推荐
+# ══════════════════════════════════════════════════════════════
+
+
+# ── Phase 1: 出版社 PDF 拉取 ──────────────────────────────
+
+
+class FetchPdfRequest(BaseModel):
+    doi: str = ""
+    title: str = ""
+
+
+class BatchFetchPdfRequest(BaseModel):
+    dois: list[str] = []
+
+
+@app.post("/api/papers/fetch-pdf")
+async def fetch_paper_pdf(req: FetchPdfRequest):
+    """从出版社网站拉取 PDF 并入库
+
+    流程: DOI/标题 → doi.org 重定向 → 落地页 → PDF 链接提取 → 下载 → 元数据提取 → 入库
+    """
+    if not req.doi and not req.title:
+        raise HTTPException(400, "请提供 DOI 或论文标题")
+
+    from app.services.pdf_fetch import fetch_pdf
+    from app.services.pdf_service import extract_pdf_metadata
+
+    pdf_dir = str(data_dir / "pdfs")
+
+    # 拉取 PDF
+    result = fetch_pdf(req.doi or req.title, pdf_dir, timeout=60)
+    if not result.get("success"):
+        raise HTTPException(422, result.get("error", "PDF 拉取失败"))
+
+    pdf_path = result["pdf_path"]
+
+    # 提取元数据
+    meta = extract_pdf_metadata(pdf_path)
+    if not meta.get("title") and req.title:
+        meta["title"] = req.title
+    if not meta.get("doi") and req.doi:
+        meta["doi"] = req.doi
+
+    # 确保 year 是整数
+    try:
+        meta["year"] = int(meta.get("year", 0))
+    except (ValueError, TypeError):
+        meta["year"] = 0
+
+    # DOI 去重
+    doi = str(meta.get("doi", "")).strip().lower()
+    if doi:
+        db = get_session()
+        try:
+            existing = db.query(Paper).filter(func.lower(Paper.doi) == doi).first()
+            if existing:
+                return _paper_to_dict(existing)
+        finally:
+            db.close()
+
+    # 生成引用
+    citation = ""
+    try:
+        from app.search.citation import format_gb
+        citation = format_gb(meta, 1)
+    except Exception:
+        pass
+
+    # 入库
+    db = get_session()
+    try:
+        import uuid as _uuid
+        paper = paper_service.create_paper(
+            db,
+            title=str(meta.get("title", "Unknown"))[:200],
+            authors=json.dumps(meta.get("authors", []), ensure_ascii=False),
+            year=meta.get("year", 0),
+            doi=str(meta.get("doi", ""))[:200],
+            abstract=str(meta.get("abstract", ""))[:10000],
+            journal=str(meta.get("journal", ""))[:500],
+            source="publisher_fetch",
+            paper_type=str(meta.get("paper_type", "journal"))[:50],
+            citation=citation,
+            local_path=pdf_path,
+        )
+        return _paper_to_dict(paper)
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/batch-fetch-pdf")
+async def batch_fetch_papers(req: BatchFetchPdfRequest):
+    """批量从出版社拉取 PDF"""
+    if not req.dois:
+        raise HTTPException(400, "请提供 DOI 列表")
+
+    from app.services.pdf_fetch import fetch_pdf
+    from app.services.pdf_service import extract_pdf_metadata
+
+    pdf_dir = str(data_dir / "pdfs")
+    results = []
+
+    for i, doi in enumerate(req.dois):
+        doi = doi.strip()
+        if not doi:
+            continue
+        try:
+            result = fetch_pdf(doi, pdf_dir, timeout=60)
+            if result.get("success"):
+                meta = extract_pdf_metadata(result["pdf_path"])
+                if not meta.get("doi"):
+                    meta["doi"] = doi
+                # 入库
+                db = get_session()
+                try:
+                    paper = paper_service.save_from_search(db, meta)
+                    results.append({"doi": doi, "paper_id": paper.id, "status": "ok"})
+                except Exception as e:
+                    results.append({"doi": doi, "status": "error", "error": str(e)})
+                finally:
+                    db.close()
+            else:
+                results.append({"doi": doi, "status": "error", "error": result.get("error", "拉取失败")})
+        except Exception as e:
+            results.append({"doi": doi, "status": "error", "error": str(e)})
+
+    ok_count = sum(1 for r in results if r.get("status") == "ok")
+    return {"results": results, "total": len(results), "success": ok_count}
+
+
+@app.post("/api/papers/{paper_id}/refetch-pdf")
+async def refetch_paper_pdf(paper_id: str):
+    """对已有论文重新拉取 PDF（用 DOI 或 source_url）"""
+    db = get_session()
+    try:
+        paper = db.get(Paper, paper_id)
+        if not paper:
+            raise HTTPException(404, "论文不存在")
+
+        doi_or_url = paper.doi or paper.url
+        if not doi_or_url:
+            raise HTTPException(400, "论文没有 DOI 或 URL，无法重新拉取")
+
+        from app.services.pdf_fetch import fetch_pdf
+        pdf_dir = str(data_dir / "pdfs")
+        result = fetch_pdf(doi_or_url, pdf_dir, timeout=60)
+
+        if not result.get("success"):
+            raise HTTPException(422, result.get("error", "PDF 拉取失败"))
+
+        # 更新论文的 local_path
+        paper.local_path = result["pdf_path"]
+        paper.has_fulltext = True
+        db.commit()
+        db.refresh(paper)
+
+        return {"success": True, "pdf_path": result["pdf_path"]}
+    finally:
+        db.close()
+
+
+# ── Phase 1.5: MinerU PDF→Markdown ───────────────────────
+
+
+@app.get("/api/system/mineru-status")
+async def mineru_status():
+    """返回 MinerU 安装状态"""
+    from app.services.pdf_converter import check_mineru_available, get_mineru_version
+    available = check_mineru_available()
+    version = get_mineru_version() if available else ""
+    return {"available": available, "version": version}
+
+
+@app.post("/api/system/install-mineru")
+async def install_mineru_endpoint():
+    """后台安装 MinerU (pip install magic-pdf[full])"""
+    import subprocess
+
+    async def _install():
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "pip", "install", "magic-pdf[full]"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        for line in proc.stdout:
+            yield f"data: {line.strip()}\n\n"
+        proc.wait()
+        yield f"data: [DONE] exit_code={proc.returncode}\n\n"
+
+    return StreamingResponse(_install(), media_type="text/event-stream")
+
+
+@app.post("/api/papers/{paper_id}/convert-markdown")
+async def convert_paper_markdown(paper_id: str):
+    """将论文 PDF 转换为 Markdown"""
+    db = get_session()
+    try:
+        paper = db.get(Paper, paper_id)
+        if not paper:
+            raise HTTPException(404, "论文不存在")
+        if not paper.local_path or not os.path.isfile(paper.local_path):
+            raise HTTPException(400, "论文没有 PDF 文件")
+
+        from app.services.pdf_converter import convert_pdf_to_markdown
+        output_dir = os.path.join(os.path.dirname(paper.local_path), "markdown")
+        result = convert_pdf_to_markdown(paper.local_path, output_dir)
+
+        if not result.get("success"):
+            raise HTTPException(422, result.get("error", "转换失败"))
+
+        return result
+    finally:
+        db.close()
+
+
+# ── Phase 2: arXiv 集成 ──────────────────────────────────
+
+
+@app.get("/api/arxiv/search")
+async def search_arxiv_papers(q: str = "", max_results: int = 20):
+    """arXiv 搜索"""
+    if not q.strip():
+        return {"papers": [], "count": 0}
+
+    from app.services.arxiv_service import search_arxiv
+    papers = search_arxiv(q, max_results)
+    return {"papers": papers, "count": len(papers)}
+
+
+@app.post("/api/arxiv/import")
+async def import_from_arxiv_endpoint(request: Request):
+    """从 arXiv 导入论文（下载 PDF + 提取元数据 + 入库）"""
+    body = await request.json()
+    arxiv_id = body.get("arxiv_id", "").strip()
+    if not arxiv_id:
+        raise HTTPException(400, "请提供 arxiv_id")
+
+    from app.services.arxiv_service import search_arxiv, download_arxiv_pdf
+    from app.services.pdf_service import extract_pdf_metadata
+
+    # 搜索获取元数据
+    papers = search_arxiv(f"id_list:{arxiv_id}", max_results=1)
+    if not papers:
+        raise HTTPException(404, f"未找到 arXiv 论文: {arxiv_id}")
+
+    paper_data = papers[0]
+
+    # DOI 去重
+    db = get_session()
+    try:
+        if paper_data.get("doi"):
+            existing = db.query(Paper).filter(
+                func.lower(Paper.doi) == paper_data["doi"].lower()
+            ).first()
+            if existing:
+                return _paper_to_dict(existing)
+    finally:
+        db.close()
+
+    # 下载 PDF
+    pdf_dir = str(data_dir / "pdfs")
+    result = download_arxiv_pdf(arxiv_id, pdf_dir)
+    if result.get("success"):
+        # 用 PyMuPDF 补充元数据
+        pdf_meta = extract_pdf_metadata(result["pdf_path"])
+        for key in ["abstract", "journal"]:
+            if not paper_data.get(key) and pdf_meta.get(key):
+                paper_data[key] = pdf_meta[key]
+        paper_data["local_path"] = result["pdf_path"]
+        paper_data["has_fulltext"] = True
+
+    # 入库
+    db = get_session()
+    try:
+        paper = paper_service.save_from_search(db, paper_data)
+        return _paper_to_dict(paper)
+    finally:
+        db.close()
+
+
+# ── Phase 3: 多源导入 ────────────────────────────────────
+
+
+@app.post("/api/papers/import-bibtex")
+async def import_bibtex_endpoint(file: UploadFile = File(...)):
+    """上传 .bib 文件 → 解析 → 批量入库"""
+    if not file.filename or not file.filename.lower().endswith((".bib", ".bibtex")):
+        raise HTTPException(400, "请上传 .bib 文件")
+
+    content = (await file.read()).decode("utf-8", errors="ignore")
+    from app.services.import_service import parse_bibtex, import_entries_to_db
+
+    entries = parse_bibtex(content)
+    if not entries:
+        raise HTTPException(400, "未解析到有效的 BibTeX 记录")
+
+    db = get_session()
+    try:
+        results = import_entries_to_db(entries, db)
+        imported = sum(1 for r in results if r.get("status") == "imported")
+        return {"results": results, "total": len(results), "imported": imported}
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/import-ris")
+async def import_ris_endpoint(file: UploadFile = File(...)):
+    """上传 .ris 文件 → 解析 → 批量入库"""
+    if not file.filename or not file.filename.lower().endswith(".ris"):
+        raise HTTPException(400, "请上传 .ris 文件")
+
+    content = (await file.read()).decode("utf-8", errors="ignore")
+    from app.services.import_service import parse_ris, import_entries_to_db
+
+    entries = parse_ris(content)
+    if not entries:
+        raise HTTPException(400, "未解析到有效的 RIS 记录")
+
+    db = get_session()
+    try:
+        results = import_entries_to_db(entries, db)
+        imported = sum(1 for r in results if r.get("status") == "imported")
+        return {"results": results, "total": len(results), "imported": imported}
+    finally:
+        db.close()
+
+
+# ── Phase 4: 论文笔记系统 ────────────────────────────────
+
+
+class PaperNoteCreate(BaseModel):
+    content: str
+
+
+class PaperNoteUpdate(BaseModel):
+    content: str
+
+
+@app.get("/api/papers/{paper_id}/notes")
+async def get_paper_notes(paper_id: str):
+    """获取论文笔记列表"""
+    db = get_session()
+    try:
+        paper = db.get(Paper, paper_id)
+        if not paper:
+            raise HTTPException(404, "论文不存在")
+        # 使用 PaperNote 模型（如果存在），否则降级到 user_notes
+        try:
+            from app.models.paper import PaperNote
+            notes = db.query(PaperNote).filter(
+                PaperNote.paper_id == paper_id
+            ).order_by(PaperNote.created_at.desc()).all()
+            return [{
+                "id": n.id,
+                "content": n.content,
+                "created_at": n.created_at.isoformat(),
+                "updated_at": n.updated_at.isoformat() if n.updated_at else None,
+            } for n in notes]
+        except Exception:
+            # 降级: 返回 user_notes 作为单条笔记
+            if paper.user_notes:
+                return [{"id": "legacy", "content": paper.user_notes, "created_at": paper.created_at.isoformat()}]
+            return []
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/{paper_id}/notes")
+async def create_paper_note(paper_id: str, body: PaperNoteCreate):
+    """添加论文笔记"""
+    db = get_session()
+    try:
+        paper = db.get(Paper, paper_id)
+        if not paper:
+            raise HTTPException(404, "论文不存在")
+        try:
+            from app.models.paper import PaperNote
+            import uuid
+            note = PaperNote(
+                id=str(uuid.uuid4()),
+                paper_id=paper_id,
+                content=body.content,
+            )
+            db.add(note)
+            db.commit()
+            db.refresh(note)
+            return {"id": note.id, "content": note.content, "created_at": note.created_at.isoformat()}
+        except Exception:
+            # 降级: 写入 user_notes
+            paper.user_notes = body.content
+            db.commit()
+            return {"id": "legacy", "content": body.content}
+    finally:
+        db.close()
+
+
+@app.put("/api/papers/{paper_id}/notes/{note_id}")
+async def update_paper_note(paper_id: str, note_id: str, body: PaperNoteUpdate):
+    """更新论文笔记"""
+    db = get_session()
+    try:
+        if note_id == "legacy":
+            paper = db.get(Paper, paper_id)
+            if not paper:
+                raise HTTPException(404, "论文不存在")
+            paper.user_notes = body.content
+            db.commit()
+            return {"id": "legacy", "content": body.content}
+
+        try:
+            from app.models.paper import PaperNote
+            from datetime import datetime
+            note = db.get(PaperNote, note_id)
+            if not note or note.paper_id != paper_id:
+                raise HTTPException(404, "笔记不存在")
+            note.content = body.content
+            note.updated_at = datetime.now()
+            db.commit()
+            db.refresh(note)
+            return {"id": note.id, "content": note.content}
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(404, "笔记不存在")
+    finally:
+        db.close()
+
+
+@app.delete("/api/papers/{paper_id}/notes/{note_id}")
+async def delete_paper_note(paper_id: str, note_id: str):
+    """删除论文笔记"""
+    db = get_session()
+    try:
+        if note_id == "legacy":
+            paper = db.get(Paper, paper_id)
+            if paper:
+                paper.user_notes = ""
+                db.commit()
+            return {"success": True}
+
+        try:
+            from app.models.paper import PaperNote
+            note = db.get(PaperNote, note_id)
+            if note and note.paper_id == paper_id:
+                db.delete(note)
+                db.commit()
+        except Exception:
+            pass
+        return {"success": True}
+    finally:
+        db.close()
+
+
+# ── Phase 5: 元数据质量审计 ──────────────────────────────
+
+
+@app.get("/api/papers/audit")
+async def audit_papers_endpoint():
+    """返回所有论文的审计结果"""
+    db = get_session()
+    try:
+        from app.services.audit_service import audit_papers
+        results = audit_papers(db)
+        return {"papers": results, "count": len(results)}
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/audit/stats")
+async def audit_stats_endpoint():
+    """返回审计统计"""
+    db = get_session()
+    try:
+        from app.services.audit_service import get_audit_stats
+        return get_audit_stats(db)
+    finally:
+        db.close()
+
+
+# ── Phase 6: 语义近邻推荐 + 工作区搜索 ──────────────────
+
+
+@app.get("/api/papers/{paper_id}/neighbors")
+async def paper_neighbors(paper_id: str, top_k: int = 10):
+    """语义近邻推荐（基于 FAISS 向量索引）"""
+    db = get_session()
+    try:
+        paper = db.get(Paper, paper_id)
+        if not paper:
+            raise HTTPException(404, "论文不存在")
+
+        try:
+            from app.search.vectors import search_neighbors
+            from app.utils.paths import get_data_dir
+            neighbors = search_neighbors(db, paper_id, top_k=top_k)
+            return {"paper_id": paper_id, "neighbors": neighbors}
+        except ImportError:
+            return {"paper_id": paper_id, "neighbors": [], "error": "向量索引未构建"}
+        except FileNotFoundError:
+            return {"paper_id": paper_id, "neighbors": [], "error": "向量索引未构建"}
+        except Exception as e:
+            return {"paper_id": paper_id, "neighbors": [], "error": str(e)}
+    finally:
+        db.close()
+
+
+@app.get("/api/workspaces/{workspace_id}/search")
+async def workspace_search(workspace_id: str, q: str = ""):
+    """限定在工作区内搜索"""
+    if not q.strip():
+        return {"papers": [], "count": 0}
+
+    db = get_session()
+    try:
+        from app.services.workspace_service import get_workspace_papers
+        ws_papers = get_workspace_papers(db, workspace_id)
+        if not ws_papers:
+            return {"papers": [], "count": 0}
+
+        paper_ids = [p.id for p in ws_papers]
+
+        # 在工作区论文中搜索
+        from app.search.fts import search_papers_fts
+        all_results = search_papers_fts(db, q, limit=100)
+        # 过滤出属于工作区的论文
+        ws_id_set = set(paper_ids)
+        filtered = [r for r in all_results if r.get("id") in ws_id_set]
+
+        return {"papers": filtered[:20], "count": len(filtered)}
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()

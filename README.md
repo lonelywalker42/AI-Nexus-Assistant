@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献管理、试验管理、知识库、AI对话、音乐播放、电子书阅读的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v3.5.0-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v3.6.0-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,7 +16,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v3.5.0 |
+| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v3.6.0 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ## 功能模块
@@ -33,8 +33,8 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 
 | 模块 | 功能 |
 |------|------|
-| **文献检索** | 7源学术搜索(OpenAlex/arXiv/Semantic Scholar/CrossRef/PubMed/Google Scholar/Scopus)、布尔检索(AND/OR/NOT)、列表/网格视图切换、综述池FAB浮动按钮、AI综述生成(自定义章节结构)、批量导入文献库 |
-| **文献库** | PDF批量导入+AI元数据提取、引用格式(GB/T 7714/APA/IEEE/MLA/BibTeX)、AI摘要、批量操作、详情面板自适应 |
+| **文献检索** | 7源学术搜索(OpenAlex/arXiv/Semantic Scholar/CrossRef/PubMed/Google Scholar/Scopus)、arXiv PDF一键导入、布尔检索(AND/OR/NOT)、列表/网格视图切换、综述池FAB浮动按钮、AI综述生成(自定义章节结构)、批量导入文献库 |
+| **文献库** | 出版社PDF拉取(DOI→自动下载)、BibTeX/RIS批量导入、PDF→Markdown转换(MinerU+PyMuPDF降级)、元数据质量审计、语义近邻推荐、论文笔记系统、PDF批量导入+AI元数据提取、引用格式(GB/T 7714/APA/IEEE/MLA/BibTeX)、AI摘要、批量操作、分层阅读(元数据/摘要/全文) |
 | **IDEA** | 知识卡片CRUD、随手记(快速记录想法)、AI对话关联、标签系统(支持层级标签)、JSON/MD/PDF导入、网页链接导入、知识图谱可视化、批量操作(导出/删除) |
 | **试验管理** | 版本化结果记录、参数对比表、AI分析、Git集成(状态/快照)、结构化参数编辑、README自动生成、归档打包、实验并排对比 |
 | **AI 对话** | 流式输出、工具调用(联网搜索+结构化卡片展示)、thinking折叠、分类管理、停止生成按钮、消息重新生成、会话搜索、Token统计、@引用文献 |
@@ -66,6 +66,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 - 数据备份与恢复(.db + .db-wal + .db-shm 完整三文件)
 - ZIP导出/导入
 - 联网搜索服务状态
+- MinerU PDF转换引擎(可选安装~2GB，保留公式/图片/表格)
 
 ## 技术架构
 
@@ -217,6 +218,21 @@ FastAPI 后端提供 40+ REST 路由：
 | 备份 | `/api/backups/import-db` | POST | 导入(.db/.zip) |
 | 历史 | `/api/history` | GET/POST | 搜索历史 |
 | 系统 | `/api/system/info` | GET | 系统信息 |
+| PDF拉取 | `/api/papers/fetch-pdf` | POST | 出版社PDF拉取(DOI/标题) |
+| PDF拉取 | `/api/papers/batch-fetch-pdf` | POST | 批量PDF拉取 |
+| PDF拉取 | `/api/papers/{id}/refetch-pdf` | POST | 重新拉取PDF |
+| MinerU | `/api/system/mineru-status` | GET | MinerU安装状态 |
+| MinerU | `/api/system/install-mineru` | POST | 安装MinerU |
+| MinerU | `/api/papers/{id}/convert-markdown` | POST | PDF→Markdown转换 |
+| arXiv | `/api/arxiv/search` | GET | arXiv搜索 |
+| arXiv | `/api/arxiv/import` | POST | arXiv导入(PDF+入库) |
+| 导入 | `/api/papers/import-bibtex` | POST | BibTeX文件导入 |
+| 导入 | `/api/papers/import-ris` | POST | RIS文件导入 |
+| 笔记 | `/api/papers/{id}/notes` | GET/POST | 笔记CRUD |
+| 审计 | `/api/papers/audit` | GET | 元数据质量审计 |
+| 审计 | `/api/papers/audit/stats` | GET | 审计统计 |
+| 推荐 | `/api/papers/{id}/neighbors` | GET | 语义近邻推荐 |
+| 工作区 | `/api/workspaces/{id}/search` | GET | 工作区内搜索 |
 
 API 文档: `http://127.0.0.1:8765/docs`
 
@@ -224,6 +240,7 @@ API 文档: `http://127.0.0.1:8765/docs`
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| v3.6.0 | 2026-06-21 | ScholarAIO特性移植（出版社PDF拉取、MinerU PDF转换、arXiv导入、BibTeX/RIS导入、论文笔记、元数据审计、语义推荐） |
 | v3.5.0 | 2026-06-21 | 科研助手功能增强（PDF元数据提取、FTS5索引、语义搜索、引用图谱、主题聚类、工作区） |
 | v3.1.0 | 2026-06-20 | 音乐播放器无缝切换、懒加载优化、Toast通知 |
 | v3.2.0 | 2026-06-20 | 写作工作台、布尔检索、智能综述、研究讨论、Markdown渲染升级 |

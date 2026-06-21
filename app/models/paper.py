@@ -8,6 +8,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
 
+class PaperNote(Base):
+    """论文笔记（持久化，跨会话）"""
+    __tablename__ = "paper_notes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    paper_id: Mapped[str] = mapped_column(String(36), index=True)
+    content: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class Paper(Base):
     """学术文献"""
     __tablename__ = "papers"

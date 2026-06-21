@@ -419,6 +419,21 @@ ScholarAIO 是 CLI + Agent Skills 架构，AI Nexus Assistant 是 GUI + API 架�
 | DOCX 导出 | ✅ | `app/services/export_service.py` — Markdown → DOCX + 多格式参考文献 |
 | 工作区 | ✅ | `app/services/workspace_service.py` — 论文子集管理 + CRUD |
 
+### Phase 5：v3.6.0 ScholarAIO 特性移植 ✅ 已完成
+
+> 基于 `docs/DEV-PLAN-v3.5.md`（v3.6.0 开发计划）实现
+
+| 任务 | 状态 | 实现文件 |
+|------|------|---------|
+| 出版社 PDF 拉取 | ✅ | `app/services/pdf_fetch.py` — DOI→URL→HTML→PDF 三阶段管线 |
+| MinerU PDF→Markdown | ✅ | `app/services/pdf_converter.py` — MinerU + PyMuPDF 三级降级 |
+| arXiv 搜索与导入 | ✅ | `app/services/arxiv_service.py` — Atom API + PDF 下载 |
+| BibTeX/RIS 导入 | ✅ | `app/services/import_service.py` — 自动格式检测 + DOI 去重 |
+| 论文笔记系统 | ✅ | `app/models/paper.py` PaperNote + `server.py` CRUD 端点 |
+| 元数据质量审计 | ✅ | `app/services/audit_service.py` — 规则引擎（无 LLM） |
+| 语义近邻推荐 | ✅ | `app/search/vectors.py` search_neighbors() + FAISS |
+| 工作区限定搜索 | ✅ | `server.py` `/api/workspaces/{id}/search` |
+
 ### 新增 API 端点汇总
 
 | 端点 | 方法 | 说明 |

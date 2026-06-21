@@ -48,9 +48,34 @@ export default function PaperLibraryPage() {
   // PDF 导入
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const bibtexInputRef = useRef<HTMLInputElement>(null);
+  const risInputRef = useRef<HTMLInputElement>(null);
 
   // 分层阅读
   const [readingLevel, setReadingLevel] = useState<number>(1); // 1=元数据, 2=摘要, 3=全文
+
+  // v3.6.0: 出版社 PDF 拉取
+  const [showFetchModal, setShowFetchModal] = useState(false);
+  const [fetchDoi, setFetchDoi] = useState("");
+  const [fetchTitle, setFetchTitle] = useState("");
+  const [fetching, setFetching] = useState(false);
+  const [fetchResult, setFetchResult] = useState<string>("");
+
+  // v3.6.0: 导入下拉菜单
+  const [showImportMenu, setShowImportMenu] = useState(false);
+
+  // v3.6.0: 元数据审计
+  const [auditResults, setAuditResults] = useState<{ paper_id: string; title: string; issues: string[]; severity: string }[]>([]);
+  const [auditStats, setAuditStats] = useState<{ total: number; with_issues: number; by_issue_type: Record<string, number>; severity_counts: Record<string, number> } | null>(null);
+  const [showAudit, setShowAudit] = useState(false);
+
+  // v3.6.0: 语义近邻推荐
+  const [neighbors, setNeighbors] = useState<{ id: string; title: string; authors: string[]; year: number; doi: string; journal: string; score: number }[]>([]);
+  const [loadingNeighbors, setLoadingNeighbors] = useState(false);
+
+  // v3.6.0: 笔记列表
+  const [notes, setNotes] = useState<{ id: string; content: string; created_at?: string }[]>([]);
+  const [newNote, setNewNote] = useState("");
 
   const selected = papers.find(p => p.id === selectedId);
 
@@ -181,6 +206,115 @@ export default function PaperLibraryPage() {
     });
   };
 
+  // v3.6.0: 出版社 PDF 拉取
+  const handleFetchPdf = async () => {
+    if (!fetchDoi && !fetchTitle) return;
+    setFetching(true);
+    setFetchResult("");
+    try {
+      const result = await papersApi.fetchPdf(fetchDoi, fetchTitle);
+      setPapers(prev => {
+        if (prev.some(p => p.id === result.id)) return prev;
+        return [result, ...prev];
+      });
+      setSelectedId(result.id);
+      setShowDetail(true);
+      setShowFetchModal(false);
+      setFetchDoi("");
+      setFetchTitle("");
+      setFetchResult("拉取成功！");
+    } catch (err) {
+      setFetchResult(`拉取失败: ${err}`);
+    }
+    setFetching(false);
+  };
+
+  // v3.6.0: BibTeX/RIS 导入
+  const handleImportBibtex = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const result = await papersApi.importBibtex(file);
+      alert(`导入完成: ${result.imported}/${result.total} 篇成功`);
+      loadPapers();
+    } catch (err) {
+      alert(`导入失败: ${err}`);
+    }
+    setImporting(false);
+    if (bibtexInputRef.current) bibtexInputRef.current.value = "";
+  };
+
+  const handleImportRis = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const result = await papersApi.importRis(file);
+      alert(`导入完成: ${result.imported}/${result.total} 篇成功`);
+      loadPapers();
+    } catch (err) {
+      alert(`导入失败: ${err}`);
+    }
+    setImporting(false);
+    if (risInputRef.current) risInputRef.current.value = "";
+  };
+
+  // v3.6.0: 元数据审计
+  const handleAudit = async () => {
+    try {
+      const [results, stats] = await Promise.all([papersApi.audit(), papersApi.auditStats()]);
+      setAuditResults(results.papers);
+      setAuditStats(stats);
+      setShowAudit(true);
+    } catch (err) {
+      alert(`审计失败: ${err}`);
+    }
+  };
+
+  // v3.6.0: 语义近邻推荐
+  const loadNeighbors = async (paperId: string) => {
+    setLoadingNeighbors(true);
+    try {
+      const result = await papersApi.neighbors(paperId, 6);
+      setNeighbors(result.neighbors || []);
+    } catch {
+      setNeighbors([]);
+    }
+    setLoadingNeighbors(false);
+  };
+
+  // v3.6.0: 笔记 CRUD
+  const loadNotes = async (paperId: string) => {
+    try {
+      const result = await papersApi.getNotes(paperId);
+      setNotes(result || []);
+    } catch {
+      setNotes([]);
+    }
+  };
+
+  const handleCreateNote = async () => {
+    if (!selectedId || !newNote.trim()) return;
+    try {
+      const note = await papersApi.createNote(selectedId, newNote);
+      setNotes(prev => [note, ...prev]);
+      setNewNote("");
+    } catch (err) {
+      alert(`保存失败: ${err}`);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (!selectedId) return;
+    try {
+      await papersApi.deleteNote(selectedId, noteId);
+      setNotes(prev => prev.filter(n => n.id !== noteId));
+    } catch (err) {
+      alert(`删除失败: ${err}`);
+    }
+  };
+
   const openDetail = (id: string) => {
     if (batchMode) return;
     setSelectedId(id);
@@ -188,6 +322,9 @@ export default function PaperLibraryPage() {
     setEditingNotes(false);
     setCitationFormat("gb7714");
     setReadingLevel(1); // 重置为元数据层
+    // v3.6.0: 加载近邻和笔记
+    loadNeighbors(id);
+    loadNotes(id);
   };
 
   const getSourceColor = (source: string) => {
@@ -218,10 +355,28 @@ export default function PaperLibraryPage() {
           title={sortOrder === "desc" ? "降序" : "升序"}>
           {sortOrder === "desc" ? "↓" : "↑"}
         </button>
-        <button className="btn-gradient btn-click text-xs py-2 px-3 flex items-center gap-1" onClick={() => fileInputRef.current?.click()}>
-          <IconUpload size={12} /> {importing ? "导入中..." : "导入 PDF"}
+        <button className="btn-gradient btn-click text-xs py-2 px-3 flex items-center gap-1" onClick={() => setShowFetchModal(true)}>
+          📥 拉取 PDF
         </button>
+        <div className="relative">
+          <button className="btn-gradient btn-click text-xs py-2 px-3 flex items-center gap-1" onClick={() => setShowImportMenu(!showImportMenu)}>
+            <IconUpload size={12} /> {importing ? "导入中..." : "导入"} ▾
+          </button>
+          {showImportMenu && (
+            <div className="absolute right-0 top-full mt-1 z-50 glass-card p-1 min-w-[140px]" style={{ background: "var(--glass-bg)" }}>
+              <button className="w-full text-left text-xs px-3 py-2 rounded hover:bg-[var(--hover-bg)] cursor-pointer"
+                onClick={() => { fileInputRef.current?.click(); setShowImportMenu(false); }}>📄 导入 PDF</button>
+              <button className="w-full text-left text-xs px-3 py-2 rounded hover:bg-[var(--hover-bg)] cursor-pointer"
+                onClick={() => { bibtexInputRef.current?.click(); setShowImportMenu(false); }}>📚 导入 BibTeX</button>
+              <button className="w-full text-left text-xs px-3 py-2 rounded hover:bg-[var(--hover-bg)] cursor-pointer"
+                onClick={() => { risInputRef.current?.click(); setShowImportMenu(false); }}>📋 导入 RIS</button>
+            </div>
+          )}
+        </div>
         <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={handleImportPdf} />
+        <input ref={bibtexInputRef} type="file" accept=".bib,.bibtex" className="hidden" onChange={handleImportBibtex} />
+        <input ref={risInputRef} type="file" accept=".ris" className="hidden" onChange={handleImportRis} />
+        <button className="btn-ghost text-xs py-2 px-3" onClick={handleAudit}>🔍 审计</button>
         <button className={`btn-ghost text-xs py-2 ${batchMode ? "!bg-red-500 !text-white" : ""}`}
           onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}>
           {batchMode ? "取消" : "批量"}
@@ -487,10 +642,10 @@ export default function PaperLibraryPage() {
               </div>
             )}
 
-            {/* 笔记（始终可见） */}
+            {/* v3.6.0: 笔记系统（增强版） */}
             <div className="space-y-2 pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>笔记</h3>
+                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>📝 笔记</h3>
                 {!editingNotes ? (
                   <button className="btn-ghost text-[10px] py-1" onClick={() => { setNotesValue(selected.user_notes); setEditingNotes(true); }}>
                     编辑
@@ -510,7 +665,52 @@ export default function PaperLibraryPage() {
                   {selected.user_notes || "暂无笔记"}
                 </p>
               )}
+              {/* 笔记列表 */}
+              {notes.length > 0 && (
+                <div className="space-y-1.5 mt-2">
+                  {notes.map(note => (
+                    <div key={note.id} className="flex items-start gap-2 p-2 rounded-lg" style={{ background: "var(--hover-bg)" }}>
+                      <p className="flex-1 text-[11px] whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>{note.content}</p>
+                      <button onClick={() => handleDeleteNote(note.id)}
+                        className="text-[10px] cursor-pointer flex-shrink-0" style={{ color: "var(--text-muted)" }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* 添加笔记 */}
+              <div className="flex gap-1 mt-1">
+                <input className="input-glass flex-1 text-[11px] py-1" placeholder="添加笔记..."
+                  value={newNote} onChange={e => setNewNote(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleCreateNote(); }} />
+                <button className="btn-ghost text-[10px] py-1 px-2" onClick={handleCreateNote}
+                  disabled={!newNote.trim()}>添加</button>
+              </div>
             </div>
+
+            {/* v3.6.0: 相关论文 */}
+            {neighbors.length > 0 && (
+              <div className="space-y-2 pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
+                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>🔗 相关论文</h3>
+                <div className="space-y-1.5">
+                  {neighbors.map(n => (
+                    <div key={n.id} className="p-2 rounded-lg cursor-pointer hover:bg-[var(--hover-bg)] transition-colors"
+                      onClick={() => openDetail(n.id)}>
+                      <p className="text-[11px] font-medium line-clamp-2" style={{ color: "var(--text-primary)" }}>{n.title}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {n.year > 0 && <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{n.year}</span>}
+                        {n.journal && <span className="text-[9px] truncate" style={{ color: "var(--text-muted)" }}>{n.journal}</span>}
+                        <span className="text-[9px] ml-auto" style={{ color: "var(--accent-blue)" }}>
+                          {(n.score * 100).toFixed(0)}% 相似
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {loadingNeighbors && (
+              <p className="text-[10px] text-center py-2" style={{ color: "var(--text-muted)" }}>加载相关论文中...</p>
+            )}
 
             {/* 关联综述 */}
             {selected.review_id && (() => {
@@ -583,6 +783,84 @@ export default function PaperLibraryPage() {
                 <div className="markdown-body text-sm" dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(reviewContent) }} />
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* v3.6.0: 拉取 PDF 弹窗 */}
+      {showFetchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="glass-card p-6 w-[480px]" style={{ background: "var(--glass-bg)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>📥 从出版社拉取 PDF</h3>
+              <button onClick={() => { setShowFetchModal(false); setFetchResult(""); }}
+                className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
+            </div>
+            <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+              输入 DOI 或论文标题，自动从出版社网站拉取 PDF。需要在校园网环境下使用。
+            </p>
+            <input className="input-glass mb-2" placeholder="DOI (如 10.1234/abcd)"
+              value={fetchDoi} onChange={e => setFetchDoi(e.target.value)} />
+            <input className="input-glass mb-3" placeholder="或输入论文标题"
+              value={fetchTitle} onChange={e => setFetchTitle(e.target.value)} />
+            {fetchResult && (
+              <p className="text-xs mb-2" style={{ color: fetchResult.includes("成功") ? "var(--accent-green)" : "#ef4444" }}>
+                {fetchResult}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost text-xs" onClick={() => { setShowFetchModal(false); setFetchResult(""); }}>取消</button>
+              <button className="btn-gradient btn-click text-xs" onClick={handleFetchPdf}
+                disabled={fetching || (!fetchDoi && !fetchTitle)}>
+                {fetching ? "拉取中..." : "开始拉取"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v3.6.0: 审计面板 */}
+      {showAudit && auditStats && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="glass-card p-6 w-[600px] max-h-[80vh] flex flex-col" style={{ background: "var(--glass-bg)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>🔍 元数据质量审计</h3>
+              <button onClick={() => setShowAudit(false)}
+                className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
+            </div>
+            {/* 统计卡片 */}
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {[
+                { label: "总论文", value: auditStats.total, color: "var(--accent-blue)" },
+                { label: "有问题", value: auditStats.with_issues, color: "#f59e0b" },
+                { label: "严重", value: auditStats.severity_counts.high || 0, color: "#ef4444" },
+                { label: "中等", value: auditStats.severity_counts.medium || 0, color: "#f59e0b" },
+              ].map(card => (
+                <div key={card.label} className="glass-card p-3 text-center">
+                  <p className="text-xl font-bold" style={{ color: card.color }}>{card.value}</p>
+                  <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>{card.label}</p>
+                </div>
+              ))}
+            </div>
+            {/* 问题列表 */}
+            <div className="flex-1 overflow-y-auto space-y-1" style={{ maxHeight: "400px" }}>
+              {auditResults.length === 0 ? (
+                <p className="text-center py-8 text-sm" style={{ color: "var(--accent-green)" }}>✅ 所有论文元数据质量良好</p>
+              ) : auditResults.map(item => (
+                <div key={item.paper_id} className="flex items-start gap-2 p-2 rounded-lg cursor-pointer hover:bg-[var(--hover-bg)]"
+                  onClick={() => { openDetail(item.paper_id); setShowAudit(false); }}>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full mt-0.5"
+                    style={{
+                      background: item.severity === "high" ? "rgba(239,68,68,0.1)" : item.severity === "medium" ? "rgba(245,158,11,0.1)" : "rgba(107,114,128,0.1)",
+                      color: item.severity === "high" ? "#ef4444" : item.severity === "medium" ? "#f59e0b" : "var(--text-muted)",
+                    }}>{item.severity}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate" style={{ color: "var(--text-primary)" }}>{item.title}</p>
+                    <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>{item.issues.join(", ")}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

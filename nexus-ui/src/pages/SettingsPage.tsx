@@ -418,6 +418,9 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* v3.6.0: MinerU PDF 转换 */}
+      <MinerUSection />
+
       {/* 数据管理 */}
       <div className="glass-card p-5 space-y-4">
         <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>数据管理</h3>
@@ -545,6 +548,63 @@ export default function SettingsPage() {
               ))}
             </div>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// v3.6.0: MinerU PDF 转换组件
+function MinerUSection() {
+  const [status, setStatus] = useState<{ available: boolean; version: string }>({ available: false, version: "" });
+  const [loading, setLoading] = useState(false);
+
+  const checkStatus = async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:8765/api/system/mineru-status");
+      const data = await res.json();
+      setStatus(data);
+    } catch {}
+  };
+
+  useEffect(() => { checkStatus(); }, []);
+
+  return (
+    <div className="glass-card p-5 space-y-3">
+      <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>PDF 转换引擎 (MinerU)</h3>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+        MinerU 可将 PDF 高质量转换为 Markdown，保留公式、图片和表格。安装后 LLM 阅读论文效果显著提升。约需 2GB 磁盘空间。
+      </p>
+      <div className="flex items-center gap-3">
+        <span className="text-xs" style={{ color: "var(--text-secondary)" }}>状态:</span>
+        {status.available ? (
+          <span className="text-xs" style={{ color: "var(--accent-green)" }}>✅ 已安装 {status.version && `v${status.version}`}</span>
+        ) : (
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>❌ 未安装（当前使用 PyMuPDF 降级方案）</span>
+        )}
+        <button className="btn-ghost text-xs" onClick={checkStatus}>刷新</button>
+        {!status.available && (
+          <button className="btn-gradient btn-click text-xs" disabled={loading}
+            onClick={async () => {
+              if (!confirm("确定安装 MinerU？需要约 2GB 磁盘空间，安装过程可能需要几分钟。")) return;
+              setLoading(true);
+              try {
+                const res = await fetch("http://127.0.0.1:8765/api/system/install-mineru", { method: "POST" });
+                const reader = res.body?.getReader();
+                if (reader) {
+                  while (true) {
+                    const { done } = await reader.read();
+                    if (done) break;
+                  }
+                }
+                alert("MinerU 安装完成！");
+                checkStatus();
+              } catch (err) {
+                alert(`安装失败: ${err}`);
+              }
+              setLoading(false);
+            }}
+          >{loading ? "安装中..." : "安装 MinerU"}</button>
         )}
       </div>
     </div>

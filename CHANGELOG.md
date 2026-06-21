@@ -1,5 +1,38 @@
 # Changelog
 
+## v3.6.0 (2026-06-21) — ScholarAIO 特性移植：文献获取 + PDF 转换 + 质量管控
+
+### 新增
+- **出版社 PDF 拉取**: 输入 DOI 或论文标题，自动从出版社网站拉取 PDF（校园网环境下）
+- **MinerU PDF→Markdown**: 可选安装 MinerU，将 PDF 高质量转换为 Markdown（保留公式/图片/表格），PyMuPDF 降级方案
+- **arXiv 集成**: arXiv 搜索结果支持一键导入 PDF 并入库
+- **多源导入**: 支持 BibTeX (.bib) 和 RIS (.ris) 文件批量导入文献
+- **论文笔记系统**: PaperNote 模型 + CRUD API，支持多条笔记持久化
+- **元数据质量审计**: 规则引擎检测缺失字段、DOI 重复、可疑年份等问题
+- **语义近邻推荐**: 基于 FAISS 向量索引，论文详情页显示相关论文推荐
+- **工作区限定搜索**: 在工作区内进行全文搜索
+
+### 新增 API 端点
+- `POST /api/papers/fetch-pdf` — 出版社 PDF 拉取
+- `POST /api/papers/batch-fetch-pdf` — 批量拉取
+- `POST /api/papers/{id}/refetch-pdf` — 重新拉取
+- `GET /api/system/mineru-status` — MinerU 状态
+- `POST /api/system/install-mineru` — 安装 MinerU
+- `POST /api/papers/{id}/convert-markdown` — PDF→Markdown 转换
+- `GET /api/arxiv/search` — arXiv 搜索
+- `POST /api/arxiv/import` — arXiv 导入
+- `POST /api/papers/import-bibtex` — BibTeX 导入
+- `POST /api/papers/import-ris` — RIS 导入
+- `GET/POST/PUT/DELETE /api/papers/{id}/notes` — 笔记 CRUD
+- `GET /api/papers/audit` — 元数据审计
+- `GET /api/papers/audit/stats` — 审计统计
+- `GET /api/papers/{id}/neighbors` — 语义近邻推荐
+- `GET /api/workspaces/{id}/search` — 工作区搜索
+
+### 依赖
+- 新增: `beautifulsoup4`, `lxml`, `defusedxml`（内置）
+- 可选: `magic-pdf[full]`（MinerU，用户按需安装，~2GB）
+
 ## v3.5.0 (2026-06-21) — 科研 Agent 工作流 + 体验优化
 
 ### 新增

@@ -1,5 +1,5 @@
 from .task import Task, WeeklyPlan
-from .paper import Paper
+from .paper import Paper, PaperNote
 from .model_config import ModelConfig
 from .search_history import SearchHistory
 from .experiment import Experiment, ExperimentResult
@@ -12,7 +12,7 @@ from app.services.workspace_service import Workspace
 
 __all__ = [
     "Task", "WeeklyPlan",
-    "Paper",
+    "Paper", "PaperNote",
     "ModelConfig",
     "SearchHistory",
     "Experiment", "ExperimentResult",
