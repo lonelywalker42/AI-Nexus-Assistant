@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { IconBookOpen, IconBook, IconSearch, IconFolder, IconArrowLeft, IconChevronLeft, IconChevronRight, IconSun } from "../components/Icons";
 import JSZip from "jszip";
 import ReactMarkdown from "react-markdown";
@@ -10,6 +10,18 @@ import * as pdfjsLib from "pdfjs-dist";
 
 // Set pdf.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+
+// Safe base64 conversion — avoids call stack overflow for large buffers
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary);
+}
 
 // EPUB parser using JSZip (no iframe/blob URL issues)
 interface EpubChapter {
@@ -56,10 +68,12 @@ async function parseEpub(file: File): Promise<EpubData> {
       const coverPath = opfDir + coverItemMatch[1];
       const coverFile = zip.file(coverPath);
       if (coverFile) {
-        const coverBuf = await coverFile.async("arraybuffer");
-        const ext = coverPath.split(".").pop()?.toLowerCase() || "jpg";
-        const mime = ext === "png" ? "image/png" : "image/jpeg";
-        coverUrl = `data:${mime};base64,${btoa(String.fromCharCode(...new Uint8Array(coverBuf)))}`;
+        try {
+          const coverBuf = await coverFile.async("arraybuffer");
+          const ext = coverPath.split(".").pop()?.toLowerCase() || "jpg";
+          const mime = ext === "png" ? "image/png" : "image/jpeg";
+          coverUrl = `data:${mime};base64,${arrayBufferToBase64(coverBuf)}`;
+        } catch {}
       }
     }
   }
@@ -91,17 +105,17 @@ async function parseEpub(file: File): Promise<EpubData> {
     const ext = href.split(".").pop()?.toLowerCase();
     if (ext !== "xhtml" && ext !== "html" && ext !== "htm") continue;
 
-    const file = zip.file(href);
-    if (!file) continue;
+    const zipFile = zip.file(href);
+    if (!zipFile) continue;
 
-    let html = await file.async("text");
+    let html = await zipFile.async("text");
 
     // Extract chapter title from <title> or first <h1>-<h3>
     const titleTagMatch = html.match(/<title[^>]*>([^<]+)<\/title>/);
     const hMatch = html.match(/<h[1-3][^>]*>([^<]+)<\/h[1-3]>/);
     const chapterTitle = hMatch?.[1] || titleTagMatch?.[1] || `Chapter ${chapters.length + 1}`;
 
-    // Convert relative image paths to data URLs
+    // Convert relative image paths to data URLs (chunked to avoid stack overflow)
     const imgRegex = /src="([^"]+)"/g;
     let imgMatch;
     const imgReplacements: [string, string][] = [];
@@ -115,8 +129,7 @@ async function parseEpub(file: File): Promise<EpubData> {
           const imgBuf = await imgFile.async("arraybuffer");
           const imgExt = imgPath.split(".").pop()?.toLowerCase() || "jpg";
           const imgMime = imgExt === "png" ? "image/png" : imgExt === "gif" ? "image/gif" : "image/jpeg";
-          const imgB64 = btoa(String.fromCharCode(...new Uint8Array(imgBuf)));
-          imgReplacements.push([imgSrc, `data:${imgMime};base64,${imgB64}`]);
+          imgReplacements.push([imgSrc, `data:${imgMime};base64,${arrayBufferToBase64(imgBuf)}`]);
         } catch {}
       }
     }
@@ -125,10 +138,26 @@ async function parseEpub(file: File): Promise<EpubData> {
     }
 
     // Strip <html>, <head>, <body> tags to get just the content
-    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-    const chapterContent = bodyMatch ? bodyMatch[1] : html;
+    // Use non-greedy match to avoid capturing nested body tags
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    let chapterContent = bodyMatch ? bodyMatch[1].trim() : html;
 
-    chapters.push({ title: chapterTitle, content: chapterContent });
+    // If content is empty or too short, try to extract meaningful content
+    if (!chapterContent || chapterContent.replace(/<[^>]*>/g, '').trim().length < 10) {
+      // Try extracting from <div> or <section> if body is empty
+      const divMatch = html.match(/<(?:div|section)[^>]*>([\s\S]*?)<\/(?:div|section)>/i);
+      chapterContent = divMatch ? divMatch[1].trim() : html;
+    }
+
+    // Only add chapter if it has meaningful content
+    if (chapterContent && chapterContent.replace(/<[^>]*>/g, '').trim().length > 0) {
+      chapters.push({ title: chapterTitle, content: chapterContent });
+    }
+  }
+
+  // If no chapters were extracted, try a fallback approach
+  if (chapters.length === 0) {
+    throw new Error("No readable chapters found in EPUB");
   }
 
   return {
@@ -150,40 +179,6 @@ interface Book {
   author?: string;
   description?: string;
   coverUrl?: string;
-}
-
-// PDF parser using pdf.js
-interface PdfData {
-  title: string;
-  author: string;
-  pages: { content: string; pageNum: number }[];
-}
-
-async function parsePdf(file: File): Promise<PdfData> {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const meta = await pdf.getMetadata();
-  const info = (meta.info as any) || {};
-
-  const pages: { content: string; pageNum: number }[] = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const text = textContent.items
-      .map((item: any) => item.str)
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (text) {
-      pages.push({ content: text, pageNum: i });
-    }
-  }
-
-  return {
-    title: info.Title || file.name.replace(/\.pdf$/i, ""),
-    author: info.Author || "Unknown",
-    pages,
-  };
 }
 
 type ViewMode = "shelf" | "detail" | "reader";
@@ -294,6 +289,77 @@ function BookSpine({ book, index, onClick }: { book: Book; index: number; onClic
   );
 }
 
+// PDF Viewer Component — renders PDF pages directly using canvas
+function PdfViewer({ file, pageNum, onTotalPages }: { file: File; pageNum: number; onTotalPages: (n: number) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [rendering, setRendering] = useState(false);
+
+  // Load PDF document
+  useEffect(() => {
+    let cancelled = false;
+    const loadPdf = async () => {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        if (cancelled) return;
+        const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        if (cancelled) return;
+        setPdfDoc(doc);
+        onTotalPages(doc.numPages);
+      } catch (err) {
+        console.error("Failed to load PDF:", err);
+      }
+    };
+    loadPdf();
+    return () => { cancelled = true; };
+  }, [file]);
+
+  // Render current page
+  useEffect(() => {
+    if (!pdfDoc || !canvasRef.current || rendering) return;
+    let cancelled = false;
+
+    const renderPage = async () => {
+      setRendering(true);
+      try {
+        const page = await pdfDoc.getPage(pageNum + 1); // 1-indexed
+        if (cancelled) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const container = canvas.parentElement;
+        if (!container) return;
+
+        const containerWidth = container.clientWidth;
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = containerWidth / viewport.width;
+        const scaledViewport = page.getViewport({ scale });
+
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        await page.render({ canvasContext: ctx, viewport: scaledViewport, canvas } as any).promise;
+      } catch (err) {
+        console.error("Failed to render PDF page:", err);
+      }
+      setRendering(false);
+    };
+
+    renderPage();
+    return () => { cancelled = true; };
+  }, [pdfDoc, pageNum]);
+
+  return (
+    <div className="w-full h-full flex items-center justify-center overflow-auto">
+      <canvas ref={canvasRef} style={{ maxWidth: "100%", height: "auto" }} />
+    </div>
+  );
+}
+
 export default function BookshelfPage() {
   const [books, setBooks] = useState<Book[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("shelf");
@@ -301,7 +367,8 @@ export default function BookshelfPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [epubData, setEpubData] = useState<EpubData | null>(null);
   const [textFileData, setTextFileData] = useState<TextFileData | null>(null);
-  const [pdfData, setPdfData] = useState<PdfData | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfTotalPages, setPdfTotalPages] = useState(0);
   const [chapterIdx, setChapterIdx] = useState(0);
   const [fontSize, setFontSize] = useState(100);
   const [pageIdx, setPageIdx] = useState(0);
@@ -313,8 +380,9 @@ export default function BookshelfPage() {
   const readerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Calculate total pages when content changes
+  // Calculate total pages when content changes (for EPUB/TXT/MD only)
   useEffect(() => {
+    if (pdfFile) return; // PDF handles its own pagination
     setPageIdx(0);
     const timer = setTimeout(() => {
       if (contentRef.current && readerRef.current) {
@@ -325,15 +393,16 @@ export default function BookshelfPage() {
       }
     }, 100);
     return () => clearTimeout(timer);
-  }, [chapterIdx, epubData, textFileData, fontSize]);
+  }, [chapterIdx, epubData, textFileData, fontSize, pdfFile]);
 
   // Scroll to current page
   useEffect(() => {
+    if (pdfFile) return; // PDF uses canvas, no scrolling
     if (readerRef.current) {
       const containerH = readerRef.current.clientHeight;
       readerRef.current.scrollTo({ top: pageIdx * containerH, behavior: 'smooth' });
     }
-  }, [pageIdx]);
+  }, [pageIdx, pdfFile]);
 
   // Persist eye protection mode
   useEffect(() => {
@@ -341,7 +410,7 @@ export default function BookshelfPage() {
   }, [eyeProtection]);
 
   // Page flip animation handler
-  const flipPage = (direction: "left" | "right") => {
+  const flipPage = useCallback((direction: "left" | "right") => {
     if (direction === "right" && pageIdx >= totalPages - 1) return;
     if (direction === "left" && pageIdx === 0) return;
     setFlipDirection(direction);
@@ -350,7 +419,7 @@ export default function BookshelfPage() {
       else setPageIdx(p => Math.max(0, p - 1));
       setFlipDirection(null);
     }, 300);
-  };
+  }, [pageIdx, totalPages]);
 
   // Keyboard navigation for page flip
   useEffect(() => {
@@ -361,7 +430,7 @@ export default function BookshelfPage() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [viewMode, pageIdx, totalPages]);
+  }, [viewMode, pageIdx, totalPages, flipPage]);
 
   // Load book metadata from localStorage on mount (fast)
   useEffect(() => {
@@ -434,37 +503,28 @@ export default function BookshelfPage() {
         }
         setEpubData(data);
         setTextFileData(null);
-        setPdfData(null);
+        setPdfFile(null);
         setChapterIdx(0);
         setViewMode("reader");
       } catch (err) {
         console.error("EPUB parse error:", err);
-        alert("Failed to parse EPUB: " + err);
+        alert("Failed to parse EPUB: " + (err instanceof Error ? err.message : String(err)));
       }
     } else if (nameLower.endsWith(".pdf")) {
-      // Parse PDF using pdf.js
-      try {
-        const data = await parsePdf(book.file);
-        if (data.pages.length === 0) {
-          alert("未能从 PDF 中提取到文本内容，可能是扫描版PDF。");
-          return;
-        }
-        setPdfData(data);
-        setEpubData(null);
-        setTextFileData(null);
-        setChapterIdx(0);
-        setViewMode("reader");
-      } catch (err) {
-        console.error("PDF parse error:", err);
-        alert("Failed to parse PDF: " + err);
-      }
+      // PDF — use canvas renderer for direct page display
+      setPdfFile(book.file);
+      setPdfTotalPages(0);
+      setEpubData(null);
+      setTextFileData(null);
+      setChapterIdx(0);
+      setViewMode("reader");
     } else if (nameLower.endsWith(".txt") || nameLower.endsWith(".md")) {
       // Read text/markdown file
       try {
         const content = await book.file.text();
         setTextFileData({ content, isMarkdown: nameLower.endsWith(".md") });
         setEpubData(null);
-        setPdfData(null);
+        setPdfFile(null);
         setViewMode("reader");
       } catch (err) {
         console.error("Text file read error:", err);
@@ -478,7 +538,8 @@ export default function BookshelfPage() {
   const closeReader = () => {
     setEpubData(null);
     setTextFileData(null);
-    setPdfData(null);
+    setPdfFile(null);
+    setPdfTotalPages(0);
     setChapterIdx(0);
     setViewMode("detail");
   };
@@ -490,6 +551,9 @@ export default function BookshelfPage() {
   const filteredBooks = searchQuery
     ? books.filter((b) => (b.title || b.name).toLowerCase().includes(searchQuery.toLowerCase()) || (b.author || "").toLowerCase().includes(searchQuery.toLowerCase()))
     : books;
+
+  // Determine if we have content to show in reader
+  const hasReaderContent = epubData || textFileData || pdfFile;
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -523,7 +587,7 @@ export default function BookshelfPage() {
               {...({ webkitdirectory: "" } as any)} onChange={handleFolderLoad} />
           </div>
         )}
-        {viewMode === "reader" && (
+        {viewMode === "reader" && !pdfFile && (
           <div className="flex items-center gap-2">
             <button className="btn-ghost text-xs py-1" onClick={() => handleFontSize(-10)}>A-</button>
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>{fontSize}%</span>
@@ -614,7 +678,7 @@ export default function BookshelfPage() {
         </div>
       )}
 
-      {viewMode === "reader" && (epubData || textFileData || pdfData) && (
+      {viewMode === "reader" && hasReaderContent && (
         /* Reader — page-based view with left/right navigation */
         <div className="flex-1 flex flex-col min-h-0 gap-2">
           {/* Top bar: chapter nav + page info */}
@@ -635,7 +699,7 @@ export default function BookshelfPage() {
                   下一章 <IconChevronRight size={14} />
                 </button>
               </>
-            ) : pdfData ? (
+            ) : pdfFile ? (
               <>
                 <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
                   onClick={() => setChapterIdx(Math.max(0, chapterIdx - 1))}
@@ -643,11 +707,11 @@ export default function BookshelfPage() {
                   <IconChevronLeft size={14} /> 上一页
                 </button>
                 <span className="text-xs font-medium truncate max-w-[200px]" style={{ color: "var(--text-primary)" }}>
-                  第 {chapterIdx + 1} 页 / 共 {pdfData.pages.length} 页
+                  第 {chapterIdx + 1} 页 {pdfTotalPages > 0 ? `/ 共 ${pdfTotalPages} 页` : ""}
                 </span>
                 <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
-                  onClick={() => setChapterIdx(Math.min(pdfData.pages.length - 1, chapterIdx + 1))}
-                  style={{ opacity: chapterIdx >= pdfData.pages.length - 1 ? 0.3 : 1, pointerEvents: chapterIdx >= pdfData.pages.length - 1 ? "none" : "auto" }}>
+                  onClick={() => setChapterIdx(Math.min((pdfTotalPages || 1) - 1, chapterIdx + 1))}
+                  style={{ opacity: chapterIdx >= (pdfTotalPages || 1) - 1 ? 0.3 : 1, pointerEvents: chapterIdx >= (pdfTotalPages || 1) - 1 ? "none" : "auto" }}>
                   下一页 <IconChevronRight size={14} />
                 </button>
               </>
@@ -692,30 +756,29 @@ export default function BookshelfPage() {
                 }} />
               )}
               {/* Content */}
-              <div ref={contentRef} className="p-8 max-w-3xl mx-auto w-full"
-                dangerouslySetInnerHTML={epubData ? { __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" } : undefined}
-                style={{
-                  fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
-                  wordWrap: "break-word",
-                  overflowWrap: "break-word",
-                  transition: "transform 0.3s ease",
-                  transform: flipDirection === "right" ? "translateX(-5px)" : flipDirection === "left" ? "translateX(5px)" : "none",
-                }}>
-                {textFileData && (
-                  textFileData.isMarkdown ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {textFileData.content}
-                    </ReactMarkdown>
-                  ) : (
-                    <pre className="whitespace-pre-wrap" style={{ fontFamily: "inherit" }}>{textFileData.content}</pre>
-                  )
-                )}
-                {pdfData && pdfData.pages[chapterIdx] && (
-                  <div className="whitespace-pre-wrap leading-relaxed" style={{ fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif" }}>
-                    {pdfData.pages[chapterIdx].content}
-                  </div>
-                )}
-              </div>
+              {pdfFile ? (
+                <PdfViewer file={pdfFile} pageNum={chapterIdx} onTotalPages={setPdfTotalPages} />
+              ) : (
+                <div ref={contentRef} className="p-8 max-w-3xl mx-auto w-full"
+                  dangerouslySetInnerHTML={epubData ? { __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" } : undefined}
+                  style={{
+                    fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
+                    wordWrap: "break-word",
+                    overflowWrap: "break-word",
+                    transition: "transform 0.3s ease",
+                    transform: flipDirection === "right" ? "translateX(-5px)" : flipDirection === "left" ? "translateX(5px)" : "none",
+                  }}>
+                  {textFileData && (
+                    textFileData.isMarkdown ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                        {textFileData.content}
+                      </ReactMarkdown>
+                    ) : (
+                      <pre className="whitespace-pre-wrap" style={{ fontFamily: "inherit" }}>{textFileData.content}</pre>
+                    )
+                  )}
+                </div>
+              )}
               {/* Book fold line (center) */}
               <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px pointer-events-none"
                 style={{ background: "rgba(0,0,0,0.04)" }} />
@@ -740,20 +803,22 @@ export default function BookshelfPage() {
               </select>
             )}
             {/* PDF page selector */}
-            {pdfData && pdfData.pages.length > 1 && (
+            {pdfFile && pdfTotalPages > 1 && (
               <select className="text-[10px] bg-transparent border-none outline-none cursor-pointer"
                 style={{ color: "var(--text-muted)" }}
                 value={chapterIdx}
-                onChange={e => { setChapterIdx(Number(e.target.value)); setPageIdx(0); }}>
-                {pdfData.pages.map((p, i) => (
-                  <option key={i} value={i}>第 {p.pageNum} 页</option>
+                onChange={e => { setChapterIdx(Number(e.target.value)); }}>
+                {Array.from({ length: pdfTotalPages }, (_, i) => (
+                  <option key={i} value={i}>第 {i + 1} 页</option>
                 ))}
               </select>
             )}
             <span className="flex-1" />
-            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-              {pageIdx + 1} / {totalPages}
-            </span>
+            {!pdfFile && (
+              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                {pageIdx + 1} / {totalPages}
+              </span>
+            )}
           </div>
         </div>
       )}
