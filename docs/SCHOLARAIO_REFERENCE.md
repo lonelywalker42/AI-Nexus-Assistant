@@ -989,3 +989,319 @@ ID 标准化处理裸 ID、`arXiv:` 前缀和完整 URL，剥离版本后缀。�
 | **联邦搜索** | 多范围并行搜索 + 本地库交叉引用 | 文献发现 |
 | **原子文件写入** | `.part` 临时文件后重命名，防止部分写入 | arXiv 下载 |
 | **探索库隔离** | 独立存储、独立数据库、独立索引 | 文献探索 |
+
+---
+
+## 第十一章：功能实现深度解析——出版社 PDF 拉取与全链路功能
+
+> 本章以**出版社 PDF 拉取**为核心，深入分析其实现细节，并扩展到 ScholarAIO 全部关键功能的实现方式。
+
+### 11.1 出版社 PDF 拉取：完整的实现架构
+
+这是 ScholarAIO 最具特色的功能之一——**利用用户自身的合法网络权限**（如校园网 IP）从出版社网站拉取 PDF，不依赖任何第三方影子图书馆。
+
+#### 11.1.1 核心设计哲学
+
+模块文档字符串明确声明：*"Lightweight, rights-respecting PDF acquisition helpers."*
+
+系统**不集成** Unpaywall、Sci-Hub 或任何第三方服务。所有 PDF 获取都通过用户自己的网络环境完成，这意味着：
+- 用户在校园网内 → 自动通过机构订阅访问
+- 用户配置了代理 → 通过代理访问
+- 用户使用 `--direct` 标志 → 绕过代理，直连访问
+
+#### 11.1.2 三阶段 PDF 解析管线
+
+```
+阶段 1: 定位器规范化 (_locator_to_url)
+  DOI 字符串 → https://doi.org/...
+  DOI URL → 直接使用
+  完整 URL → 直接使用
+  纯标题 → Crossref API 查询 → DOI → URL
+
+阶段 2: 落地页抓取 (fetch_pdf)
+  GET URL (stream=True, allow_redirects=True)
+  ├─ Content-Type 是 PDF？ → 直接保存
+  └─ 是 HTML？ → 进入阶段 3
+
+阶段 3: PDF 链接提取 (_candidate_pdf_urls)
+  三种正则模式并行扫描：
+  ├─ <meta name="citation_pdf_url" content="...">  ← 最高优先级
+  ├─ <a href="...pdf"> / <a href=".../pdf/">
+  └─ 正则匹配 HTML body 中的 https://...pdf URL
+  → 去重后按优先级逐个尝试下载
+```
+
+#### 11.1.3 校园网直连模式的实现
+
+```python
+# pdf_fetch.py 核心逻辑
+session = requests.Session()
+session.trust_env = not direct  # --direct 标志的真正含义
+```
+
+- **`direct=True`**：`trust_env = False`，requests 库**忽略**所有代理环境变量（`HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`），连接直接走用户本地网络。如果用户在校园网内，请求通过校园 IP 到达出版社，获得机构订阅访问权限。
+- **`direct=False`**（默认）：`trust_env = True`，正常读取代理配置。
+
+测试用例 `test_direct_fetch_ignores_proxy_environment_with_real_http` 显式验证：设置一个不可用的代理环境变量，`direct=True` 时仍然能成功下载。
+
+#### 11.1.4 PDF 验证与头部规范化
+
+下载后执行两步验证：
+
+1. **魔数检查** (`_valid_pdf_payload`)：读取前 1024 字节，查找 `%PDF-` 标记
+2. **头部规范化** (`_normalize_pdf_header`)：某些出版社会在 PDF 流前面插入非 PDF 字节（如跟踪像素、广告横幅）。规范化函数定位 `%PDF-` 标记并剥离前面的所有内容，使用流式处理，不会将整个文件读入内存
+
+#### 11.1.5 规范 PDF 命名与批量重拉取
+
+**命名约定**：规范 PDF 与父目录同名
+```
+papers/Doe-2026-Real-HTTP-Paper/
+  ├── Doe-2026-Real-HTTP-Paper.pdf   ← 规范 PDF
+  ├── meta.json
+  └── paper.md
+```
+
+**重拉取优先级**：`source_url` > `doi` > `ids.doi`
+
+**批量模式**：`fetch-pdf --all` 遍历所有论文目录，复用单个 `requests.Session`，逐篇尝试下载，单篇失败不中断批次，最终报告 downloaded/skipped/failed 统计。
+
+#### 11.1.6 多出版商模式适配
+
+系统**不使用**出版商特定的爬虫，而是通过通用 HTML 抓取适配所有出版商：
+
+| 出版商模式 | 适配方式 |
+|-----------|---------|
+| Elsevier/Springer/Wiley 等 | `<meta name="citation_pdf_url">` 标签（学术出版标准） |
+| arXiv | 独立 provider，专用 API |
+| 直接 PDF 链接 | `<a href="...pdf">` 锚点匹配 |
+| 签名/重定向 URL | `allow_redirects=True` 跟随重定向链 |
+| 流前插入非 PDF 字节 | `_normalize_pdf_header` 剥离 |
+| 纯标题无 DOI | Crossref API 查询解析为 DOI |
+
+#### 11.1.7 错误处理与重试
+
+- **候选 URL 逐个尝试**：第一个 PDF 链接失败 → 自动尝试下一个
+- **API 重试**：HTTP 429/502/503/504 → 指数退避重试（最多 3 次），尊重 `Retry-After` 头
+- **批量模式容错**：每篇论文独立捕获 `OSError`/`ValueError`/`RequestException`/`PdfFetchError`，记录错误但不中断批次
+- **MinerU 降级链**：本地 MinerU → 云 MinerU → docling → pymupdf
+
+### 11.2 多源导入系统
+
+ScholarAIO 支持从 5 种来源导入，通过统一的 `import_external()` 编排器处理去重、入库、PDF 附加和批量后处理。
+
+#### 11.2.1 Zotero 导入（双模式）
+
+**Web API 模式**：通过 `pyzotero` 库调用 Zotero Web API，获取所有条目（支持 collection/item-type 过滤），转换为统一的 `PaperMetadata` 数据结构，可选下载 PDF 附件。
+
+**本地 SQLite 模式**：以只读模式（`?immutable=1`）打开用户的 `zotero.sqlite`，查询 `items`/`itemData`/`itemCreators` 表，从 Zotero `storage/` 目录解析 PDF 路径。
+
+**集合到工作区映射**：`--import-collections` 标志通过 DOI-to-UUID 匹配，将 Zotero 集合自动创建为 ScholarAIO 工作区。
+
+#### 11.2.2 Endnote 导入
+
+自动检测 `.xml` vs `.ris` 格式。XML 模式解析 `internal-pdf://` 链接并解析到 `<file>.Data/PDF/` 目录。`_pick_main_pdf()` 启发式函数通过正则匹配 SI/supplement 命名模式过滤补充材料。
+
+#### 11.2.3 arXiv 导入
+
+查询 arXiv Atom API（`export.arxiv.org/api/query`），使用 `defusedxml` 安全解析 XML。`search_arxiv()` 构建字段限定查询（`au:`, `ti:`, `abs:`, `cat:`）。PDF 下载有 3 秒礼貌间隔限速。使用 `.part` 临时文件 + 原子重命名防止部分写入。
+
+#### 11.2.4 Web/URL 导入
+
+通过外部 `qt-web-extractor` MCP 服务渲染网页并提取内容，写入文档 inbox，保留来源字段（`source_url`, `source_type`, `extraction_method`）。
+
+#### 11.2.5 共享编排器 `import_external()`
+
+```python
+def import_external(records: list[PaperMetadata], pdfs: dict | None):
+    # 1. DOI 去重检查
+    # 2. 逐条执行 step_dedup()（API 富化 + DOI 检查）
+    # 3. 逐条执行 step_ingest()（写入 meta.json + paper.md）
+    # 4. 批量 step_embed() + step_index()
+```
+
+### 11.3 Inbox 分类系统
+
+系统支持 **5 种 inbox**，各有针对性处理逻辑：
+
+| Inbox | 路径 | 用途 | DOI 去重 | 特殊行为 |
+|-------|------|------|---------|---------|
+| Regular | `data/spool/inbox` | 标准学术论文 | 是 | 完整管线：MinerU → extract → dedup → ingest |
+| Document | `data/spool/inbox-doc` | 非学术文档 | 否 | Office 转换 → MinerU → LLM 提取 → 入库 |
+| Thesis | `data/spool/inbox-thesis` | 学位论文 | 否 | 跳过 API 查询，标记 `paper_type=thesis` |
+| Patent | `data/spool/inbox-patent` | 专利文档 | 否（用公开号） | 跳过 API 查询，按 `publication_number` 去重 |
+| Proceedings | `data/spool/inbox-proceedings` | 会议论文集 | 变化 | Proceedings 特有的拆分/应用逻辑 |
+
+**去重分类结果**：`ingested`（成功入库）/ `duplicate`（DOI 已存在）/ `needs_review`（无 DOI 且未检测为已知类型）/ `failed`（管线错误）
+
+**文档类型检测**（`detection.py`）：
+- 专利：检查 `publication_number` → 标题关键词 → 正则扫描 Markdown
+- 学位论文：标题关键词 → LLM 分类（前 30,000 字符）
+- 书籍：API `paper_type` 字段 → 标题关键词 → LLM 分类
+- arXiv 预印本：提取后检查 `arxiv_id` 存在性
+
+### 11.4 工作区系统
+
+工作区是论文子集管理机制，存储在 `workspace/<name>/` 下。
+
+**核心结构**：
+```
+workspace/my-project/
+  ├── workspace.yaml     # 可选：schema_version, name, description, tags
+  └── refs/
+      └── papers.json    # [{"id": "<uuid>", "dir_name": "<name>", "added_at": "<iso>"}]
+```
+
+**操作**：
+- `create()`：创建目录和空索引
+- `add()`：通过 UUID/目录名/DOI 解析论文引用，去重后追加
+- `remove()`：按 UUID 移除，优雅处理过期索引
+- `show()`：读取条目并刷新目录名（处理重命名）
+
+**限定范围搜索**：`ws search` 读取工作区论文 ID 集合，传递给 `vsearch()` 或 `unified_search()` 作为 `paper_ids` 过滤器。
+
+**批量添加**：`ws add --search`（联邦搜索结果）/ `ws add --topic`（BERTopic 簇）/ `ws add --all`（整个库）
+
+### 11.5 元数据清洗系统
+
+#### 11.5.1 审计服务（规则引擎，无 LLM）
+
+`audit_papers()` 对每篇论文执行：
+- **缺失字段检查**：DOI、摘要、年份、作者、期刊、标题（按 paper_type 条件检查）
+- **文件配对验证**：meta.json 和 paper.md 共存；paper.md < 200 字符标记为转换失败
+- **标题一致性**：meta.json 标题 vs paper.md H1 标题，词重叠评分 < 0.3 标记不一致
+- **目录名格式**：验证 `Author-Year-Title` 模式，检测占位年份（XXXX）、乱码
+- **DOI 重复检测**：收集所有 DOI 并标记重复
+
+#### 11.5.2 Scrub 工作流（增量审查）
+
+`list_scrub_suspects()` 检测：
+- 乱码标题（含替换字符 `�`）
+- 占位标题（introduction, tldr, overview, summary）
+- 可疑作者（Unknown, Anonymous, 单字母名）
+- 可疑年份（缺失、XXXX 占位）
+- 非标准目录名
+
+**修复机制**：`cmd_repair()` 从现有元数据出发，仅覆盖显式提供的字段，保留 UUID 和所有富化字段。`.scrubbed` 标记文件跟踪已审查论文，后续增量跳过。
+
+### 11.6 持久化笔记（跨会话记忆）
+
+每篇论文目录可包含 `notes.md` 文件（自由格式 Markdown）。
+
+**写入协议**：
+```bash
+scholaraio show "<paper-id>" --append-notes "<text>"
+# 格式约定：## YYYY-MM-DD | workspace/task-source | analysis-type
+```
+
+**读取协议**：`show` 命令显示时，如果 `notes.md` 存在，在标题之后、正文之前展示。Agent 被指示优先使用已有笔记，避免重复分析。
+
+**跨会话复用**：`notes.md` 与 `meta.json`、`paper.md` 一起存储在磁盘上，跨 Claude 会话持久存在。Agent 可以读取前几次会话的分析结论（参数值、收敛标准、关键发现），在此基础上继续工作。
+
+### 11.7 研究洞察（阅读行为分析）
+
+#### 指标收集
+
+`MetricsStore` 使用 SQLite WAL 模式的 `events` 表，记录：session_id、timestamp、category、name、duration_s、tokens_in/out、model、status、detail。`search`、`vsearch`、`show` 命令自动记录事件。
+
+#### 五维分析
+
+| 维度 | 实现方式 |
+|------|---------|
+| **搜索热词** | 分词 → 去停用词 → 词频统计 → Top-K |
+| **高频阅读论文** | 按论文名聚合 `read` 事件计数 |
+| **阅读趋势** | 按 ISO 年-周分组，生成时间序列 |
+| **语义近邻推荐** | 取最近 5 篇已读论文 → vsearch 找 Top-10 近邻 → 过滤已读 → 返回最高分未读 |
+| **未读推荐** | 基于已读论文的语义相似性，发现可能被忽略的文献 |
+
+### 11.8 联邦发现
+
+`fsearch` 命令接受 `--scope` 参数，逗号分隔多个搜索范围：
+
+```
+scholaraio fsearch "drag reduction" --scope main,proceedings,explore:*,arxiv
+```
+
+每个范围独立搜索，结果按来源分段显示。arXiv 结果通过 DOI 和 arXiv ID 与本地库交叉引用，标记 `[ingested]` 状态。
+
+| 范围 | 搜索方式 |
+|------|---------|
+| `main` | 主库统一搜索（FTS5 + FAISS 语义，RRF 排序） |
+| `explore:<name>` | 指定探索库搜索 |
+| `explore:*` | 遍历所有探索库 |
+| `proceedings` | 会议论文集搜索 |
+| `arXiv` | arXiv Atom API 查询 |
+
+### 11.9 远程备份（rsync）
+
+**配置**：`config.yaml` 中定义命名备份目标，每个指定 host、user、path、port、identity_file、mode、compress、exclude。
+
+**命令构建**：`build_rsync_command()` 构造 rsync 命令：
+- 基础标志：`-a --stats --human-readable`
+- 可选：`-z`（压缩）、`--append`/`--append-verify`（模式）
+- 远程 Shell：`_build_remote_shell()` 构建 SSH 命令，`BatchMode=yes`
+- 密码处理：创建临时 askpass 脚本，设置 `SSH_ASKPASS`/`SSH_ASKPASS_REQUIRE=force`
+
+**认证失败引导**：提供 `ssh-keyscan` 和密钥验证命令的引导说明。
+
+### 11.10 AI for Science 运行时（科学软件文档）
+
+`toolref` 系统是一个本地文档注册表，支持 5 种科学工具：
+
+| 工具 | 文档来源 | 索引方式 |
+|------|---------|---------|
+| Quantum ESPRESSO | git clone `INPUT_*.def` 文件 | DEF 解析器 |
+| LAMMPS | git clone `doc/src/*.rst` | RST 解析器 |
+| GROMACS | git clone `docs/**/*.rst` | RST 解析器 |
+| OpenFOAM | manifest 页面抓取 | HTML 解析器 |
+| Bioinformatics | manifest 页面（minimap2, samtools 等） | HTML 解析器 |
+
+**搜索**：FTS5 MATCH 查询 + 智能扩展（`_expand_search_query()` 将领域概念映射到工具特定术语，如 "drag coefficient" → "force coeffs"）。结果按标题/页面名/摘要/内容匹配质量评分，带工具特定加成。
+
+**运行时协议**：Agent 优先使用 toolref 查找参数，覆盖不全时回退到官方文档，永远不要求用户修复文档空白。
+
+### 11.11 多格式导出
+
+| 格式 | 实现方式 |
+|------|---------|
+| **BibTeX** | `meta_to_bibtex()`：cite key = `LastNameYearTitleWord`，LaTeX 特殊字符转义，paper_type 映射到 BibTeX 条目类型 |
+| **RIS** | `meta_to_ris()`：AU/PY/JO/VL/IS/SP/EP/DO/AB 字段格式化，页码范围拆分 SP/EP |
+| **Markdown 引用列表** | 支持内置样式（APA/Vancouver/Chicago/MLA）和自定义 Python 样式（`data/libraries/citation_styles/<name>.py`） |
+| **DOCX** | `_md_to_docx()` 解析器处理标题、代码块、表格、列表、引用、行内格式 |
+
+### 11.12 本地 WebUI（只读浏览与质检）
+
+**服务器**：基于 `http.server.ThreadingHTTPServer` 的只读 HTTP 服务器，所有写方法（POST/PUT/PATCH/DELETE）返回 `405 METHOD NOT_ALLOWED`。
+
+**API 端点**：
+- `GET /api/main/papers`：完整库视图（元数据 + 审计问题 + PDF 可用性）
+- `GET /api/main/detail?id=<id>`：论文详情（摘要、L3 结论、TOC、IDs）
+- `GET /api/main/pdf?id=<id>`：流式传输本地 PDF
+- `GET /api/proceedings/papers`：会议论文集视图
+
+**视图模型**：`build_main_library_view()` 扫描所有论文目录，读取 meta.json，运行 `audit_papers()`（30 秒缓存），构建行字典。
+
+### 11.13 关键实现文件索引
+
+| 功能 | 核心实现文件 |
+|------|------------|
+| PDF 拉取 | `scholaraio/services/pdf_fetch.py` |
+| PDF CLI | `scholaraio/interfaces/cli/fetch_pdf.py` |
+| PDF 附加 | `scholaraio/interfaces/cli/attach_pdf.py` |
+| Zotero 导入 | `scholaraio/providers/zotero.py` |
+| Endnote 导入 | `scholaraio/providers/endnote.py` |
+| arXiv 导入 | `scholaraio/providers/arxiv.py` |
+| 导入编排 | `scholaraio/services/ingest/external_import.py` |
+| Inbox 管线 | `scholaraio/services/ingest/inbox_steps.py` |
+| 文档类型检测 | `scholaraio/services/ingest/detection.py` |
+| 工作区 | `scholaraio/projects/workspace.py` |
+| 元数据审计 | `scholaraio/services/audit.py` |
+| 元数据修复 | `scholaraio/interfaces/cli/repair.py` |
+| 持久化笔记 | `scholaraio/services/loader.py` |
+| 指标收集 | `scholaraio/services/metrics.py` |
+| 研究洞察 | `scholaraio/services/insights.py` |
+| rsync 备份 | `scholaraio/services/backup.py` |
+| 科学工具文档 | `scholaraio/stores/toolref/` |
+| 联邦搜索 | `scholaraio/interfaces/cli/fsearch.py` |
+| 多格式导出 | `scholaraio/services/export.py` |
+| 本地 WebUI | `scholaraio/interfaces/cli/gui.py` |
+| 库视图模型 | `scholaraio/services/library_view.py` |
