@@ -414,6 +414,7 @@ export interface ChatSession {
   title: string;
   model_name: string;
   category: string;
+  import_group_id?: string;
   created_at: string;
 }
 

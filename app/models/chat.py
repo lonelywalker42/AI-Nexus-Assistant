@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from sqlalchemy import String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
@@ -15,10 +15,14 @@ class ChatSession(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title: Mapped[str] = mapped_column(Text, default="新对话")
     model_name: Mapped[str] = mapped_column(String(100), default="")
-    category: Mapped[str] = mapped_column(String(20), default="general")  # general/writing/review/topic
+    category: Mapped[str] = mapped_column(String(20), default="general")  # general/writing/review/topic/import
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    import_group_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("import_groups.id", ondelete="SET NULL"), nullable=True
+    )
 
     messages: Mapped[List["ChatMessage"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    import_group: Mapped[Optional["ImportGroup"]] = relationship(foreign_keys=[import_group_id])
 
 
 class ChatMessage(Base):

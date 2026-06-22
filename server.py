@@ -2626,6 +2626,7 @@ def list_sessions(category: str = ""):
                 continue
             result.append({"id": s.id, "title": s.title, "model_name": s.model_name,
                            "category": s.category,
+                           "import_group_id": s.import_group_id,
                            "created_at": s.created_at.isoformat()})
         return result
     finally:

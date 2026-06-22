@@ -45,7 +45,12 @@ def _call_llm(system_prompt: str, user_prompt: str, temperature: float = 0.2) ->
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        result = router.chat(messages, purpose="summary", temperature=temperature, max_tokens=4096)
+        # 使用 response_format 强制 JSON 输出，提高解析成功率
+        result = router.chat(
+            messages, purpose="summary",
+            temperature=temperature, max_tokens=4096,
+            response_format={"type": "json_object"},
+        )
         content = result.get("content", "")
         if content.startswith("[ERROR]"):
             raise RuntimeError(content)
@@ -183,8 +188,8 @@ _EMOJI_ONLY = re.compile(
     r"\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U0000FE00-\U0000FE0F"
     r"\U0000200D\U00002640\U00002642\s]+$"
 )
-_SHORT_THRESHOLD = 3
-_STOP_WORDS = {"继续", "好的", "嗯", "哦", "好", "是的", "对", "ok", "okay", "yes", "no"}
+_SHORT_THRESHOLD = 1  # 允许单字符消息（如 "好"）
+_STOP_WORDS = {"继续", "好的", "嗯", "哦"}  # 缩小停用词范围，保留更多有意义消息
 
 
 def _clean_messages(messages: list[dict]) -> list[dict]:
@@ -227,6 +232,12 @@ def _format_for_llm(messages: list[dict]) -> str:
 def preprocess(messages: list[dict]) -> tuple[list[dict], str]:
     """完整预处理流水线，返回 (清洗后消息, 格式化文本)"""
     cleaned = _clean_messages(messages)
+    # 如果清洗后消息过少（<2条），保留原始消息中最长的几条作为 fallback
+    if len(cleaned) < 2 and len(messages) >= 2:
+        # 按内容长度排序，保留最长的消息
+        sorted_msgs = sorted(messages, key=lambda m: len(m.get("content", "")), reverse=True)
+        cleaned = [{"role": m["role"], "content": m["content"].strip()}
+                   for m in sorted_msgs[:10] if m.get("content", "").strip()]
     merged = _merge_consecutive(cleaned)
     text = _format_for_llm(merged)
     return merged, text
@@ -343,8 +354,9 @@ def save_conversations(db: Session, group_id: str, conversations: list[dict]) ->
         # 创建 ChatSession
         chat_session = ChatSession(
             title=f"[导入] {title}",
-            category="topic",
+            category="import",
             model_name="deepseek-import",
+            import_group_id=group_id,
         )
         db.add(chat_session)
         db.flush()

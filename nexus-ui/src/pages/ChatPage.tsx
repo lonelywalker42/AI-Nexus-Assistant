@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { chatApi, modelsApi, papersApi, type ChatSession, type ChatMessage, type ModelConfig, type PaperDetail } from "../api/client";
+import { chatApi, modelsApi, papersApi, importGroupApi, type ChatSession, type ChatMessage, type ModelConfig, type PaperDetail, type ImportGroup } from "../api/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -146,6 +146,7 @@ const CHAT_CATEGORIES = [
   { key: "idea", label: "IDEA" },
   { key: "research", label: "研究" },
   { key: "discussion", label: "选题讨论" },
+  { key: "import", label: "📥 导入" },
 ];
 
 // 研究讨论结构化 prompt 模板
@@ -184,6 +185,10 @@ export default function ChatPage() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [streamStats, setStreamStats] = useState<{tokens: number; duration_ms: number} | null>(null);
   const streamStartTime = useRef<number>(0);
+
+  // 导入分组相关状态
+  const [importGroups, setImportGroups] = useState<ImportGroup[]>([]);
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
 
   // @引用系统
   const [showMention, setShowMention] = useState(false);
@@ -233,6 +238,13 @@ export default function ChatPage() {
       if (ms.length && !selectedModelId) setSelectedModelId(ms[0].id);
     }).catch(console.error);
   }, []);
+
+  // 加载导入分组
+  useEffect(() => {
+    if (activeCategory === "import") {
+      importGroupApi.list().then(setImportGroups).catch(console.error);
+    }
+  }, [activeCategory]);
 
   useEffect(() => {
     if (activeSession) {
@@ -529,32 +541,81 @@ export default function ChatPage() {
           />
         </div>
         <div className="flex-1 space-y-1 overflow-y-auto">
-          {(activeCategory === "all" ? sessions : sessions.filter(s => detectCategory(s.title, s.category) === activeCategory))
-            .filter(s => !sessionSearch.trim() || s.title.toLowerCase().includes(sessionSearch.toLowerCase()))
-            .map(s => {
-            const cat = detectCategory(s.title, s.category);
-            const catInfo = CHAT_CATEGORIES.find(c => c.key === cat);
-            return (
-            <div
-              key={s.id}
-              onClick={() => setActiveSession(s.id)}
-              className="px-3 py-2 rounded-xl text-sm cursor-pointer transition-all truncate"
-              style={activeSession === s.id
-                ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)", fontWeight: 500 }
-                : { color: "var(--text-secondary)" }
-              }
-              onMouseEnter={e => { if (activeSession !== s.id) e.currentTarget.style.background = "var(--hover-bg)"; }}
-              onMouseLeave={e => { if (activeSession !== s.id) e.currentTarget.style.background = "transparent"; }}
-            >
-              <span className="truncate">{s.title.slice(0, 20)}</span>
-              {cat !== "general" && catInfo && (
-                <span className="ml-1 text-[9px] px-1 py-0.5 rounded" style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>
-                  {catInfo.label}
-                </span>
-              )}
-            </div>
-            );
-          })}
+          {activeCategory === "import" ? (
+            // 导入分组视图
+            importGroups.length === 0 ? (
+              <div className="px-3 py-4 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+                暂无导入会话
+              </div>
+            ) : (
+              importGroups.map(group => {
+                const groupSessions = sessions.filter(s => s.import_group_id === group.id);
+                const isExpanded = expandedGroupId === group.id;
+                return (
+                  <div key={group.id}>
+                    {/* 分组标题 */}
+                    <div
+                      className="px-3 py-2 rounded-xl text-sm cursor-pointer transition-all flex items-center gap-2"
+                      style={{ color: "var(--text-primary)" }}
+                      onClick={() => setExpandedGroupId(isExpanded ? null : group.id)}
+                      onMouseEnter={e => e.currentTarget.style.background = "var(--hover-bg)"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                    >
+                      <span className="text-[10px]">{isExpanded ? "📂" : "📁"}</span>
+                      <span className="truncate flex-1">{group.title.slice(0, 18)}</span>
+                      <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>
+                        {groupSessions.length}
+                      </span>
+                    </div>
+                    {/* 分组下的会话 */}
+                    {isExpanded && groupSessions.map(s => (
+                      <div
+                        key={s.id}
+                        onClick={() => setActiveSession(s.id)}
+                        className="px-6 py-1.5 rounded-xl text-xs cursor-pointer transition-all truncate"
+                        style={activeSession === s.id
+                          ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)", fontWeight: 500 }
+                          : { color: "var(--text-secondary)" }
+                        }
+                        onMouseEnter={e => { if (activeSession !== s.id) e.currentTarget.style.background = "var(--hover-bg)"; }}
+                        onMouseLeave={e => { if (activeSession !== s.id) e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <span className="truncate">{s.title.replace("[导入] ", "").slice(0, 20)}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })
+            )
+          ) : (
+            // 普通会话列表
+            (activeCategory === "all" ? sessions : sessions.filter(s => detectCategory(s.title, s.category) === activeCategory))
+              .filter(s => !sessionSearch.trim() || s.title.toLowerCase().includes(sessionSearch.toLowerCase()))
+              .map(s => {
+              const cat = detectCategory(s.title, s.category);
+              const catInfo = CHAT_CATEGORIES.find(c => c.key === cat);
+              return (
+              <div
+                key={s.id}
+                onClick={() => setActiveSession(s.id)}
+                className="px-3 py-2 rounded-xl text-sm cursor-pointer transition-all truncate"
+                style={activeSession === s.id
+                  ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)", fontWeight: 500 }
+                  : { color: "var(--text-secondary)" }
+                }
+                onMouseEnter={e => { if (activeSession !== s.id) e.currentTarget.style.background = "var(--hover-bg)"; }}
+                onMouseLeave={e => { if (activeSession !== s.id) e.currentTarget.style.background = "transparent"; }}
+              >
+                <span className="truncate">{s.title.slice(0, 20)}</span>
+                {cat !== "general" && catInfo && (
+                  <span className="ml-1 text-[9px] px-1 py-0.5 rounded" style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>
+                    {catInfo.label}
+                  </span>
+                )}
+              </div>
+              );
+            })
+          )}
         </div>
         {activeSession && (
           <div className="flex gap-2">

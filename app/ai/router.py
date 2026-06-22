@@ -94,13 +94,32 @@ class AIRouter:
         print(f"[router] Calling OpenAI API: base_url={base_url}, model={model.model_name}", flush=True)
 
         client = openai.OpenAI(base_url=base_url, api_key=model.api_key)
+
+        def _do_call(include_response_format: bool = True):
+            """执行 API 调用，可选是否包含 response_format"""
+            create_kwargs = {
+                "model": model.model_name,
+                "messages": messages,
+                "temperature": kwargs.get("temperature", 0.7),
+                "max_tokens": kwargs.get("max_tokens", 4096),
+            }
+            if include_response_format:
+                response_format = kwargs.get("response_format")
+                if response_format:
+                    create_kwargs["response_format"] = response_format
+            return client.chat.completions.create(**create_kwargs)
+
         try:
-            resp = client.chat.completions.create(
-                model=model.model_name,
-                messages=messages,
-                temperature=kwargs.get("temperature", 0.7),
-                max_tokens=kwargs.get("max_tokens", 4096),
-            )
+            try:
+                resp = _do_call(include_response_format=True)
+            except Exception as format_err:
+                # response_format 不支持时 fallback
+                if kwargs.get("response_format") and "response_format" in str(format_err).lower():
+                    print(f"[router] response_format not supported, retrying without it", flush=True)
+                    resp = _do_call(include_response_format=False)
+                else:
+                    raise
+
             choice = resp.choices[0]
             thinking = ""
             content = choice.message.content or ""
