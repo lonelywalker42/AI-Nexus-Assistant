@@ -410,3 +410,13 @@ export function IconLibrary({ size = 18, className, style }: IconProps) {
     </svg>
   );
 }
+
+export function IconGamepad({ size = 18, className, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={defaultProps.strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <line x1="6" y1="12" x2="10" y2="12" /><line x1="8" y1="10" x2="8" y2="14" />
+      <circle cx="15" cy="13" r="1" fill="currentColor" /><circle cx="18" cy="11" r="1" fill="currentColor" />
+      <path d="M17.32 5.18a4 4 0 0 0-5.24-.38 4 4 0 0 0-1.36 5.24c.58.96 1.02 2.03 1.08 3.16L6 14a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2l-1.16-.82c.06-1.13.5-2.2 1.08-3.16a4 4 0 0 0-.6-4.84z" />
+    </svg>
+  );
+}

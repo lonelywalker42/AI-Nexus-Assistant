@@ -255,6 +255,15 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - Window config: 360x180, frameless, always-on-top, transparent, resizable
 - `public/todo-calendar.html` — Glass-style todo calendar with real-time clock, drag, task toggle
 
+### Game Console Mode (游戏机模式)
+- `public/games.html` — Self-contained retro arcade with 8 pixel games on a single Canvas
+- **Games**: 2048, Tetris, Shooter (fighter jet), Word Hopper (CET-6 typing), Snake, Breakout, Minesweeper, Flappy Bird
+- **UI**: CRT scanline overlay, green-on-black retro aesthetic, 2-column grid menu
+- **Persistence**: `localStorage` for high scores (`nexus-game-scores`) and save/resume progress (`nexus-game-progress`)
+- **Navigation**: Keyboard (arrow keys + Enter) and mouse click support
+- **Integration**: `GameConsolePage.tsx` embeds via iframe, fullscreen toggle, integrated in sidebar under "个人助手"
+- All games are pure Canvas/JS, zero dependencies, single HTML file
+
 ### Build Notes
 - `build_tauri.py` runs `npx tauri build` -> Vite build + Rust compile + frontend embedding
 - `build_server.py` uses `--exclude-module` but **keeps** `httpx`/`httpcore` (required by openai)

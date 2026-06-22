@@ -1,5 +1,24 @@
 # Changelog
 
+## v4.2.0 (2026-06-23) — 游戏机模式集成 + 4 款新游戏
+
+### 新增
+- **游戏机模式页面**: 侧边栏「个人助手」新增「🎮 游戏机」入口，iframe 嵌入复古街机游戏
+- **4 款新游戏**:
+  - **Snake** — 经典贪吃蛇，方向键控制，速度随分数递增
+  - **Breakout** — 打砖块，挡板接球消除砖块，多关卡
+  - **Minesweeper** — 扫雷，12×12 棋盘，20 颗雷，左键揭开/右键标记
+  - **Flappy** — 像素小鸟，空格/点击跳跃，穿越管道
+- **IconGamepad** 图标组件（游戏手柄 SVG）
+- 游戏菜单升级为 2 列网格布局（8 款游戏），支持方向键导航
+- 全部游戏支持存档恢复、历史最高分排行榜
+
+### 改动
+- `nexus-ui/public/games.html`: 新增 4 个游戏类 + 菜单 2 列布局 + 方向键导航
+- `nexus-ui/src/pages/GameConsolePage.tsx`: 新建游戏机页面（iframe + 全屏）
+- `nexus-ui/src/components/Icons.tsx`: 新增 IconGamepad
+- `nexus-ui/src/App.tsx`: 注册游戏机页面到侧边栏
+
 ## v4.1.1 (2026-06-23) — DeepSeek 对话导入三问题修复
 
 ### 修复

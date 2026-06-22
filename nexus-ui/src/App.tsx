@@ -13,6 +13,7 @@ import MusicPage from "./pages/MusicPage";
 import BookshelfPage from "./pages/BookshelfPage";
 import WritingPage from "./pages/WritingPage";
 import ResearchAgentPage from "./pages/ResearchAgentPage";
+import GameConsolePage from "./pages/GameConsolePage";
 import { dashboardApi, isLoggedIn, API_BASE } from "./api/client";
 import LoginPage from "./pages/LoginPage";
 import { usePlatform } from "./hooks/usePlatform";
@@ -20,7 +21,7 @@ import MobileLayout from "./layouts/MobileLayout";
 import {
   IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat,
   IconGear, IconX, IconMinus, IconMaximize, IconCalendar, IconLightbulb, IconImage,
-  IconMusic, IconBookOpen,
+  IconMusic, IconBookOpen, IconGamepad,
 } from "./components/Icons";
 import { useAppName } from "./hooks/useAppName";
 
@@ -42,6 +43,7 @@ const PAGES = [
   { id: "music", label: "音乐", icon: "music", group: "personal" },
   { id: "bookshelf", label: "书架", icon: "bookOpen", group: "personal" },
   { id: "materials", label: "素材库", icon: "image", group: "personal" },
+  { id: "games", label: "游戏机", icon: "gamepad", group: "personal" },
   // 设置
   { id: "settings", label: "设置", icon: "gear", group: "settings" },
 ];
@@ -50,7 +52,7 @@ const ICON_MAP: Record<string, React.FC<{ size?: number }>> = {
   chart: IconChart, clipboard: IconClipboard, book: IconBook, search: IconSearch,
   flask: IconFlask, brain: IconBrain, chat: IconChat, gear: IconGear,
   calendar: IconCalendar, lightbulb: IconLightbulb, image: IconImage,
-  music: IconMusic, bookOpen: IconBookOpen,
+  music: IconMusic, bookOpen: IconBookOpen, gamepad: IconGamepad,
 };
 
 export function getPageIcon(iconKey: string, size = 18) {
@@ -160,6 +162,7 @@ function App() {
           </div>
         </div>
       );
+      case "games": return <GameConsolePage />;
       case "settings": return <SettingsPage />;
       default: return <Dashboard onNavigate={setActivePage} />;
     }
