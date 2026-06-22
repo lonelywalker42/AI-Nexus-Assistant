@@ -424,19 +424,6 @@ def create_task(body: TaskCreate):
         db.close()
 
 
-@app.patch("/api/tasks/{task_id}")
-def update_task(task_id: str, body: TaskUpdate):
-    db = get_session()
-    try:
-        kwargs = {k: v for k, v in body.dict().items() if v is not None}
-        task = task_service.update_task(db, task_id, **kwargs)
-        if not task:
-            raise HTTPException(404, "Task not found")
-        return _task_to_dict(task)
-    finally:
-        db.close()
-
-
 @app.post("/api/tasks/{task_id}/toggle")
 def toggle_task(task_id: str):
     db = get_session()
@@ -3580,7 +3567,7 @@ def delete_writing_document(doc_id: str):
     db = get_session()
     try:
         ok = delete_document(db, doc_id)
-        return {"success": ok}
+        return {"ok": ok}
     finally:
         db.close()
 
@@ -4433,7 +4420,7 @@ async def delete_paper_note(paper_id: str, note_id: str):
             if paper:
                 paper.user_notes = ""
                 db.commit()
-            return {"success": True}
+            return {"ok": True}
 
         try:
             from app.models.paper import PaperNote
@@ -4443,7 +4430,7 @@ async def delete_paper_note(paper_id: str, note_id: str):
                 db.commit()
         except Exception:
             pass
-        return {"success": True}
+        return {"ok": True}
     finally:
         db.close()
 

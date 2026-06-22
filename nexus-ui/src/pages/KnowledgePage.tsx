@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { knowledgeApi, chatApi, importGroupApi, type KnowledgeCard, type ImportGroup } from "../api/client";
+import { knowledgeApi, chatApi, importGroupApi, knowledgeImportApi, type KnowledgeCard, type ImportGroup } from "../api/client";
 import { IconFile, IconChat, IconArrowLeft, IconStar, IconLightbulb, IconX, IconGlobe } from "../components/Icons";
 
 const CATEGORIES = [
@@ -302,10 +302,7 @@ export default function KnowledgePage() {
         const isAiLiterature = !!(data.kbPapers || data.papers);
         const format = isAiLiterature ? "ai-literature" : "未知";
         setImportStatus(`检测到 ${format} 格式，正在导入...`);
-        const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/json", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
-        });
-        const result = await res.json();
+        const result = await knowledgeImportApi.fromJson(data);
         setImportStatus(`导入完成: ${result.imported} 条记录 (${format} 格式)`);
         loadCards();
       } catch (err) { setImportStatus(`导入失败: ${err}`); }
@@ -323,10 +320,7 @@ export default function KnowledgePage() {
       setImporting(true); setImportStatus("正在导入 Markdown...");
       try {
         const text = await file.text();
-        const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/md", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: text, filename: file.name }),
-        });
-        const result = await res.json();
+        const result = await knowledgeImportApi.fromMarkdown(text, file.name);
         setImportStatus(`导入完成: ${result.imported} 条记录`);
         loadCards();
       } catch (err) { setImportStatus(`导入失败: ${err}`); }
@@ -348,13 +342,7 @@ export default function KnowledgePage() {
         const file = files[i];
         setImportStatus(`[${i + 1}/${files.length}] 正在处理: ${file.name}...`);
         try {
-          const arrayBuffer = await file.arrayBuffer();
-          const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/pdf", {
-            method: "POST",
-            headers: { "Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(file.name) },
-            body: arrayBuffer,
-          });
-          const result = await res.json();
+          const result = await knowledgeImportApi.fromPdf(file);
           if (result.error) { failCount++; results.push(`❌ ${file.name}: ${result.error}`); }
           else { successCount++; results.push(`✅ ${file.name}: ${result.title}`); }
         } catch (err) { failCount++; results.push(`❌ ${file.name}: ${err}`); }
@@ -369,10 +357,7 @@ export default function KnowledgePage() {
     if (!importUrl.trim()) return;
     setImporting(true); setImportStatus(`正在抓取: ${importUrl}...`);
     try {
-      const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/url", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: importUrl }),
-      });
-      const result = await res.json();
+      const result = await knowledgeImportApi.fromUrl(importUrl);
       if (result.error) setImportStatus(`❌ 导入失败: ${result.error}`);
       else { setImportStatus(`✅ 导入完成: ${result.title}`); setImportUrl(""); loadCards(); }
     } catch (err) { setImportStatus(`❌ 导入失败: ${err}`); }

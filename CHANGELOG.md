@@ -1,5 +1,33 @@
 # Changelog
 
+## v4.3.0 (2026-06-23) — 代码规范化 + 检查更新修复
+
+### 修复
+- **检查更新 404/403 错误**: 修复所有更新 URL 中 GitHub owner 从 `chenjingwei` → `lonelywalker42`
+  - `tauri.conf.json` updater endpoint
+  - `SettingsPage.tsx` GitHub API 检查 + 浏览器下载链接
+  - `release/latest.json` 下载 URL
+  - `docs/PRD-v4-cross-platform-and-updater.md` 文档引用
+
+### 代码规范化
+- **前端 API 层统一**: KnowledgePage.tsx 和 SettingsPage.tsx 共 15 处 `raw fetch()` 调用全部替换为 `client.ts` API 方法，消除 JWT 认证绕过风险
+- **client.ts 补全**:
+  - 新增 `APP_VERSION` 常量，消除 Sidebar/SettingsPage 版本号硬编码
+  - 新增 `streamRequest()` 工具函数，`chatApi.stream` 和 `reviewsApi.generate` 共用，修复后者缺失 `try/finally` + `releaseLock()` 的 bug
+  - 新增 `backupApi` 命名空间（list/create/restore/exportDb/importDb）
+  - 扩展 `systemApi`（mineruStatus/searchServiceStatus/Start/Stop/installMineru）
+  - 扩展 `knowledgeImportApi`（fromJson/fromMarkdown/fromPdf/fromUrl）
+  - 修复 `writingApi.delete` 和 `papersApi.deleteNote` 返回类型统一为 `{ ok: boolean }`
+- **重复代码消除**: `renderSimpleMarkdown`/`escapeHtml` 从 3 个页面文件提取到 `src/utils/markdown.ts`
+- **server.py 修复**: 删除被覆盖的重复路由定义 `PATCH /api/tasks/{task_id}`（死代码）
+- **server.py 返回格式**: `delete_writing_document` 和 `delete_paper_note` 返回 `{ ok: true }` 替代 `{ success: true }`
+
+### 构建产物
+- 版本号统一升级至 v4.3.0（tauri.conf.json + APP_VERSION）
+- 便携版: `AI-Nexus-Assistant.exe`
+- MSI 安装包: `AI Nexus Assistant_4.3.0_x64_en-US.msi`
+- NSIS 安装包: `AI Nexus Assistant_4.3.0_x64-setup.exe`
+
 ## v4.2.0 (2026-06-23) — 游戏机模式集成 + 8 款新游戏（共 12 款）
 
 ### 新增

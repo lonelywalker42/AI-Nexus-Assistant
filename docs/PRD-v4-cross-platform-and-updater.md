@@ -268,7 +268,7 @@ GitHub Release v3.6.0
   "platforms": {
     "windows-x86_64": {
       "signature": "<.sig 文件内容>",
-      "url": "https://github.com/chenjingwei/AI-Nexus-Assistant/releases/download/v3.6.0/AI-Nexus-Assistant_3.6.0_x64-setup.nsis.zip"
+      "url": "https://github.com/lonelywalker42/AI-Nexus-Assistant/releases/download/v3.6.0/AI-Nexus-Assistant_3.6.0_x64-setup.nsis.zip"
     }
   }
 }
@@ -310,7 +310,7 @@ async function doUpdate() {
 ```typescript
 // 移动端版本检查（不使用 updater 插件）
 async function checkMobileUpdate() {
-  const resp = await fetch('https://api.github.com/repos/chenjingwei/AI-Nexus-Assistant/releases/latest');
+  const resp = await fetch('https://api.github.com/repos/lonelywalker42/AI-Nexus-Assistant/releases/latest');
   const data = await resp.json();
   const latestVer = data.tag_name.replace('v', '');
   if (compareVersions(latestVer, CURRENT_VERSION) > 0) {

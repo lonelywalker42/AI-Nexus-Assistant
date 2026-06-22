@@ -5,6 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
+export const APP_VERSION = "4.3.0";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
@@ -152,6 +153,39 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// ── SSE 流式请求工具 ──────────────────────────────────────
+
+async function* streamRequest(path: string, body: Record<string, unknown>, signal?: AbortSignal) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify(body),
+    signal,
+  });
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") return;
+          try { yield JSON.parse(data); } catch {}
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 // ── System ────────────────────────────────────────────────
 
 export interface SystemInfo {
@@ -163,6 +197,23 @@ export interface SystemInfo {
 
 export const systemApi = {
   info: () => request<SystemInfo>("/api/system/info"),
+  mineruStatus: () => request<{ available: boolean; version: string }>("/api/system/mineru-status"),
+  installMineru: async () => {
+    const res = await fetch(`${API_BASE}/api/system/install-mineru`, {
+      method: "POST",
+      headers: { ...getAuthHeader() },
+    });
+    const reader = res.body?.getReader();
+    if (reader) {
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    }
+  },
+  searchServiceStatus: () => request<{ running: boolean }>("/api/search-service/status"),
+  searchServiceStart: () => request<{ ok: boolean; error?: string }>("/api/search-service/start", { method: "POST" }),
+  searchServiceStop: () => request<{ ok: boolean }>("/api/search-service/stop", { method: "POST" }),
 };
 
 // ── Dashboard ──────────────────────────────────────────────
@@ -442,38 +493,8 @@ export const chatApi = {
       method: "POST",
       body: JSON.stringify({ content, role: "user" }),
     }),
-  stream: async function* (sessionId: string, modelId?: string, signal?: AbortSignal) {
-    const res = await fetch(`${API_BASE}/api/chat/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...getAuthHeader() },
-      body: JSON.stringify({ session_id: sessionId, model_id: modelId }),
-      signal,
-    });
-    const reader = res.body?.getReader();
-    if (!reader) return;
-    const decoder = new TextDecoder();
-    let buffer = "";
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6).trim();
-            if (data === "[DONE]") return;
-            try {
-              yield JSON.parse(data);
-            } catch {}
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-  },
+  stream: (sessionId: string, modelId?: string, signal?: AbortSignal) =>
+    streamRequest("/api/chat/stream", { session_id: sessionId, model_id: modelId }, signal),
 };
 
 // ── Agent ─────────────────────────────────────────────────
@@ -589,7 +610,7 @@ export const papersApi = {
   updateNote: (paperId: string, noteId: string, content: string) =>
     request<{ id: string; content: string }>(`/api/papers/${paperId}/notes/${noteId}`, { method: "PUT", body: JSON.stringify({ content }) }),
   deleteNote: (paperId: string, noteId: string) =>
-    request<{ success: boolean }>(`/api/papers/${paperId}/notes/${noteId}`, { method: "DELETE" }),
+    request<{ ok: boolean }>(`/api/papers/${paperId}/notes/${noteId}`, { method: "DELETE" }),
 
   // v3.6.0 新增: 语义近邻推荐
   neighbors: (paperId: string, topK: number = 10) =>
@@ -688,6 +709,36 @@ export const mineruApi = {
       `/api/papers/${paperId}/convert-markdown`, { method: "POST" }),
 };
 
+// ── Backup ─────────────────────────────────────────────────
+
+export interface BackupItem {
+  name: string;
+  path: string;
+  size: number;
+  time: string;
+}
+
+export const backupApi = {
+  list: () => request<BackupItem[]>("/api/backups"),
+  create: () => request<{ path: string }>("/api/backup", { method: "POST" }),
+  restore: (path: string) => request<{ ok: boolean }>("/api/backups/restore", {
+    method: "POST", body: JSON.stringify({ path }),
+  }),
+  exportDb: async () => {
+    const res = await fetch(`${API_BASE}/api/backups/export-db`, { headers: { ...getAuthHeader() } });
+    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+    return res.blob();
+  },
+  importDb: async (data: ArrayBuffer) => {
+    const res = await fetch(`${API_BASE}/api/backups/import-db`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", ...getAuthHeader() },
+      body: data,
+    });
+    return res.json() as Promise<{ ok: boolean; detail?: string }>;
+  },
+};
+
 // ── Reviews (综述) ──────────────────────────────────────────
 
 export interface Review {
@@ -702,31 +753,8 @@ export const reviewsApi = {
   list: () => request<Review[]>("/api/reviews"),
   get: (id: string) => request<Review>(`/api/reviews/${id}`),
   delete: (id: string) => request<{ ok: boolean }>(`/api/reviews/${id}`, { method: "DELETE" }),
-  generate: async function* (paperIds: string[], title?: string) {
-    const res = await fetch(`${API_BASE}/api/reviews/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...getAuthHeader() },
-      body: JSON.stringify({ paper_ids: paperIds, title: title || "" }),
-    });
-    const reader = res.body?.getReader();
-    if (!reader) return;
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6).trim();
-          if (data === "[DONE]") return;
-          try { yield JSON.parse(data); } catch {}
-        }
-      }
-    }
-  },
+  generate: (paperIds: string[], title?: string) =>
+    streamRequest("/api/reviews/generate", { paper_ids: paperIds, title: title || "" }),
 };
 
 // ── History ────────────────────────────────────────────────
@@ -771,7 +799,7 @@ export const writingApi = {
     request<{ id: string }>("/api/writing/documents", { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: Partial<WritingDocument>) =>
     request<{ id: string; word_count: number }>(`/api/writing/documents/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  delete: (id: string) => request<{ success: boolean }>(`/api/writing/documents/${id}`, { method: "DELETE" }),
+  delete: (id: string) => request<{ ok: boolean }>(`/api/writing/documents/${id}`, { method: "DELETE" }),
   linkPaper: (docId: string, paperId: string) =>
     request<{ id: string; linked_paper_ids: string[] }>(`/api/writing/documents/${docId}/link-paper`, { method: "POST", body: JSON.stringify({ paper_id: paperId }) }),
   aiOperation: (docId: string, operation: string, text?: string) =>
@@ -813,8 +841,32 @@ export const smartReviewApi = {
 
 export const knowledgeImportApi = {
   fromUrl: (url: string) =>
-    request<{ id: string; title: string }>("/api/knowledge/import/url", {
+    request<{ id: string; title: string; error?: string }>("/api/knowledge/import/url", {
       method: "POST",
       body: JSON.stringify({ url }),
     }),
+  fromJson: (data: unknown) =>
+    request<{ imported: number }>("/api/knowledge/import/json", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  fromMarkdown: (content: string, filename: string) =>
+    request<{ imported: number }>("/api/knowledge/import/md", {
+      method: "POST",
+      body: JSON.stringify({ content, filename }),
+    }),
+  fromPdf: async (file: File) => {
+    const arrayBuffer = await file.arrayBuffer();
+    const res = await fetch(`${API_BASE}/api/knowledge/import/pdf`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Filename": encodeURIComponent(file.name),
+        ...getAuthHeader(),
+      },
+      body: arrayBuffer,
+    });
+    if (!res.ok) throw new Error(`Import failed: ${res.status}`);
+    return res.json() as Promise<{ title?: string; error?: string }>;
+  },
 };

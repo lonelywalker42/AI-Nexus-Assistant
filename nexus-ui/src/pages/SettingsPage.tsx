@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { modelsApi, type ModelConfig } from "../api/client";
+import { modelsApi, backupApi, systemApi, APP_VERSION, type ModelConfig, type BackupItem } from "../api/client";
 import { useAppName, setAppName, resetAppName } from "../hooks/useAppName";
 
 // 自动更新相关类型
@@ -9,13 +9,6 @@ interface UpdateInfo {
   available: boolean;
   downloading?: boolean;
   progress?: number;
-}
-
-interface BackupItem {
-  name: string;
-  path: string;
-  size: number;
-  time: string;
 }
 
 export default function SettingsPage() {
@@ -43,11 +36,11 @@ export default function SettingsPage() {
     setCheckingUpdate(true);
     setUpdateError(null);
     try {
-      const resp = await fetch("https://api.github.com/repos/chenjingwei/AI-Nexus-Assistant/releases/latest");
+      const resp = await fetch("https://api.github.com/repos/lonelywalker42/AI-Nexus-Assistant/releases/latest");
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       const latestVer = (data.tag_name as string).replace("v", "");
-      const currentVer = "4.0.1"; // 与 tauri.conf.json version 一致
+      const currentVer = APP_VERSION;
       const available = compareVersions(latestVer, currentVer) > 0;
       setUpdateInfo({
         version: latestVer,
@@ -163,8 +156,8 @@ export default function SettingsPage() {
   }, [appName]);
 
   const loadModels = () => modelsApi.list().then(setModels).catch(console.error);
-  const loadBackups = () => fetch("http://127.0.0.1:8765/api/backups").then(r => r.json()).then(setBackups).catch(() => {});
-  const loadSearchStatus = () => fetch("http://127.0.0.1:8765/api/search-service/status").then(r => r.json()).then(d => setSearchRunning(d.running)).catch(() => setSearchRunning(null));
+  const loadBackups = () => backupApi.list().then(setBackups).catch(() => {});
+  const loadSearchStatus = () => systemApi.searchServiceStatus().then(d => setSearchRunning(d.running)).catch(() => setSearchRunning(null));
 
   const handleSaveModel = async () => {
     if (!form.name || !form.base_url || !form.model_name) return;
@@ -210,12 +203,7 @@ export default function SettingsPage() {
   const handleRestore = async (path: string) => {
     if (!confirm("确定要恢复到此备份？当前数据将被覆盖（恢复前会自动备份当前数据）。")) return;
     try {
-      const res = await fetch("http://127.0.0.1:8765/api/backups/restore", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
-      });
-      const result = await res.json();
+      const result = await backupApi.restore(path);
       if (result.ok) {
         alert("恢复成功！请重启应用以加载恢复的数据。");
         loadBackups();
@@ -479,7 +467,7 @@ export default function SettingsPage() {
               style={{ color: "#ef4444" }}
               onClick={async () => {
                 try {
-                  await fetch("http://127.0.0.1:8765/api/search-service/stop", { method: "POST" });
+                  await systemApi.searchServiceStop();
                   loadSearchStatus();
                 } catch (err) { alert(`停止失败: ${err}`); }
               }}
@@ -488,8 +476,7 @@ export default function SettingsPage() {
             <button className="btn-gradient btn-click text-xs"
               onClick={async () => {
                 try {
-                  const res = await fetch("http://127.0.0.1:8765/api/search-service/start", { method: "POST" });
-                  const data = await res.json();
+                  const data = await systemApi.searchServiceStart();
                   loadSearchStatus();
                   if (!data.ok) {
                     const errMsg = data.error || "未知错误";
@@ -550,7 +537,7 @@ export default function SettingsPage() {
             {checkingUpdate ? "检查中..." : "检查更新"}
           </button>
           <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-            当前版本: v4.0.1
+            当前版本: v{APP_VERSION}
           </span>
         </div>
 
@@ -599,7 +586,7 @@ export default function SettingsPage() {
                       }
                     } catch {
                       // 非 Tauri 环境，打开浏览器下载
-                      window.open(`https://github.com/chenjingwei/AI-Nexus-Assistant/releases/latest`, "_blank");
+                      window.open(`https://github.com/lonelywalker42/AI-Nexus-Assistant/releases/latest`, "_blank");
                     }
                   }}
                 >
@@ -627,12 +614,8 @@ export default function SettingsPage() {
                 const text = await file.text();
                 try {
                   const data = JSON.parse(text);
-                  const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/json", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(data),
-                  });
-                  const result = await res.json();
+                  const { knowledgeImportApi } = await import("../api/client");
+                  const result = await knowledgeImportApi.fromJson(data);
                   alert(`导入完成: ${JSON.stringify(result)}`);
                 } catch (err) {
                   alert(`导入失败: ${err}`);
@@ -644,8 +627,7 @@ export default function SettingsPage() {
           <button className="btn-ghost"
             onClick={async () => {
               try {
-                const res = await fetch("http://127.0.0.1:8765/api/backup", { method: "POST" });
-                const result = await res.json();
+                const result = await backupApi.create();
                 alert(`备份完成: ${result.path || "成功"}`);
                 loadBackups();
               } catch (err) {
@@ -664,12 +646,7 @@ export default function SettingsPage() {
                 if (!confirm(`确定要从 "${file.name}" 恢复数据吗？当前数据将被覆盖（恢复前会自动备份）。`)) return;
                 try {
                   const bytes = await file.arrayBuffer();
-                  const res = await fetch("http://127.0.0.1:8765/api/backups/import-db", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/octet-stream" },
-                    body: bytes,
-                  });
-                  const result = await res.json();
+                  const result = await backupApi.importDb(bytes);
                   if (result.ok) {
                     alert("恢复成功！请重启应用以加载恢复的数据。");
                     loadBackups();
@@ -686,9 +663,7 @@ export default function SettingsPage() {
           <button className="btn-ghost"
             onClick={async () => {
               try {
-                const res = await fetch("http://127.0.0.1:8765/api/backups/export-db");
-                if (!res.ok) { alert("导出失败"); return; }
-                const blob = await res.blob();
+                const blob = await backupApi.exportDb();
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
@@ -752,8 +727,7 @@ function MinerUSection() {
 
   const checkStatus = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8765/api/system/mineru-status");
-      const data = await res.json();
+      const data = await systemApi.mineruStatus();
       setStatus(data);
     } catch {}
   };
@@ -780,14 +754,7 @@ function MinerUSection() {
               if (!confirm("确定安装 MinerU？需要约 2GB 磁盘空间，安装过程可能需要几分钟。")) return;
               setLoading(true);
               try {
-                const res = await fetch("http://127.0.0.1:8765/api/system/install-mineru", { method: "POST" });
-                const reader = res.body?.getReader();
-                if (reader) {
-                  while (true) {
-                    const { done } = await reader.read();
-                    if (done) break;
-                  }
-                }
+                await systemApi.installMineru();
                 alert("MinerU 安装完成！");
                 checkStatus();
               } catch (err) {

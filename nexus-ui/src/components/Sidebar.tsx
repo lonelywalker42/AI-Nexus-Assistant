@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { getPageIcon } from "../App";
-import { systemApi, type SystemInfo } from "../api/client";
+import { systemApi, APP_VERSION, type SystemInfo } from "../api/client";
 import { useAppName } from "../hooks/useAppName";
 import { IconChat } from "./Icons";
 
@@ -126,7 +126,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
           onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
         >
-          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v3.5.0</span>
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>v{APP_VERSION}</span>
         </div>
       </aside>
 
@@ -143,7 +143,7 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
             <div className="text-center space-y-3">
               <div className="text-3xl font-bold tracking-wider" style={{ color: "var(--accent-blue)" }}>{name}</div>
               <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{name} Assistant</p>
-              <p className="text-xs" style={{ color: "var(--text-muted)" }}>v3.5.0</p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>v{APP_VERSION}</p>
               <div className="h-px" style={{ background: "var(--border-color)" }} />
               <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                 面向航空航天/控制领域科研人员的个人研究助手桌面应用。
