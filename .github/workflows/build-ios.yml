@@ -33,7 +33,7 @@ jobs:
         run: cd nexus-ui && cargo tauri ios init
 
       - name: Build iOS
-        run: cd nexus-ui && cargo tauri ios build
+        run: cd nexus-ui && cargo tauri ios build --no-codesign
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
