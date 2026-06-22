@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v4.0.1**.
+AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v4.1.1**.
 
 ## v4.0.0 Features (Multi-platform + Auto-update)
 
@@ -180,6 +180,7 @@ git commit -m "chore: update open-webSearch submodule"
 - UUID primary keys (`String(36)`) on all tables
 - JSON-in-Text columns for arrays/objects (e.g., `Task.sub_tasks`, `Paper.authors`)
 - `init_db()` imports all models then calls `create_all()` — no Alembic migrations
+- **Incremental migration**: `_migrate_columns()` in `init_db()` adds missing columns via `ALTER TABLE`
 - `get_session()` returns a new session; caller must close it (UI uses try/finally)
 
 ### Models (`app/models/`)
@@ -203,6 +204,7 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - `AIRouter` class: loads models from DB, routes by purpose (summary/review/chat)
 - Supports both OpenAI and Anthropic streaming protocols
 - **Protocol fallback**: if anthropic library not installed, automatically falls back to openai protocol
+- **JSON mode**: `response_format={"type": "json_object"}` 支持，含自动 fallback（模型不支持时重试）
 - Handles DeepSeek `reasoning_content` (thinking) field
 - Returns `{"type": "thinking"|"content", "data": str}` chunks
 - **Tool calling**: OpenAI function calling + Anthropic tool use with agentic loop (max 3 rounds)
@@ -268,6 +270,7 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
   - Search: `/api/search` (saves history automatically, 50000 char limit)
   - History: `/api/history` (GET list, POST create), `/api/history/{id}` (DELETE)
   - Knowledge: `/api/knowledge/cards`, `/api/knowledge/cards/{id}`, `/api/knowledge/import/{json,pdf,md}`
+  - DeepSeek Import: `/api/knowledge/import/deepseek`, `/api/knowledge/import-groups/{id}/progress`
   - Chat: `/api/chat/stream` (SSE), `/api/chat/sessions`, `/api/chat/sessions/{id}/messages`
   - Models: `/api/models`, `/api/models/{id}` (GET, POST, PUT, DELETE)
   - System: `/api/dashboard`, `/api/backup`, `/api/backups/export-db`
@@ -285,9 +288,12 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - **Auto-save**: Task/experiment pages save on cell/text edit (no explicit save button)
 - **Streaming AI**: Uses `ReadableStream` (Tauri) for real-time output
 - **AI Tool Calling**: `router.py` supports OpenAI function calling + Anthropic tool use with agentic loop (max 3 rounds). SSE chunk types: `thinking`, `content`, `tool_call`, `tool_result`. Intermediate tool-calling rounds suppress content from frontend.
+- **AI JSON Mode**: `response_format={"type": "json_object"}` 支持，含自动 fallback（模型不支持时重试）
 - **Web Search**: `app/ai/web_search.py` — proxy=None bypasses local proxy, 60s timeout, multi-engine aggregation
+- **DeepSeek Import**: Two-phase pipeline: (1) parse JSON + preprocess + save sessions (no LLM), (2) batch LLM summarization → knowledge cards. ChatSession has `import_group_id` for grouping.
 - **Backup**: backup/restore handles .db + .db-wal + .db-shm, WAL checkpoint before backup
 - **Export**: ZIP export includes all three db files; import supports .db and .zip
+- **Incremental Migration**: `_migrate_columns()` in `init_db()` adds missing columns via `ALTER TABLE` (no Alembic)
 
 ---
 

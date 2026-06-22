@@ -1,5 +1,21 @@
 # Changelog
 
+## v4.1.1 (2026-06-23) — DeepSeek 对话导入三问题修复
+
+### 修复
+- **导入失败率降低**: 放宽消息过滤阈值（`_SHORT_THRESHOLD` 3→1），缩小停用词范围，清洗后消息不足时自动 fallback 保留最长消息
+- **摘要生成成功率提升**: AIRouter 添加 `response_format={"type": "json_object"}` 支持，含自动 fallback（模型不支持时自动重试）
+- **导入会话分组管理**: ChatPage 新增「📥 导入」分类，导入的会话按分组折叠显示，可展开查看各会话
+
+### 改动
+- `app/ai/router.py`: `_call_openai()` 支持 `response_format` 参数，含 fallback 机制
+- `app/db.py`: 新增 `_migrate_columns()` 增量迁移函数，自动添加缺失列
+- `app/models/chat.py`: ChatSession 新增 `import_group_id` 外键字段（FK → import_groups）
+- `app/services/deepseek_import_service.py`: 放宽过滤阈值 + 使用 `response_format` 调用 LLM
+- `server.py`: `/api/chat/sessions` 响应包含 `import_group_id` 字段
+- `nexus-ui/src/api/client.ts`: ChatSession 类型添加 `import_group_id`
+- `nexus-ui/src/pages/ChatPage.tsx`: 新增「📥 导入」分类 + 分组折叠显示 UI
+
 ## v4.1.0 (2026-06-23) — PDF 文献导入体验升级（借鉴 PaperQuay）
 
 ### 新增
