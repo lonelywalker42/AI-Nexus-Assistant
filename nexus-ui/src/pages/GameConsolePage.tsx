@@ -32,7 +32,7 @@ export default function GameConsolePage() {
           <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>🎮 游戏机模式</span>
           <span className="text-[10px] px-2 py-0.5 rounded-full"
             style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>
-            8 款游戏
+            12 款游戏
           </span>
         </div>
         <div className="flex items-center gap-1">

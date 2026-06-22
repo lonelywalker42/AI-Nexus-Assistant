@@ -84,7 +84,7 @@ function getHighScore(gameKey) {
 
 function showHighScores(gameKey) {
   const scores = getHighScores(gameKey);
-  const gameNames = { '2048': '2 0 4 8', 'tetris': 'TETRIS', 'shooter': 'SHOOTER', 'wordhopper': 'WORD HOP', 'snake': 'SNAKE', 'breakout': 'BREAKOUT', 'minesweeper': 'MINES', 'flappy': 'FLAPPY' };
+  const gameNames = { '2048': '2 0 4 8', 'tetris': 'TETRIS', 'shooter': 'SHOOTER', 'wordhopper': 'WORD HOP', 'snake': 'SNAKE', 'breakout': 'BREAKOUT', 'minesweeper': 'MINES', 'flappy': 'FLAPPY', 'pacman': 'PAC-MAN', 'pong': 'PONG', 'frogger': 'FROGGER', 'bomberman': 'BOMBER' };
   let selected = -1; // -1 = back button
 
   function drawScores() {
@@ -245,11 +245,15 @@ function drawMenu() {
     { name: 'BREAKOUT', key: 'breakout', desc: 'SMASH BRICKS' },
     { name: 'MINES', key: 'minesweeper', desc: 'SWEEP MINES' },
     { name: 'FLAPPY', key: 'flappy', desc: 'TAP & FLY' },
+    { name: 'PAC-MAN', key: 'pacman', desc: 'EAT DOTS' },
+    { name: 'PONG', key: 'pong', desc: 'PING PONG' },
+    { name: 'FROGGER', key: 'frogger', desc: 'CROSS ROAD' },
+    { name: 'BOMBER', key: 'bomberman', desc: 'BLAST WALLS' },
   ];
 
-  const COLS = 2, bw = 200, bh = 65, gap = 12;
+  const COLS = 2, bw = 200, bh = 55, gap = 8;
   const startX = (W - COLS * bw - (COLS - 1) * gap) / 2;
-  const startY = 140;
+  const startY = 120;
 
   games.forEach((g, i) => {
     const col = i % COLS, row = Math.floor(i / COLS);
@@ -269,21 +273,21 @@ function drawMenu() {
 
     // Name
     ctx.fillStyle = currentGame === g.key ? C.amber : C.green;
-    ctx.font = '16px Consolas, monospace';
+    ctx.font = '15px Consolas, monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(g.name, x + bw/2, y + 26);
+    ctx.fillText(g.name, x + bw/2, y + 22);
 
     // Description
     ctx.fillStyle = C.dim;
-    ctx.font = '10px Consolas, monospace';
-    ctx.fillText(g.desc, x + bw/2, y + 42);
+    ctx.font = '9px Consolas, monospace';
+    ctx.fillText(g.desc, x + bw/2, y + 36);
 
     // High score
     const highScore = getHighScore(g.key);
     if (highScore > 0) {
       ctx.fillStyle = C.yellow;
       ctx.font = '9px Consolas, monospace';
-      ctx.fillText('HI: ' + highScore, x + bw/2, y + 56);
+      ctx.fillText('HI: ' + highScore, x + bw/2, y + 48);
     }
   });
 
@@ -295,7 +299,7 @@ function drawMenu() {
 }
 
 let menuIdx = 0;
-const GAME_KEYS = ['2048', 'tetris', 'shooter', 'wordhopper', 'snake', 'breakout', 'minesweeper', 'flappy'];
+const GAME_KEYS = ['2048', 'tetris', 'shooter', 'wordhopper', 'snake', 'breakout', 'minesweeper', 'flappy', 'pacman', 'pong', 'frogger', 'bomberman'];
 
 function menuKey(e) {
   const COLS = 2;
@@ -311,9 +315,9 @@ canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
   const my = (e.clientY - rect.top) * (H / rect.height);
   const mx = (e.clientX - rect.left) * (W / rect.width);
-  const COLS = 2, bw = 200, bh = 65, gap = 12;
+  const COLS = 2, bw = 200, bh = 55, gap = 8;
   const startX = (W - COLS * bw - (COLS - 1) * gap) / 2;
-  const startY = 140;
+  const startY = 120;
   let hovered = null;
   GAME_KEYS.forEach((k, i) => {
     const col = i % COLS, row = Math.floor(i / COLS);
@@ -329,9 +333,9 @@ canvas.addEventListener('click', (e) => {
   const rect = canvas.getBoundingClientRect();
   const my = (e.clientY - rect.top) * (H / rect.height);
   const mx = (e.clientX - rect.left) * (W / rect.width);
-  const COLS = 2, bw = 200, bh = 65, gap = 12;
+  const COLS = 2, bw = 200, bh = 55, gap = 8;
   const startX = (W - COLS * bw - (COLS - 1) * gap) / 2;
-  const startY = 140;
+  const startY = 120;
   GAME_KEYS.forEach((k, i) => {
     const col = i % COLS, row = Math.floor(i / COLS);
     const x = startX + col * (bw + gap);
@@ -352,6 +356,10 @@ function startGame(key) {
   else if (key === 'breakout') gameInstance = new GameBreakout();
   else if (key === 'minesweeper') gameInstance = new GameMinesweeper();
   else if (key === 'flappy') gameInstance = new GameFlappy();
+  else if (key === 'pacman') gameInstance = new GamePacman();
+  else if (key === 'pong') gameInstance = new GamePong();
+  else if (key === 'frogger') gameInstance = new GameFrogger();
+  else if (key === 'bomberman') gameInstance = new GameBomberman();
 
   // Check for saved progress
   const saved = loadGameProgress(key);
@@ -2875,6 +2883,896 @@ class GameFlappy {
       const hi = getHighScore('flappy');
       if (hi > 0) { ctx.fillStyle = C.yellow; ctx.font = '12px Consolas, monospace'; ctx.fillText('BEST: ' + hi, W/2, H/2 + 15); }
       ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace'; ctx.fillText('R restart · ESC menu · H scores', W/2, H/2 + 45);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  PAC-MAN — Classic maze chase
+// ══════════════════════════════════════════════
+class GamePacman {
+  constructor() {
+    this.cellSize = 18;
+    this.cols = 25; this.rows = 27;
+    this.ox = (W - this.cols * this.cellSize) / 2;
+    this.oy = 40;
+    this.map = [];
+    this.pacman = { x: 12, y: 20, dir: { x: 0, y: 0 }, nextDir: { x: 0, y: 0 }, mouth: 0, mouthDir: 1 };
+    this.ghosts = [];
+    this.dots = 0; this.score = 0; this.lives = 3; this.over = false;
+    this.showHelp = true; this.moveTimer = 0; this.moveSpeed = 120;
+    this.ghostTimer = 0; this.powered = 0; this.powerTimer = 0;
+  }
+
+  initMap() {
+    // 0=path+dot, 1=wall, 2=path no dot, 3=power pellet, 4=ghost house
+    const raw = [
+      '1111111111111111111111111',
+      '1000000000001100000000001',
+      '1011101111101101111011101',
+      '1311101111101101111011131',
+      '1011101111101101111011101',
+      '1000000000000000000000001',
+      '1011101101111111011011101',
+      '1011101101111111011011101',
+      '1000001100001100001100001',
+      '1111101111121101111111101',
+      '1111101111121101111111101',
+      '1111101122222222221111101',
+      '1111101121111111121111101',
+      '2222202221444441222222222',
+      '1111101121111111121111101',
+      '1111101122222222221111101',
+      '1111101121111111121111101',
+      '1111101121111111121111101',
+      '1000000000001100000000001',
+      '1011101111101101111011101',
+      '1301100000002200000011031',
+      '1101101101111111011011001',
+      '1101101101111111011011001',
+      '1000001100001100001100001',
+      '1011111111101101111111101',
+      '1000000000000000000000001',
+      '1111111111111111111111111',
+    ];
+    this.map = raw.map(row => row.split('').map(Number));
+    this.dots = 0;
+    for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
+      if (this.map[r][c] === 0) this.dots++;
+    }
+  }
+
+  init(savedState) {
+    if (savedState) {
+      this.score = savedState.score; this.lives = savedState.lives;
+      this.over = savedState.over || false; this.showHelp = false;
+      this.map = savedState.map; this.dots = savedState.dots;
+      this.pacman = savedState.pacman;
+      this.ghosts = savedState.ghosts;
+    } else {
+      this.score = 0; this.lives = 3; this.over = false; this.showHelp = true;
+      this.initMap();
+      this.pacman = { x: 12, y: 20, dir: { x: 0, y: 0 }, nextDir: { x: 0, y: 0 }, mouth: 0, mouthDir: 1 };
+      this.ghosts = [
+        { x: 11, y: 13, dir: { x: 1, y: 0 }, color: '#ff0000' },
+        { x: 12, y: 13, dir: { x: 0, y: -1 }, color: '#ffb8ff' },
+        { x: 13, y: 13, dir: { x: -1, y: 0 }, color: '#00ffff' },
+        { x: 14, y: 13, dir: { x: 0, y: 1 }, color: '#ffb852' },
+      ];
+    }
+    this.powered = 0;
+    this._keyD = (e) => this.key(e);
+    document.addEventListener('keydown', this._keyD);
+    this.lastTime = performance.now();
+    this.loop();
+  }
+
+  saveProgress() {
+    saveGameProgress('pacman', {
+      score: this.score, lives: this.lives, map: this.map, dots: this.dots,
+      pacman: this.pacman, ghosts: this.ghosts, over: this.over
+    });
+  }
+
+  destroy() { document.removeEventListener('keydown', this._keyD); if (this._raf) cancelAnimationFrame(this._raf); if (this._helpRaf) cancelAnimationFrame(this._helpRaf); }
+
+  key(e) {
+    if (this.showHelp) { if (e.key === 'Escape') { backToMenu(); return; } this.showHelp = false; this.lastTime = performance.now(); this.loop(); return; }
+    if (this.over) {
+      if (e.key === 'r') { this.destroy(); gameInstance = new GamePacman(); gameInstance.init(); return; }
+      if (e.key === 'h' || e.key === 'H') { showHighScores('pacman'); return; }
+      if (e.key === 'Escape') { backToMenu(); return; }
+      return;
+    }
+    if (e.key === 'Escape') { backToMenu(); return; }
+    const map = { ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 }, ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 } };
+    if (map[e.key]) { e.preventDefault(); this.pacman.nextDir = map[e.key]; }
+  }
+
+  canMove(x, y) {
+    if (y < 0 || y >= this.rows) return true; // tunnel
+    if (x < 0 || x >= this.cols) return true; // tunnel wrap
+    return this.map[y][x] !== 1;
+  }
+
+  loop() {
+    if (this.over) { this.draw(); return; }
+    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
+    const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
+    this.moveTimer += dt;
+    if (this.moveTimer >= this.moveSpeed) {
+      this.moveTimer = 0;
+      this.movePacman();
+      this.moveGhosts();
+    }
+    this.draw();
+    this._raf = requestAnimationFrame(() => this.loop());
+  }
+
+  movePacman() {
+    const p = this.pacman;
+    // Try next dir
+    let nx = p.x + p.nextDir.x, ny = p.y + p.nextDir.y;
+    if (nx < 0) nx = this.cols - 1; if (nx >= this.cols) nx = 0;
+    if (this.canMove(nx, ny)) p.dir = p.nextDir;
+    // Move in current dir
+    nx = p.x + p.dir.x; ny = p.y + p.dir.y;
+    if (nx < 0) nx = this.cols - 1; if (nx >= this.cols) nx = 0;
+    if (this.canMove(nx, ny)) { p.x = nx; p.y = ny; }
+    // Eat dot
+    if (this.map[p.y] && this.map[p.y][p.x] === 0) {
+      this.map[p.y][p.x] = 2; this.score += 10; this.dots--;
+    }
+    // Power pellet
+    if (this.map[p.y] && this.map[p.y][p.x] === 3) {
+      this.map[p.y][p.x] = 2; this.score += 50; this.dots--; this.powered = 300;
+    }
+    if (this.powered > 0) this.powered--;
+    // Mouth animation
+    p.mouth += p.mouthDir * 0.15;
+    if (p.mouth > 0.4 || p.mouth < 0) p.mouthDir = -p.mouthDir;
+    // Win check
+    if (this.dots <= 0) { this.over = true; saveHighScore('pacman', this.score, {}); clearGameProgress('pacman'); }
+    // Ghost collision
+    this.ghosts.forEach(g => {
+      if (g.x === p.x && g.y === p.y) {
+        if (this.powered > 0) { g.x = 12; g.y = 13; this.score += 200; }
+        else {
+          this.lives--;
+          if (this.lives <= 0) { this.over = true; saveHighScore('pacman', this.score, {}); clearGameProgress('pacman'); }
+          else { p.x = 12; p.y = 20; p.dir = { x: 0, y: 0 }; p.nextDir = { x: 0, y: 0 }; }
+        }
+      }
+    });
+  }
+
+  moveGhosts() {
+    this.ghostTimer++;
+    if (this.ghostTimer % 2 !== 0) return; // ghosts move slower
+    this.ghosts.forEach(g => {
+      const dirs = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
+      // Don't reverse
+      const reverse = { x: -g.dir.x, y: -g.dir.y };
+      const valid = dirs.filter(d => !(d.x === reverse.x && d.y === reverse.y));
+      let choices = valid.filter(d => {
+        let nx = g.x + d.x, ny = g.y + d.y;
+        if (nx < 0) nx = this.cols - 1; if (nx >= this.cols) nx = 0;
+        return this.canMove(nx, ny);
+      });
+      if (choices.length === 0) choices = valid; // stuck
+      if (choices.length > 0) {
+        // Simple chase: prefer direction toward pacman
+        const p = this.pacman;
+        choices.sort((a, b) => {
+          const da = Math.abs(g.x + a.x - p.x) + Math.abs(g.y + a.y - p.y);
+          const db = Math.abs(g.x + b.x - p.x) + Math.abs(g.y + b.y - p.y);
+          return da - db;
+        });
+        g.dir = this.powered > 0 ? choices[Math.floor(Math.random() * choices.length)] : choices[0];
+        let nx = g.x + g.dir.x, ny = g.y + g.dir.y;
+        if (nx < 0) nx = this.cols - 1; if (nx >= this.cols) nx = 0;
+        if (this.canMove(nx, ny)) { g.x = nx; g.y = ny; }
+      }
+    });
+  }
+
+  drawHelp() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.yellow; ctx.font = '28px Consolas, monospace';
+    ctx.shadowColor = C.yellow; ctx.shadowBlur = 12;
+    ctx.fillText('P A C - M A N', W/2, 100); ctx.shadowBlur = 0;
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    ctx.fillText('EAT ALL DOTS', W/2, 140);
+    const lines = [['↑ ↓ ← →', 'Move'],['',''],['Eat all dots','to win'],['Power pellets','turn tables on ghosts'],['Avoid ghosts','unless powered'],['',''],['3 lives total','']];
+    ctx.textAlign = 'left'; let ly = 180;
+    lines.forEach(l => { if (l[0]&&l[1]) { ctx.fillStyle=C.cyan;ctx.font='13px Consolas,monospace';ctx.fillText(l[0],W/2-100,ly);ctx.fillStyle=C.white;ctx.fillText(l[1],W/2+20,ly); } ly+=28; });
+    ctx.textAlign='center';ctx.fillStyle=C.amber;ctx.font='14px Consolas,monospace';
+    if(Math.floor(Date.now()/600)%2===0) ctx.fillText('Press any key to start...',W/2,H-60);
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    const cs = this.cellSize;
+    // Map
+    for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
+      const x = this.ox + c * cs, y = this.oy + r * cs;
+      const v = this.map[r][c];
+      if (v === 1) { ctx.fillStyle = '#1a1a6e'; ctx.fillRect(x, y, cs, cs); ctx.strokeStyle = '#2a2a8e'; ctx.lineWidth = 0.5; ctx.strokeRect(x+1, y+1, cs-2, cs-2); }
+      else if (v === 0) { ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(x + cs/2, y + cs/2, 2, 0, Math.PI*2); ctx.fill(); }
+      else if (v === 3) { ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(x + cs/2, y + cs/2, 5, 0, Math.PI*2); ctx.fill(); }
+    }
+    // Pac-Man
+    const p = this.pacman;
+    const px = this.ox + p.x * cs + cs/2, py = this.oy + p.y * cs + cs/2;
+    const angle = Math.atan2(p.dir.y, p.dir.x);
+    ctx.fillStyle = this.powered > 0 ? '#ffff88' : '#ffff00';
+    ctx.beginPath();
+    ctx.arc(px, py, cs/2 - 1, angle + p.mouth, angle + Math.PI*2 - p.mouth);
+    ctx.lineTo(px, py);
+    ctx.fill();
+    // Ghosts
+    this.ghosts.forEach(g => {
+      const gx = this.ox + g.x * cs + cs/2, gy = this.oy + g.y * cs + cs/2;
+      ctx.fillStyle = this.powered > 0 ? '#2222ff' : g.color;
+      ctx.beginPath();
+      ctx.arc(gx, gy - 2, cs/2 - 1, Math.PI, 0);
+      ctx.lineTo(gx + cs/2 - 1, gy + cs/2 - 1);
+      // Wavy bottom
+      for (let i = 3; i >= -3; i--) {
+        const wave = (i % 2 === 0) ? cs/2 - 1 : cs/2 - 5;
+        ctx.lineTo(gx + i * (cs/6), gy + wave * 0.4 + cs/4);
+      }
+      ctx.lineTo(gx - cs/2 + 1, gy + cs/2 - 1);
+      ctx.fill();
+      // Eyes
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(gx - 3, gy - 3, 2.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(gx + 3, gy - 3, 2.5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#00f';
+      ctx.beginPath(); ctx.arc(gx - 3 + g.dir.x*1.5, gy - 3 + g.dir.y*1.5, 1.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(gx + 3 + g.dir.x*1.5, gy - 3 + g.dir.y*1.5, 1.5, 0, Math.PI*2); ctx.fill();
+    });
+    // HUD
+    ctx.fillStyle = C.amber; ctx.font = '13px Consolas, monospace'; ctx.textAlign = 'left';
+    ctx.fillText('SCORE ' + this.score, 10, 20);
+    ctx.fillStyle = C.red; ctx.textAlign = 'right';
+    ctx.fillText('♥'.repeat(this.lives), W-10, 20);
+    // Power indicator
+    if (this.powered > 0) { ctx.fillStyle = '#2222ff'; ctx.font = '10px Consolas'; ctx.textAlign = 'center'; ctx.fillText('POWER ' + Math.ceil(this.powered/60) + 's', W/2, 20); }
+    // Game over
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = this.dots <= 0 ? C.green : C.red;
+      ctx.font = '28px Consolas, monospace'; ctx.fillText(this.dots <= 0 ? 'YOU WIN!' : 'GAME OVER', W/2, H/2-40);
+      ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace'; ctx.fillText('Score: ' + this.score, W/2, H/2-10);
+      const hi = getHighScore('pacman');
+      if (hi > 0) { ctx.fillStyle = C.yellow; ctx.font = '12px Consolas, monospace'; ctx.fillText('BEST: ' + hi, W/2, H/2+15); }
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace'; ctx.fillText('R restart · ESC menu · H scores', W/2, H/2+45);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  PONG — Classic paddle game
+// ══════════════════════════════════════════════
+class GamePong {
+  constructor() {
+    this.paddleH = 70; this.paddleW = 10;
+    this.p1Y = H/2 - this.paddleH/2; this.p2Y = H/2 - this.paddleH/2;
+    this.ballX = W/2; this.ballY = H/2; this.ballDX = 4; this.ballDY = 2;
+    this.score1 = 0; this.score2 = 0; this.maxScore = 11;
+    this.over = false; this.paused = false; this.showHelp = true;
+    this.keys = {}; this.aiSpeed = 3;
+  }
+
+  init(savedState) {
+    if (savedState) {
+      this.score1 = savedState.score1; this.score2 = savedState.score2;
+      this.over = savedState.over || false; this.showHelp = false;
+      this.p1Y = savedState.p1Y; this.p2Y = savedState.p2Y;
+    } else { this.score1 = 0; this.score2 = 0; this.over = false; this.showHelp = true; }
+    this.ballX = W/2; this.ballY = H/2;
+    this.ballDX = 4 * (Math.random() > 0.5 ? 1 : -1); this.ballDY = 2 * (Math.random() > 0.5 ? 1 : -1);
+    this._keyD = (e) => { this.keys[e.key] = true; this.keyDown(e); };
+    this._keyU = (e) => { this.keys[e.key] = false; };
+    document.addEventListener('keydown', this._keyD);
+    document.addEventListener('keyup', this._keyU);
+    this.lastTime = performance.now();
+    this.loop();
+  }
+
+  saveProgress() { saveGameProgress('pong', { score1: this.score1, score2: this.score2, p1Y: this.p1Y, p2Y: this.p2Y, over: this.over }); }
+  destroy() { document.removeEventListener('keydown', this._keyD); document.removeEventListener('keyup', this._keyU); if (this._raf) cancelAnimationFrame(this._raf); if (this._helpRaf) cancelAnimationFrame(this._helpRaf); }
+
+  keyDown(e) {
+    if (this.showHelp) { if (e.key === 'Escape') { backToMenu(); return; } this.showHelp = false; this.lastTime = performance.now(); this.loop(); return; }
+    if (this.over) {
+      if (e.key === 'r') { this.destroy(); gameInstance = new GamePong(); gameInstance.init(); return; }
+      if (e.key === 'h' || e.key === 'H') { showHighScore('pong'); return; }
+      if (e.key === 'Escape') { backToMenu(); return; }
+      return;
+    }
+    if (e.key === 'Escape') { backToMenu(); return; }
+    if (e.key === 'p') { this.paused = !this.paused; if (!this.paused) this.lastTime = performance.now(); return; }
+  }
+
+  loop() {
+    if (this.over) { this.draw(); return; }
+    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
+    if (this.paused) { this.draw(); this._raf = requestAnimationFrame(() => this.loop()); return; }
+    const now = performance.now(); const dt = Math.min((now - this.lastTime)/1000, 0.05); this.lastTime = now;
+    this.update(dt); this.draw();
+    this._raf = requestAnimationFrame(() => this.loop());
+  }
+
+  update(dt) {
+    const spd = 350 * dt;
+    // Player 1: W/S
+    if (this.keys['w'] || this.keys['W']) this.p1Y = Math.max(0, this.p1Y - spd);
+    if (this.keys['s'] || this.keys['S']) this.p1Y = Math.min(H - this.paddleH, this.p1Y + spd);
+    // Player 2 (AI): follows ball
+    const aiTarget = this.ballY - this.paddleH / 2;
+    if (this.p2Y < aiTarget) this.p2Y = Math.min(aiTarget, this.p2Y + this.aiSpeed);
+    else if (this.p2Y > aiTarget) this.p2Y = Math.max(aiTarget, this.p2Y - this.aiSpeed);
+    this.p2Y = Math.max(0, Math.min(H - this.paddleH, this.p2Y));
+    // Ball
+    this.ballX += this.ballDX * dt * 60;
+    this.ballY += this.ballDY * dt * 60;
+    // Top/bottom bounce
+    if (this.ballY <= 0 || this.ballY >= H) this.ballDY = -this.ballDY;
+    // Paddle collision
+    const p1x = 20, p2x = W - 30;
+    if (this.ballDX < 0 && this.ballX <= p1x + this.paddleW && this.ballX >= p1x && this.ballY >= this.p1Y && this.ballY <= this.p1Y + this.paddleH) {
+      this.ballDX = Math.abs(this.ballDX) * 1.05;
+      this.ballDY += (this.ballY - (this.p1Y + this.paddleH/2)) * 0.1;
+    }
+    if (this.ballDX > 0 && this.ballX >= p2x && this.ballX <= p2x + this.paddleW && this.ballY >= this.p2Y && this.ballY <= this.p2Y + this.paddleH) {
+      this.ballDX = -Math.abs(this.ballDX) * 1.05;
+      this.ballDY += (this.ballY - (this.p2Y + this.paddleH/2)) * 0.1;
+    }
+    // Score
+    if (this.ballX < 0) { this.score2++; this.resetBall(1); }
+    if (this.ballX > W) { this.score1++; this.resetBall(-1); }
+    // Win
+    if (this.score1 >= this.maxScore || this.score2 >= this.maxScore) {
+      this.over = true;
+      saveHighScore('pong', this.score1, {});
+      clearGameProgress('pong');
+    }
+  }
+
+  resetBall(dir) {
+    this.ballX = W/2; this.ballY = H/2;
+    this.ballDX = 4 * dir; this.ballDY = 2 * (Math.random() > 0.5 ? 1 : -1);
+  }
+
+  drawHelp() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.green; ctx.font = '28px Consolas, monospace';
+    ctx.shadowColor = C.green; ctx.shadowBlur = 12;
+    ctx.fillText('P O N G', W/2, 100); ctx.shadowBlur = 0;
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    ctx.fillText('FIRST TO 11 WINS', W/2, 140);
+    const lines = [['W / S', 'Left paddle up/down'],['',''],['Ball bounces off','paddles and walls'],['Miss = opponent','scores a point'],['',''],['vs AI opponent','']];
+    ctx.textAlign = 'left'; let ly = 180;
+    lines.forEach(l => { if (l[0]&&l[1]) { ctx.fillStyle=C.cyan;ctx.font='13px Consolas,monospace';ctx.fillText(l[0],W/2-100,ly);ctx.fillStyle=C.white;ctx.fillText(l[1],W/2+20,ly); } ly+=28; });
+    ctx.textAlign='center';ctx.fillStyle=C.amber;ctx.font='14px Consolas,monospace';
+    if(Math.floor(Date.now()/600)%2===0) ctx.fillText('Press any key to start...',W/2,H-60);
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    // Center line
+    ctx.setLineDash([8, 8]); ctx.strokeStyle = C.dim; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H); ctx.stroke();
+    ctx.setLineDash([]);
+    // Paddles
+    ctx.fillStyle = C.green; ctx.fillRect(20, this.p1Y, this.paddleW, this.paddleH);
+    ctx.fillStyle = C.amber; ctx.fillRect(W-30, this.p2Y, this.paddleW, this.paddleH);
+    // Ball
+    ctx.fillStyle = C.white;
+    ctx.beginPath(); ctx.arc(this.ballX, this.ballY, 6, 0, Math.PI*2); ctx.fill();
+    // Score
+    ctx.font = '32px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = C.green; ctx.fillText(this.score1, W/4, 50);
+    ctx.fillStyle = C.amber; ctx.fillText(this.score2, W*3/4, 50);
+    // Labels
+    ctx.font = '10px Consolas, monospace'; ctx.fillStyle = C.dim;
+    ctx.fillText('YOU (W/S)', W/4, 70); ctx.fillText('AI', W*3/4, 70);
+    // Paused
+    if (this.paused) { ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = C.amber; ctx.font = '28px Consolas, monospace'; ctx.fillText('PAUSED', W/2, H/2); }
+    // Game over
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = this.score1 >= this.maxScore ? C.green : C.red;
+      ctx.font = '28px Consolas, monospace'; ctx.fillText(this.score1 >= this.maxScore ? 'YOU WIN!' : 'YOU LOSE', W/2, H/2-40);
+      ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace'; ctx.fillText(this.score1 + ' - ' + this.score2, W/2, H/2-10);
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace'; ctx.fillText('R restart · ESC menu', W/2, H/2+20);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  FROGGER — Cross the road
+// ══════════════════════════════════════════════
+class GameFrogger {
+  constructor() {
+    this.cellW = 24; this.cellH = 24;
+    this.cols = 20; this.rows = 15;
+    this.ox = (W - this.cols * this.cellW) / 2;
+    this.oy = (H - this.rows * this.cellH) / 2;
+    this.frog = { x: 10, y: 14 };
+    this.lanes = [];
+    this.score = 0; this.lives = 3; this.over = false;
+    this.showHelp = true;
+    this.homeCount = 0; this.homes = [false, false, false, false, false];
+  }
+
+  init(savedState) {
+    if (savedState) {
+      this.score = savedState.score; this.lives = savedState.lives;
+      this.over = savedState.over || false; this.showHelp = false;
+      this.frog = savedState.frog; this.homeCount = savedState.homeCount || 0;
+      this.homes = savedState.homes || [false,false,false,false,false];
+    } else {
+      this.score = 0; this.lives = 3; this.over = false; this.showHelp = true;
+      this.frog = { x: 10, y: 14 }; this.homeCount = 0;
+      this.homes = [false, false, false, false, false];
+    }
+    this.initLanes();
+    this._keyD = (e) => this.key(e);
+    document.addEventListener('keydown', this._keyD);
+    this.lastTime = performance.now();
+    this.loop();
+  }
+
+  initLanes() {
+    // Row 0: safe home row (goal)
+    // Rows 1-5: river (logs/turtles)
+    // Row 6: safe median
+    // Rows 7-13: road (cars/trucks)
+    // Row 14: start safe
+    this.lanes = [
+      { type: 'river', items: [], speed: 0, dir: 1 },      // 0: home row
+      { type: 'river', items: this.makeItems(3, 90, 1), speed: 0.8, dir: 1 },  // 1: logs
+      { type: 'river', items: this.makeItems(2, 60, -1), speed: -1.2, dir: -1 }, // 2: turtles
+      { type: 'river', items: this.makeItems(3, 80, 1), speed: 0.6, dir: 1 },  // 3: logs
+      { type: 'river', items: this.makeItems(4, 40, -1), speed: -1.5, dir: -1 }, // 4: turtles
+      { type: 'river', items: this.makeItems(2, 100, 1), speed: 1.0, dir: 1 }, // 5: logs
+      { type: 'safe', items: [], speed: 0, dir: 1 },        // 6: median
+      { type: 'road', items: this.makeItems(2, 50, 1), speed: 1.5, dir: 1 },   // 7: cars
+      { type: 'road', items: this.makeItems(3, 35, -1), speed: -2.0, dir: -1 }, // 8: trucks
+      { type: 'road', items: this.makeItems(2, 60, 1), speed: 1.0, dir: 1 },   // 9: cars
+      { type: 'road', items: this.makeItems(1, 120, -1), speed: -0.8, dir: -1 }, // 10: truck
+      { type: 'road', items: this.makeItems(3, 40, 1), speed: 2.5, dir: 1 },   // 11: fast cars
+      { type: 'road', items: this.makeItems(2, 55, -1), speed: -1.3, dir: -1 }, // 12: cars
+      { type: 'safe', items: [], speed: 0, dir: 1 },        // 13: safe
+      { type: 'safe', items: [], speed: 0, dir: 1 },        // 14: start
+    ];
+  }
+
+  makeItems(count, spacing, dir) {
+    const items = [];
+    for (let i = 0; i < count; i++) {
+      items.push({ x: i * spacing * dir * (dir > 0 ? 1 : -1), w: spacing * 0.6 });
+    }
+    return items;
+  }
+
+  destroy() { document.removeEventListener('keydown', this._keyD); if (this._raf) cancelAnimationFrame(this._raf); if (this._helpRaf) cancelAnimationFrame(this._helpRaf); }
+  saveProgress() { saveGameProgress('frogger', { score: this.score, lives: this.lives, frog: this.frog, homeCount: this.homeCount, homes: this.homes, over: this.over }); }
+
+  key(e) {
+    if (this.showHelp) { if (e.key === 'Escape') { backToMenu(); return; } this.showHelp = false; this.lastTime = performance.now(); this.loop(); return; }
+    if (this.over) {
+      if (e.key === 'r') { this.destroy(); gameInstance = new GameFrogger(); gameInstance.init(); return; }
+      if (e.key === 'h' || e.key === 'H') { showHighScores('frogger'); return; }
+      if (e.key === 'Escape') { backToMenu(); return; }
+      return;
+    }
+    if (e.key === 'Escape') { backToMenu(); return; }
+    const map = { ArrowUp: {x:0,y:-1}, ArrowDown: {x:0,y:1}, ArrowLeft: {x:-1,y:0}, ArrowRight: {x:1,y:0} };
+    const d = map[e.key];
+    if (d) {
+      e.preventDefault();
+      const nx = this.frog.x + d.x, ny = this.frog.y + d.y;
+      if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows) {
+        this.frog.x = nx; this.frog.y = ny;
+        if (d.y < 0) this.score += 10; // points for moving forward
+      }
+    }
+  }
+
+  loop() {
+    if (this.over) { this.draw(); return; }
+    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
+    const now = performance.now(); const dt = Math.min((now - this.lastTime)/1000, 0.05); this.lastTime = now;
+    this.update(dt); this.draw();
+    this._raf = requestAnimationFrame(() => this.loop());
+  }
+
+  update(dt) {
+    const cs = this.cellW;
+    // Move lanes
+    this.lanes.forEach((lane, row) => {
+      if (lane.speed === 0) return;
+      lane.items.forEach(item => {
+        item.x += lane.speed * dt * 30;
+        // Wrap
+        if (lane.speed > 0 && item.x > this.cols * cs) item.x = -item.w;
+        if (lane.speed < 0 && item.x + item.w < 0) item.x = this.cols * cs;
+      });
+    });
+    // Check frog position
+    const lane = this.lanes[this.frog.y];
+    if (!lane) return;
+    if (lane.type === 'river') {
+      // Must be on a log/turtle
+      const fx = this.frog.x * cs;
+      const onPlatform = lane.items.some(item => fx >= item.x - cs/2 && fx <= item.x + item.w + cs/2);
+      if (!onPlatform) { this.die(); return; }
+      // Move frog with platform
+      this.frog.x += lane.speed * dt * 30 / cs;
+      if (this.frog.x < 0 || this.frog.x >= this.cols) { this.die(); return; }
+    }
+    if (lane.type === 'road') {
+      // Check car collision
+      const fx = this.frog.x * cs;
+      const hitCar = lane.items.some(item => fx >= item.x - cs && fx <= item.x + item.w);
+      if (hitCar) { this.die(); return; }
+    }
+    // Home row check
+    if (this.frog.y === 0) {
+      const homeSlots = [2, 6, 10, 14, 18];
+      const slotIdx = homeSlots.findIndex(s => Math.abs(this.frog.x - s) < 1.5);
+      if (slotIdx >= 0 && !this.homes[slotIdx]) {
+        this.homes[slotIdx] = true; this.homeCount++; this.score += 200;
+        this.frog = { x: 10, y: 14 };
+        if (this.homeCount >= 5) { this.over = true; saveHighScore('frogger', this.score, {}); clearGameProgress('frogger'); }
+      } else { this.die(); }
+    }
+  }
+
+  die() {
+    this.lives--;
+    if (this.lives <= 0) { this.over = true; saveHighScore('frogger', this.score, {}); clearGameProgress('frogger'); }
+    else this.frog = { x: 10, y: 14 };
+  }
+
+  drawHelp() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.green; ctx.font = '24px Consolas, monospace';
+    ctx.shadowColor = C.green; ctx.shadowBlur = 12;
+    ctx.fillText('F R O G G E R', W/2, 100); ctx.shadowBlur = 0;
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    ctx.fillText('CROSS THE ROAD & RIVER', W/2, 140);
+    const lines = [['↑ ↓ ← →', 'Move frog'],['',''],['Avoid cars','on the road'],['Ride logs','across the river'],['Reach 5 home','slots to win'],['',''],['3 lives total','']];
+    ctx.textAlign = 'left'; let ly = 180;
+    lines.forEach(l => { if (l[0]&&l[1]) { ctx.fillStyle=C.cyan;ctx.font='13px Consolas,monospace';ctx.fillText(l[0],W/2-100,ly);ctx.fillStyle=C.white;ctx.fillText(l[1],W/2+20,ly); } ly+=28; });
+    ctx.textAlign='center';ctx.fillStyle=C.amber;ctx.font='14px Consolas,monospace';
+    if(Math.floor(Date.now()/600)%2===0) ctx.fillText('Press any key to start...',W/2,H-60);
+  }
+
+  draw() {
+    ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, W, H);
+    const cs = this.cellW;
+    // Draw lanes
+    this.lanes.forEach((lane, row) => {
+      const y = this.oy + row * cs;
+      // Background
+      if (lane.type === 'river') { ctx.fillStyle = '#001133'; ctx.fillRect(this.ox, y, this.cols * cs, cs); }
+      else if (lane.type === 'road') { ctx.fillStyle = '#1a1a1a'; ctx.fillRect(this.ox, y, this.cols * cs, cs); }
+      else if (row === 0) { ctx.fillStyle = '#002200'; ctx.fillRect(this.ox, y, this.cols * cs, cs); }
+      else { ctx.fillStyle = '#0a0a0a'; ctx.fillRect(this.ox, y, this.cols * cs, cs); }
+      // Items
+      lane.items.forEach(item => {
+        const ix = this.ox + item.x;
+        if (lane.type === 'river') { ctx.fillStyle = '#8B4513'; ctx.fillRect(ix, y + 2, item.w, cs - 4); }
+        else if (lane.type === 'road') { ctx.fillStyle = '#cc0000'; ctx.fillRect(ix, y + 3, item.w, cs - 6); }
+      });
+    });
+    // Home slots
+    const homeSlots = [2, 6, 10, 14, 18];
+    homeSlots.forEach((s, i) => {
+      const hx = this.ox + s * cs;
+      ctx.fillStyle = this.homes[i] ? C.green : '#003300';
+      ctx.fillRect(hx, this.oy + 2, cs - 4, cs - 4);
+    });
+    // Frog
+    const fx = this.ox + this.frog.x * cs, fy = this.oy + this.frog.y * cs;
+    ctx.fillStyle = C.green;
+    ctx.fillRect(fx + 2, fy + 2, cs - 4, cs - 4);
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(fx + 4, fy + 4, 4, 4);
+    ctx.fillRect(fx + cs - 8, fy + 4, 4, 4);
+    // HUD
+    ctx.fillStyle = C.amber; ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'left';
+    ctx.fillText('SCORE ' + this.score, 10, 20);
+    ctx.fillStyle = C.red; ctx.textAlign = 'right';
+    ctx.fillText('♥'.repeat(this.lives), W-10, 20);
+    ctx.fillStyle = C.cyan; ctx.textAlign = 'center';
+    ctx.fillText('HOME ' + this.homeCount + '/5', W/2, 20);
+    // Game over
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = this.homeCount >= 5 ? C.green : C.red;
+      ctx.font = '28px Consolas, monospace'; ctx.fillText(this.homeCount >= 5 ? 'YOU WIN!' : 'GAME OVER', W/2, H/2-40);
+      ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace'; ctx.fillText('Score: ' + this.score, W/2, H/2-10);
+      const hi = getHighScore('frogger');
+      if (hi > 0) { ctx.fillStyle = C.yellow; ctx.font = '12px Consolas, monospace'; ctx.fillText('BEST: ' + hi, W/2, H/2+15); }
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace'; ctx.fillText('R restart · ESC menu · H scores', W/2, H/2+45);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  BOMBERMAN — Blast walls and enemies
+// ══════════════════════════════════════════════
+class GameBomberman {
+  constructor() {
+    this.cols = 15; this.rows = 13;
+    this.cellSize = Math.floor(Math.min((W - 40) / this.cols, (H - 100) / this.rows));
+    this.ox = (W - this.cols * this.cellSize) / 2;
+    this.oy = 60;
+    this.map = []; // 0=empty, 1=indestructible, 2=destructible
+    this.player = { x: 1, y: 1 };
+    this.bombs = []; this.explosions = [];
+    this.enemies = []; this.powerups = [];
+    this.score = 0; this.lives = 3; this.over = false;
+    this.bombRange = 2; this.maxBombs = 1; this.activeBombs = 0;
+    this.showHelp = true; this.moveTimer = 0; this.moveCD = 150;
+    this.enemyTimer = 0;
+  }
+
+  init(savedState) {
+    if (savedState) {
+      this.score = savedState.score; this.lives = savedState.lives;
+      this.over = savedState.over || false; this.showHelp = false;
+      this.player = savedState.player; this.bombRange = savedState.bombRange || 2;
+      this.maxBombs = savedState.maxBombs || 1;
+      this.map = savedState.map; this.enemies = savedState.enemies || [];
+    } else {
+      this.score = 0; this.lives = 3; this.over = false; this.showHelp = true;
+      this.player = { x: 1, y: 1 }; this.bombRange = 2; this.maxBombs = 1;
+      this.initMap();
+    }
+    this.bombs = []; this.explosions = []; this.powerups = []; this.activeBombs = 0;
+    this._keyD = (e) => this.key(e);
+    this._keyU = () => {};
+    document.addEventListener('keydown', this._keyD);
+    this.lastTime = performance.now();
+    this.loop();
+  }
+
+  initMap() {
+    this.map = [];
+    this.enemies = [];
+    for (let r = 0; r < this.rows; r++) {
+      this.map[r] = [];
+      for (let c = 0; c < this.cols; c++) {
+        if (r === 0 || r === this.rows-1 || c === 0 || c === this.cols-1) { this.map[r][c] = 1; continue; }
+        if (r % 2 === 0 && c % 2 === 0) { this.map[r][c] = 1; continue; }
+        // Clear spawn area
+        if ((r <= 2 && c <= 2)) { this.map[r][c] = 0; continue; }
+        this.map[r][c] = Math.random() < 0.5 ? 2 : 0;
+      }
+    }
+    // Spawn enemies
+    for (let i = 0; i < 4; i++) {
+      let ex, ey;
+      do { ex = Math.floor(Math.random() * (this.cols-2)) + 1; ey = Math.floor(Math.random() * (this.rows-2)) + 1; }
+      while (this.map[ey][ex] !== 0 || (ex <= 3 && ey <= 3));
+      this.enemies.push({ x: ex, y: ey, dir: Math.floor(Math.random()*4), timer: 0 });
+    }
+  }
+
+  destroy() { document.removeEventListener('keydown', this._keyD); if (this._raf) cancelAnimationFrame(this._raf); if (this._helpRaf) cancelAnimationFrame(this._helpRaf); }
+  saveProgress() { saveGameProgress('bomberman', { score: this.score, lives: this.lives, player: this.player, bombRange: this.bombRange, maxBombs: this.maxBombs, map: this.map, enemies: this.enemies, over: this.over }); }
+
+  key(e) {
+    if (this.showHelp) { if (e.key === 'Escape') { backToMenu(); return; } this.showHelp = false; this.lastTime = performance.now(); this.loop(); return; }
+    if (this.over) {
+      if (e.key === 'r') { this.destroy(); gameInstance = new GameBomberman(); gameInstance.init(); return; }
+      if (e.key === 'h' || e.key === 'H') { showHighScores('bomberman'); return; }
+      if (e.key === 'Escape') { backToMenu(); return; }
+      return;
+    }
+    if (e.key === 'Escape') { backToMenu(); return; }
+    const now = performance.now();
+    if (now - this.moveTimer < this.moveCD) return;
+    const map = { ArrowUp: {x:0,y:-1}, ArrowDown: {x:0,y:1}, ArrowLeft: {x:-1,y:0}, ArrowRight: {x:1,y:0} };
+    const d = map[e.key];
+    if (d) {
+      e.preventDefault(); this.moveTimer = now;
+      const nx = this.player.x + d.x, ny = this.player.y + d.y;
+      if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows && this.map[ny][nx] === 0) {
+        // Check bombs blocking
+        if (!this.bombs.some(b => b.x === nx && b.y === ny)) { this.player.x = nx; this.player.y = ny; }
+      }
+    }
+    if (e.key === ' ' || e.key === 'b' || e.key === 'B') {
+      e.preventDefault();
+      if (this.activeBombs < this.maxBombs && !this.bombs.some(b => b.x === this.player.x && b.y === this.player.y)) {
+        this.bombs.push({ x: this.player.x, y: this.player.y, timer: 180, range: this.bombRange });
+        this.activeBombs++;
+      }
+    }
+  }
+
+  loop() {
+    if (this.over) { this.draw(); return; }
+    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
+    const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
+    this.update(dt); this.draw();
+    this._raf = requestAnimationFrame(() => this.loop());
+  }
+
+  update(dt) {
+    // Bombs
+    for (let i = this.bombs.length - 1; i >= 0; i--) {
+      this.bombs[i].timer -= dt / 16;
+      if (this.bombs[i].timer <= 0) {
+        this.explode(this.bombs[i]);
+        this.bombs.splice(i, 1); this.activeBombs--;
+      }
+    }
+    // Explosions
+    this.explosions = this.explosions.filter(e => { e.timer -= dt / 16; return e.timer > 0; });
+    // Enemies
+    this.enemyTimer += dt;
+    if (this.enemyTimer > 800) {
+      this.enemyTimer = 0;
+      this.enemies.forEach(e => {
+        const dirs = [{x:0,y:-1},{x:0,y:1},{x:-1,y:0},{x:1,y:0}];
+        // Sometimes change dir
+        if (Math.random() < 0.3) e.dir = Math.floor(Math.random() * 4);
+        const d = dirs[e.dir];
+        const nx = e.x + d.x, ny = e.y + d.y;
+        if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows && this.map[ny][nx] === 0) {
+          e.x = nx; e.y = ny;
+        } else { e.dir = Math.floor(Math.random() * 4); }
+      });
+    }
+    // Player-explosion collision
+    if (this.explosions.some(ex => ex.x === this.player.x && ex.y === this.player.y)) {
+      this.playerHit();
+    }
+    // Player-enemy collision
+    if (this.enemies.some(en => en.x === this.player.x && en.y === this.player.y)) {
+      this.playerHit();
+    }
+    // Explosion-enemy collision
+    this.enemies = this.enemies.filter(en => {
+      if (this.explosions.some(ex => ex.x === en.x && ex.y === en.y)) {
+        this.score += 100; return false;
+      }
+      return true;
+    });
+    // Powerup collection
+    this.powerups = this.powerups.filter(p => {
+      if (p.x === this.player.x && p.y === this.player.y) {
+        if (p.type === 'range') this.bombRange++;
+        if (p.type === 'bomb') this.maxBombs++;
+        this.score += 50; return false;
+      }
+      return true;
+    });
+    // Win: all enemies dead
+    if (this.enemies.length === 0 && this.bombs.length === 0 && this.explosions.length === 0) {
+      this.over = true; saveHighScore('bomberman', this.score, {}); clearGameProgress('bomberman');
+    }
+  }
+
+  playerHit() {
+    this.lives--;
+    if (this.lives <= 0) { this.over = true; saveHighScore('bomberman', this.score, {}); clearGameProgress('bomberman'); }
+    else { this.player = { x: 1, y: 1 }; }
+  }
+
+  explode(bomb) {
+    const dirs = [{x:0,y:0},{x:0,y:-1},{x:0,y:1},{x:-1,y:0},{x:1,y:0}];
+    for (const d of dirs) {
+      for (let dist = 0; dist <= (d.x === 0 && d.y === 0 ? 0 : bomb.range); dist++) {
+        const ex = bomb.x + d.x * dist, ey = bomb.y + d.y * dist;
+        if (ex < 0 || ex >= this.cols || ey < 0 || ey >= this.rows) break;
+        if (this.map[ey][ex] === 1) break; // indestructible
+        this.explosions.push({ x: ex, y: ey, timer: 30 });
+        if (this.map[ey][ex] === 2) {
+          this.map[ey][ex] = 0; this.score += 10;
+          // Drop powerup
+          if (Math.random() < 0.25) this.powerups.push({ x: ex, y: ey, type: Math.random() < 0.5 ? 'range' : 'bomb' });
+          break; // explosion stops at destructible
+        }
+      }
+    }
+  }
+
+  drawHelp() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.amber; ctx.font = '24px Consolas, monospace';
+    ctx.shadowColor = C.amber; ctx.shadowBlur = 12;
+    ctx.fillText('B O M B E R', W/2, 100); ctx.shadowBlur = 0;
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    ctx.fillText('BLAST ALL ENEMIES', W/2, 140);
+    const lines = [['↑ ↓ ← →', 'Move'],['SPACE / B', 'Place bomb'],['',''],['Destroy walls','to find powerups'],['◆ Range (R)','+1 bomb range'],['◆ Extra (B)','+1 max bombs'],['',''],['Kill all enemies','to win']];
+    ctx.textAlign = 'left'; let ly = 180;
+    lines.forEach(l => { if (l[0]&&l[1]) { ctx.fillStyle=C.cyan;ctx.font='13px Consolas,monospace';ctx.fillText(l[0],W/2-100,ly);ctx.fillStyle=C.white;ctx.fillText(l[1],W/2+20,ly); } ly+=28; });
+    ctx.textAlign='center';ctx.fillStyle=C.amber;ctx.font='14px Consolas,monospace';
+    if(Math.floor(Date.now()/600)%2===0) ctx.fillText('Press any key to start...',W/2,H-40);
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    const cs = this.cellSize;
+    // Map
+    for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
+      const x = this.ox + c * cs, y = this.oy + r * cs;
+      if (this.map[r][c] === 1) { ctx.fillStyle = '#4a4a6a'; ctx.fillRect(x, y, cs, cs); ctx.strokeStyle = '#5a5a7a'; ctx.lineWidth = 0.5; ctx.strokeRect(x+1, y+1, cs-2, cs-2); }
+      else if (this.map[r][c] === 2) { ctx.fillStyle = '#8B6914'; ctx.fillRect(x, y, cs, cs); ctx.strokeStyle = '#A07828'; ctx.lineWidth = 0.5; ctx.strokeRect(x+1, y+1, cs-2, cs-2); }
+    }
+    // Powerups
+    this.powerups.forEach(p => {
+      const x = this.ox + p.x * cs, y = this.oy + p.y * cs;
+      ctx.fillStyle = p.type === 'range' ? C.cyan : C.amber;
+      ctx.beginPath(); ctx.arc(x + cs/2, y + cs/2, cs/3, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = (cs/3) + 'px Consolas'; ctx.textAlign = 'center';
+      ctx.fillText(p.type === 'range' ? 'R' : 'B', x + cs/2, y + cs/2 + cs/8);
+    });
+    // Bombs
+    this.bombs.forEach(b => {
+      const x = this.ox + b.x * cs, y = this.oy + b.y * cs;
+      const pulse = 0.8 + Math.sin(b.timer * 0.2) * 0.2;
+      ctx.fillStyle = '#333';
+      ctx.beginPath(); ctx.arc(x + cs/2, y + cs/2, (cs/2 - 2) * pulse, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = C.red;
+      ctx.beginPath(); ctx.arc(x + cs/2, y + cs/2 - cs/4, 3, 0, Math.PI*2); ctx.fill();
+    });
+    // Explosions
+    this.explosions.forEach(ex => {
+      const x = this.ox + ex.x * cs, y = this.oy + ex.y * cs;
+      ctx.fillStyle = `rgba(255,${Math.floor(ex.timer*3)},0,${ex.timer/30})`;
+      ctx.fillRect(x, y, cs, cs);
+    });
+    // Enemies
+    this.enemies.forEach(e => {
+      const x = this.ox + e.x * cs, y = this.oy + e.y * cs;
+      ctx.fillStyle = '#ff3333';
+      ctx.fillRect(x + 2, y + 2, cs - 4, cs - 4);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x + cs/3, y + cs/3, 3, 3);
+      ctx.fillRect(x + cs*2/3, y + cs/3, 3, 3);
+    });
+    // Player
+    const px = this.ox + this.player.x * cs, py = this.oy + this.player.y * cs;
+    ctx.fillStyle = C.green;
+    ctx.fillRect(px + 2, py + 2, cs - 4, cs - 4);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(px + cs/3, py + cs/3, 3, 3);
+    ctx.fillRect(px + cs*2/3, py + cs/3, 3, 3);
+    // HUD
+    ctx.fillStyle = C.amber; ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'left';
+    ctx.fillText('SCORE ' + this.score, 10, 20);
+    ctx.fillStyle = C.cyan; ctx.fillText('RANGE:' + this.bombRange + ' BOMB:' + this.maxBombs, 10, 38);
+    ctx.fillStyle = C.red; ctx.textAlign = 'right';
+    ctx.fillText('♥'.repeat(this.lives) + ' EN:' + this.enemies.length, W-10, 20);
+    // Game over
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = this.enemies.length === 0 ? C.green : C.red;
+      ctx.font = '28px Consolas, monospace'; ctx.fillText(this.enemies.length === 0 ? 'YOU WIN!' : 'GAME OVER', W/2, H/2-40);
+      ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace'; ctx.fillText('Score: ' + this.score, W/2, H/2-10);
+      const hi = getHighScore('bomberman');
+      if (hi > 0) { ctx.fillStyle = C.yellow; ctx.font = '12px Consolas, monospace'; ctx.fillText('BEST: ' + hi, W/2, H/2+15); }
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace'; ctx.fillText('R restart · ESC menu · H scores', W/2, H/2+45);
     }
   }
 }
