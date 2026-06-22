@@ -287,19 +287,6 @@ export default function KnowledgePage() {
     } catch (err) { alert("删除失败: " + err); }
   };
 
-  const handleViewGroupChat = async (group: ImportGroup) => {
-    // 获取该分组关联的对话
-    try {
-      const msgs = await importGroupApi.getMessages(group.id);
-      if (msgs.sessions.length > 0) {
-        const sid = msgs.sessions[0].session_id;
-        window.location.hash = `chat-${sid}`;
-      } else {
-        alert("该分组未关联原始对话");
-      }
-    } catch { alert("获取对话失败"); }
-  };
-
   // ── 普通 JSON 导入 ──────────────────────────────────────
 
   const handleImportJSON = () => {
@@ -648,14 +635,6 @@ export default function KnowledgePage() {
                 </div>
 
                 <div className="flex gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {group.chat_session_id && (
-                    <button onClick={(e) => { e.stopPropagation(); handleViewGroupChat(group); }}
-                      className="text-xs px-2 py-1 rounded-lg cursor-pointer"
-                      style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}
-                      title="查看原始对话">
-                      <IconChat size={12} />
-                    </button>
-                  )}
                   <button onClick={(e) => handleDeleteGroup(group.id, e)}
                     className="text-xs px-2 py-1 rounded-lg cursor-pointer"
                     style={{ color: "var(--text-muted)" }}
@@ -690,11 +669,6 @@ export default function KnowledgePage() {
                 {new Date(selectedGroup.created_at).toLocaleString("zh-CN")}
               </span>
               <div className="flex-1" />
-              <button onClick={() => handleViewGroupChat(selectedGroup)}
-                className="btn-ghost text-xs py-1.5 flex items-center gap-1.5"
-                style={{ color: "#8b5cf6" }}>
-                <IconChat size={13} /> 查看原始对话
-              </button>
               <button onClick={(e) => handleDeleteGroup(selectedGroup.id, e)}
                 className="text-xs px-2 py-1.5 rounded-lg cursor-pointer"
                 style={{ color: "#ef4444" }}>
@@ -704,7 +678,7 @@ export default function KnowledgePage() {
 
             {selectedGroup.summary && (
               <div>
-                <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-muted)" }}>会话摘要</p>
+                <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-muted)" }}>分组概览</p>
                 <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>{selectedGroup.summary}</p>
               </div>
             )}
@@ -726,7 +700,7 @@ export default function KnowledgePage() {
           {/* 话题卡片列表 */}
           <div className="space-y-2">
             <p className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
-              话题知识卡片（{groupCards.length} 张）
+              会话知识卡片（{groupCards.length} 张）
             </p>
             {groupCards.map(card => (
               <div key={card.id}
@@ -736,16 +710,6 @@ export default function KnowledgePage() {
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>{card.title}</h3>
                     <p className="text-xs line-clamp-2 mb-1" style={{ color: "var(--text-secondary)" }}>{card.summary || "无摘要"}</p>
-                    {card.key_points && card.key_points.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {card.key_points.slice(0, 3).map((kp, i) => (
-                          <span key={i} className="text-[9px] px-1.5 py-0.5 rounded"
-                            style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>
-                            {kp.length > 30 ? kp.slice(0, 30) + "..." : kp}
-                          </span>
-                        ))}
-                      </div>
-                    )}
                     {card.tags && card.tags.length > 0 && (
                       <div className="flex gap-1 mt-1 flex-wrap">
                         {card.tags.map(t => (
@@ -760,11 +724,12 @@ export default function KnowledgePage() {
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-1 flex-shrink-0">
                     {card.chat_session_id && (
                       <button onClick={(e) => { e.stopPropagation(); window.location.hash = `chat-${card.chat_session_id}`; }}
                         className="text-xs px-2 py-1 rounded-lg cursor-pointer"
-                        style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>
+                        style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}
+                        title="查看完整对话">
                         <IconChat size={12} />
                       </button>
                     )}

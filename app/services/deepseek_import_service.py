@@ -1,6 +1,9 @@
-"""DeepSeek 对话导入服务 — JSON 解析 + LLM pipeline + 知识卡片生成
+"""DeepSeek 对话导入服务 — JSON 解析 + LLM 摘要 + 知识卡片生成
 
-参考 DeepseekManager 的 pipeline 架构，适配本项目的模型和服务层。
+两阶段 pipeline 架构：
+  阶段 1: 解析 JSON → 预处理 → 批量保存完整会话（无 LLM 调用，快速持久化）
+  阶段 2: 逐会话调用 LLM API 生成总结概要，每个会话生成一张知识卡片
+
 LLM 调用使用信号量限制并发数（默认最大 20）。
 """
 
@@ -234,7 +237,10 @@ def preprocess(messages: list[dict]) -> tuple[list[dict], str]:
 # ══════════════════════════════════════════════════════════════
 
 def summarize_session(conversation_text: str) -> dict:
-    """LLM 调用: 生成会话摘要"""
+    """LLM 调用: 生成会话摘要
+
+    返回: {"session_title": str, "overall_summary": str, "knowledge_domain": [str]}
+    """
     system = "你是一个专业的个人知识管理助手。请分析以下对话，返回 JSON 格式的会话摘要。"
     user = f"""请分析这段对话并返回 JSON：
 
@@ -246,72 +252,6 @@ def summarize_session(conversation_text: str) -> dict:
 
 对话内容：
 {conversation_text}"""
-    result = _call_llm(system, user)
-    return _extract_json(result)
-
-
-def split_topics(conversation_text: str, messages: list[dict]) -> list[dict]:
-    """LLM 调用: 按语义话题切分对话"""
-    system = "你是一个专业的对话分析助手。请将对话按语义话题切分，返回 JSON 格式的话题列表。"
-
-    indexed_text = ""
-    for i, msg in enumerate(messages):
-        role = msg.get("role", "unknown").upper()
-        indexed_text += f"[{i}][{role}]: {msg.get('content', '')}\n\n"
-
-    user = f"""请将以下对话按话题切分，返回 JSON 数组：
-
-[
-  {{
-    "topic_title": "话题标题",
-    "start_msg_index": 0,
-    "end_msg_index": 5,
-    "brief": "此话题讨论了什么（一句话）"
-  }}
-]
-
-注意：
-- 每个话题应该是一个语义完整的讨论单元
-- 话题之间不应重叠
-- end_msg_index 是包含的（闭区间）
-- 确保覆盖所有消息
-
-对话内容（带索引）：
-{indexed_text}"""
-
-    result = _call_llm(system, user)
-    parsed = _extract_json(result)
-    if isinstance(parsed, dict):
-        return parsed.get("topics", parsed.get("segments", []))
-    return parsed
-
-
-def generate_card(segment_text: str, topic_title: str) -> dict:
-    """LLM 调用: 从话题片段生成知识卡片"""
-    system = "你是一个专业的知识提炼助手。请从对话片段中提取结构化知识，返回 JSON 格式的知识卡片。"
-    user = f"""请从以下对话片段中提取知识，返回 JSON：
-
-{{
-  "title": "知识卡片标题",
-  "summary": "一句话概括核心知识点",
-  "key_points": ["要点1", "要点2", "要点3"],
-  "code_snippets": ["代码片段1（如有）"],
-  "difficulty": "初级/中级/高级",
-  "suggested_tags": ["标签1", "标签2", "标签3"],
-  "suggested_category": "领域 > 子领域 > 细分"
-}}
-
-注意：
-- key_points 提取 3-5 个核心要点
-- code_snippets 保留原始格式，标注语言
-- suggested_tags 提取 3-5 个关键词标签
-- difficulty 根据内容复杂度判断
-
-话题：{topic_title}
-
-对话内容：
-{segment_text}"""
-
     result = _call_llm(system, user)
     return _extract_json(result)
 
@@ -332,8 +272,33 @@ def _find_similar_tag(tag_name: str, existing_tags: list[str], threshold: float 
     return best_match
 
 
+def _create_card_tags(db: Session, card: KnowledgeCard, tag_names: list[str], existing_tags: list[str]):
+    """为卡片创建标签关联（归一化去重）"""
+    seen_tags = set()
+    tag_count = 0
+    for tag_name in tag_names:
+        tag_name = tag_name.strip()
+        if not tag_name or tag_count >= 5:
+            continue
+        matched = _find_similar_tag(tag_name, existing_tags)
+        final_name = matched or tag_name
+        if final_name.lower() in seen_tags:
+            continue
+        seen_tags.add(final_name.lower())
+
+        tag = db.get(Tag, final_name)
+        if tag:
+            tag.usage_count = (tag.usage_count or 0) + 1
+        else:
+            tag = Tag(name=final_name, status="suggested", usage_count=1)
+            db.add(tag)
+            existing_tags.append(final_name)
+        db.add(CardTag(card_id=card.id, tag_name=final_name))
+        tag_count += 1
+
+
 # ══════════════════════════════════════════════════════════════
-#  Pipeline 编排
+#  Pipeline 编排 — 两阶段架构
 # ══════════════════════════════════════════════════════════════
 
 def _update_group(db: Session, group_id: str, **kwargs):
@@ -346,56 +311,89 @@ def _update_group(db: Session, group_id: str, **kwargs):
         db.commit()
 
 
-def process_single_conversation(
+# ── 阶段 1: 解析 & 保存完整会话（无 LLM 调用）──────────────────
+
+def save_conversations(db: Session, group_id: str, conversations: list[dict]) -> list[dict]:
+    """阶段 1: 解析 & 预处理 & 批量保存会话到数据库
+
+    不调用任何 LLM API，仅做 JSON 解析、消息清洗、写入 ChatSession + ChatMessage。
+
+    返回:
+        session_infos: 每个会话的元数据列表
+        [{"session_id": str, "title": str, "source_url": str|None,
+          "cleaned_msgs": list[dict], "conversation_text": str}, ...]
+    """
+    total = len(conversations)
+    session_infos = []
+
+    for i, conv in enumerate(conversations):
+        title = conv["title"]
+        messages = conv["messages"]
+        source_url = conv.get("source_url")
+
+        _update_group(db, group_id, progress=f"[阶段1] 保存会话 [{i + 1}/{total}]: {title}")
+
+        # 预处理（清洗 + 合并，不含 LLM）
+        cleaned_msgs, conversation_text = preprocess(messages)
+
+        if not cleaned_msgs:
+            logger.warning("会话 '%s' 预处理后无有效消息，跳过", title)
+            continue
+
+        # 创建 ChatSession
+        chat_session = ChatSession(
+            title=f"[导入] {title}",
+            category="topic",
+            model_name="deepseek-import",
+        )
+        db.add(chat_session)
+        db.flush()
+
+        # 写入消息
+        for msg in cleaned_msgs:
+            db.add(ChatMessage(
+                session_id=chat_session.id,
+                role=msg["role"],
+                content=msg["content"],
+            ))
+        db.flush()
+
+        session_infos.append({
+            "session_id": chat_session.id,
+            "title": title,
+            "source_url": source_url,
+            "cleaned_msgs": cleaned_msgs,
+            "conversation_text": conversation_text,
+        })
+
+    db.commit()
+    return session_infos
+
+
+# ── 阶段 2: 逐会话 LLM 生成总结概要 ──────────────────────────
+
+def _process_single_session_llm(
     db: Session,
     group_id: str,
-    conv: dict,
+    info: dict,
     index: int,
     total: int,
 ) -> dict:
-    """处理单个对话的完整 pipeline
+    """对单个已保存的会话执行 LLM 总结
 
-    1. 预处理消息
-    2. 创建 ChatSession + 写入消息
-    3. LLM 会话摘要
-    4. LLM 话题切分
-    5. 逐话题生成知识卡片
-    6. 标签归一化
+    每个会话生成一张知识卡片（整个会话的总结概要）。
     """
-    title = conv["title"]
-    messages = conv["messages"]
-    source_url = conv.get("source_url")
+    session_id = info["session_id"]
+    title = info["title"]
+    source_url = info["source_url"]
+    conversation_text = info["conversation_text"]
 
-    _update_group(db, group_id, progress=f"[{index + 1}/{total}] 预处理: {title}")
+    chat_session = db.get(ChatSession, session_id)
+    if not chat_session:
+        return {"title": title, "cards": 0, "error": "会话记录不存在"}
 
-    # ── Step 1: 预处理 ──
-    cleaned_msgs, conversation_text = preprocess(messages)
-
-    if not cleaned_msgs:
-        return {"title": title, "cards": 0, "error": "预处理后无有效消息"}
-
-    # ── Step 2: 创建 ChatSession 重建原始对话 ──
-    _update_group(db, group_id, progress=f"[{index + 1}/{total}] 重建对话: {title}")
-
-    chat_session = ChatSession(
-        title=f"[导入] {title}",
-        category="topic",
-        model_name="deepseek-import",
-    )
-    db.add(chat_session)
-    db.flush()
-
-    # 写入原始消息
-    for msg in cleaned_msgs:
-        db.add(ChatMessage(
-            session_id=chat_session.id,
-            role=msg["role"],
-            content=msg["content"],
-        ))
-    db.flush()
-
-    # ── Step 3: LLM 会话摘要 ──
-    _update_group(db, group_id, progress=f"[{index + 1}/{total}] 生成摘要: {title}")
+    # ── LLM 生成总结概要 ──
+    _update_group(db, group_id, progress=f"[阶段2] [{index + 1}/{total}] 生成概要: {title}")
 
     try:
         summary_data = summarize_session(conversation_text)
@@ -412,148 +410,143 @@ def process_single_conversation(
     chat_session.title = f"[导入] {optimized_title}"
     db.flush()
 
-    # ── Step 4: LLM 话题切分 ──
-    _update_group(db, group_id, progress=f"[{index + 1}/{total}] 切分话题: {title}")
+    # ── 创建知识卡片（一个会话 = 一张卡片）──
+    _update_group(db, group_id, progress=f"[阶段2] [{index + 1}/{total}] 创建卡片: {optimized_title}")
 
-    try:
-        topics = split_topics(conversation_text, cleaned_msgs)
-    except Exception as e:
-        logger.error("话题切分失败: %s", e)
-        topics = [{
-            "topic_title": optimized_title,
-            "start_msg_index": 0,
-            "end_msg_index": len(cleaned_msgs) - 1,
-            "brief": summary_data.get("overall_summary", ""),
-        }]
+    card = KnowledgeCard(
+        title=optimized_title[:200],
+        summary=summary_data.get("overall_summary", "")[:1000],
+        key_points=json.dumps([], ensure_ascii=False),
+        source_type="deepseek",
+        import_group_id=group_id,
+        chat_session_id=session_id,
+        category_path=" > ".join(summary_data.get("knowledge_domain", [])),
+        user_notes=f"source_url:{source_url}" if source_url else "",
+    )
+    db.add(card)
+    db.flush()
 
-    if not topics:
-        topics = [{
-            "topic_title": optimized_title,
-            "start_msg_index": 0,
-            "end_msg_index": len(cleaned_msgs) - 1,
-            "brief": summary_data.get("overall_summary", ""),
-        }]
-
-    # ── Step 5: 逐话题生成知识卡片 ──
+    # 标签归一化（使用 knowledge_domain 作为标签）
     existing_tags = [t.name for t in db.query(Tag).all()]
-    cards_created = 0
-
-    for ti, topic in enumerate(topics):
-        _update_group(db, group_id,
-                      progress=f"[{index + 1}/{total}] 生成卡片 ({ti + 1}/{len(topics)}): {topic.get('topic_title', '')}")
-
-        start_idx = topic.get("start_msg_index", 0)
-        end_idx = topic.get("end_msg_index", len(cleaned_msgs) - 1)
-        segment_msgs = cleaned_msgs[start_idx:end_idx + 1]
-        segment_text = _format_for_llm(segment_msgs)
-        topic_title = topic.get("topic_title", f"话题 {ti + 1}")
-
-        # LLM 生成卡片
-        try:
-            card_data = generate_card(segment_text, topic_title)
-        except Exception as e:
-            logger.error("卡片生成失败 topic=%s: %s", topic_title, e)
-            card_data = {
-                "title": topic_title,
-                "summary": topic.get("brief", ""),
-                "key_points": [],
-                "code_snippets": [],
-                "difficulty": "未知",
-                "suggested_tags": [],
-                "suggested_category": "",
-            }
-
-        # 创建 KnowledgeCard
-        card = KnowledgeCard(
-            title=card_data.get("title", topic_title)[:200],
-            summary=card_data.get("summary", "")[:1000],
-            key_points=json.dumps(card_data.get("key_points", []), ensure_ascii=False),
-            source_type="deepseek",
-            import_group_id=group_id,
-            chat_session_id=chat_session.id,
-            category_path=card_data.get("suggested_category", ""),
-            user_notes=f"source_url:{source_url}" if source_url else "",
-        )
-        db.add(card)
-        db.flush()
-
-        # ── Step 6: 标签归一化 ──
-        suggested_tags = card_data.get("suggested_tags", [])
-        seen_tags = set()
-        tag_count = 0
-
-        for tag_name in suggested_tags:
-            tag_name = tag_name.strip()
-            if not tag_name or tag_count >= 5:
-                continue
-            matched = _find_similar_tag(tag_name, existing_tags)
-            final_name = matched or tag_name
-            if final_name.lower() in seen_tags:
-                continue
-            seen_tags.add(final_name.lower())
-
-            tag = db.get(Tag, final_name)
-            if tag:
-                tag.usage_count = (tag.usage_count or 0) + 1
-            else:
-                tag = Tag(name=final_name, status="suggested", usage_count=1)
-                db.add(tag)
-                existing_tags.append(final_name)
-            db.add(CardTag(card_id=card.id, tag_name=final_name))
-            tag_count += 1
-
-        cards_created += 1
+    domain_tags = summary_data.get("knowledge_domain", [])
+    if domain_tags:
+        _create_card_tags(db, card, domain_tags, existing_tags)
 
     db.commit()
 
     return {
         "title": optimized_title,
-        "chat_session_id": chat_session.id,
-        "cards": cards_created,
-        "topics": len(topics),
+        "session_id": session_id,
+        "cards": 1,
+        "summary": summary_data.get("overall_summary", ""),
+        "knowledge_domain": summary_data.get("knowledge_domain", []),
     }
 
 
-def process_import(db: Session, group_id: str, conversations: list[dict]) -> dict:
-    """完整导入 pipeline — 处理所有对话
+def _llm_batch_worker(args: tuple) -> dict:
+    """线程池 worker: 处理单个会话的 LLM 总结
 
-    顺序处理每个对话（每个对话内部的 LLM 调用受信号量限制并发）。
+    注意: 每个 worker 创建独立的 DB session（线程安全）。
+    """
+    group_id, info, index, total = args
+    db = None
+    try:
+        from app.db import get_session
+        db = get_session()
+        return _process_single_session_llm(db, group_id, info, index, total)
+    except Exception as e:
+        logger.error("LLM 处理失败 [%d/%d] %s: %s", index + 1, total, info.get("title", ""), e)
+        return {"title": info.get("title", ""), "cards": 0, "error": str(e)}
+    finally:
+        if db:
+            db.close()
+
+
+def process_llm_batch(db: Session, group_id: str, session_infos: list[dict]) -> list[dict]:
+    """阶段 2: 批量 LLM 处理所有已保存的会话
+
+    使用线程池并发处理（受信号量限制最大 20 并发 LLM 调用）。
+    """
+    total = len(session_infos)
+    if total == 0:
+        return []
+
+    _update_group(db, group_id, progress=f"[阶段2] 开始 LLM 处理 {total} 个会话...")
+
+    # 提交所有任务到线程池
+    futures = []
+    for i, info in enumerate(session_infos):
+        future = _llm_executor.submit(_llm_batch_worker, (group_id, info, i, total))
+        futures.append(future)
+
+    # 收集结果
+    results = []
+    for future in as_completed(futures):
+        try:
+            result = future.result()
+            results.append(result)
+        except Exception as e:
+            logger.error("LLM 批处理异常: %s", e)
+            results.append({"title": "未知", "cards": 0, "error": str(e)})
+
+    return results
+
+
+# ── 主 pipeline 编排 ─────────────────────────────────────────
+
+def process_import(db: Session, group_id: str, conversations: list[dict]) -> dict:
+    """完整导入 pipeline — 两阶段架构
+
+    阶段 1: 解析 → 预处理 → 批量保存完整会话（无 LLM）
+    阶段 2: 逐会话调用 LLM 生成总结概要 → 创建知识卡片（一个会话一张卡片）
     """
     total = len(conversations)
     _update_group(db, group_id, progress=f"开始处理 {total} 个对话...")
 
-    all_results = []
+    # ═══ 阶段 1: 保存完整会话 ═══
+    session_infos = save_conversations(db, group_id, conversations)
+
+    if not session_infos:
+        _update_group(db, group_id, status="failed", error="所有会话预处理后无有效消息")
+        return {"group_id": group_id, "conversations": 0, "total_cards": 0, "errors": ["无有效消息"]}
+
+    _update_group(db, group_id,
+                  progress=f"[阶段1] 完成！已保存 {len(session_infos)} 个会话，开始生成概要...")
+
+    # ═══ 阶段 2: 逐会话 LLM 生成概要 ═══
+    llm_results = process_llm_batch(db, group_id, session_infos)
+
+    # 汇总结果
     total_cards = 0
     errors = []
-
-    for i, conv in enumerate(conversations):
-        try:
-            result = process_single_conversation(db, group_id, conv, i, total)
-            all_results.append(result)
-            total_cards += result.get("cards", 0)
-        except Exception as e:
-            logger.error("对话处理失败 [%d/%d] %s: %s", i + 1, total, conv.get("title", ""), e)
-            errors.append(f"{conv.get('title', '未知')}: {e}")
-            all_results.append({"title": conv.get("title", ""), "cards": 0, "error": str(e)})
-
-    # 更新分组状态
     domain_set = set()
-    for r in all_results:
-        # 收集领域（从 summary_data 中）
-        pass
+    summaries = []
 
-    status = "completed" if not errors else "completed"
+    for r in llm_results:
+        total_cards += r.get("cards", 0)
+        if r.get("error"):
+            errors.append(f"{r.get('title', '未知')}: {r['error']}")
+        for d in r.get("knowledge_domain", []):
+            domain_set.add(d)
+        if r.get("summary"):
+            summaries.append(r["summary"])
+
+    # 更新分组最终状态
+    group_summary = "；".join(summaries[:5]) if summaries else ""
     error_text = "; ".join(errors) if errors else ""
 
     _update_group(db, group_id,
                   card_count=total_cards,
-                  status=status,
+                  summary=group_summary[:2000],
+                  knowledge_domain=json.dumps(list(domain_set), ensure_ascii=False),
+                  status="completed",
                   error=error_text,
-                  progress=f"完成！共生成 {total_cards} 张知识卡片" + (f"，{len(errors)} 个对话出错" if errors else ""))
+                  progress=f"完成！共生成 {total_cards} 张知识卡片"
+                           + (f"，{len(errors)} 个会话出错" if errors else ""))
 
     return {
         "group_id": group_id,
-        "conversations": len(all_results),
+        "conversations": len(session_infos),
         "total_cards": total_cards,
         "errors": errors,
     }
@@ -568,7 +561,7 @@ def start_import(db: Session, data: dict | list, filename: str = "") -> dict:
 
     1. 解析 JSON
     2. 创建 ImportGroup
-    3. 调用 process_import
+    3. 两阶段 pipeline: 保存会话 → 逐个生成总结概要
     """
     conversations = parse_deepseek_json(data)
     if not conversations:
@@ -590,7 +583,7 @@ def start_import(db: Session, data: dict | list, filename: str = "") -> dict:
     db.commit()
     db.refresh(group)
 
-    # 执行 pipeline
+    # 执行两阶段 pipeline
     try:
         result = process_import(db, group.id, conversations)
         return {"group_id": group.id, **result}

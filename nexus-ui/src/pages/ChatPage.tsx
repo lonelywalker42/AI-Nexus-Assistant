@@ -343,7 +343,7 @@ export default function ChatPage() {
       await knowledgeApi.createCard({
         title: lastAiMessage.content.slice(0, 60),
         summary: lastAiMessage.content.slice(0, 500),
-        source_type: "manual",
+        source_type: "deepseek",
       });
       alert("已保存为知识卡片");
     } catch (err) { alert("保存失败: " + err); }
