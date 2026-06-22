@@ -63,3 +63,4 @@ nexus-ui/src-tauri/binaries/
 *.exe
 dist/
 build/
+nexus-ui/src-tauri/gen/

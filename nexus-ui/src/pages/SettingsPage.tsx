@@ -2,6 +2,15 @@ import { useEffect, useState } from "react";
 import { modelsApi, type ModelConfig } from "../api/client";
 import { useAppName, setAppName, resetAppName } from "../hooks/useAppName";
 
+// 自动更新相关类型
+interface UpdateInfo {
+  version: string;
+  notes: string;
+  available: boolean;
+  downloading?: boolean;
+  progress?: number;
+}
+
 interface BackupItem {
   name: string;
   path: string;
@@ -23,6 +32,81 @@ export default function SettingsPage() {
   // 自定义配色方案
   const [customThemes, setCustomThemes] = useState<Array<{name: string; primary: string; accent: string; bgStart: string; bgEnd: string}>>([]);
   const [editingTheme, setEditingTheme] = useState<number | null>(null);
+
+  // 自动更新状态
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  // 检查更新（通过 GitHub API，跨平台通用）
+  const checkForUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateError(null);
+    try {
+      const resp = await fetch("https://api.github.com/repos/chenjingwei/AI-Nexus-Assistant/releases/latest");
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const latestVer = (data.tag_name as string).replace("v", "");
+      const currentVer = "4.0.0"; // 与 tauri.conf.json version 一致
+      const available = compareVersions(latestVer, currentVer) > 0;
+      setUpdateInfo({
+        version: latestVer,
+        notes: data.body || "无更新说明",
+        available,
+      });
+    } catch (err: any) {
+      setUpdateError(err.message || "检查更新失败");
+    }
+    setCheckingUpdate(false);
+  };
+
+  // 语义化版本比较
+  const compareVersions = (a: string, b: string): number => {
+    const pa = a.split(".").map(Number);
+    const pb = b.split(".").map(Number);
+    for (let i = 0; i < 3; i++) {
+      if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+      if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+    }
+    return 0;
+  };
+
+  // 尝试使用 Tauri 原生 updater（仅桌面端生效）
+  const nativeUpdate = async () => {
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      const update = await check();
+      if (update) {
+        setUpdateInfo({
+          version: update.version,
+          notes: update.body || "无更新说明",
+          available: true,
+          downloading: false,
+          progress: 0,
+        });
+        setUpdateInfo(prev => prev ? { ...prev, downloading: true } : null);
+        await update.downloadAndInstall((progress) => {
+          if (progress.event === "Started" && progress.data.contentLength) {
+            setUpdateInfo(prev => prev ? { ...prev, progress: 0 } : null);
+          } else if (progress.event === "Progress" && progress.data.chunkLength) {
+            setUpdateInfo(prev => {
+              if (!prev) return null;
+              const newProgress = (prev.progress || 0) + progress.data.chunkLength;
+              return { ...prev, progress: newProgress };
+            });
+          }
+        });
+        setUpdateInfo(prev => prev ? { ...prev, downloading: false } : null);
+        await relaunch();
+      } else {
+        setUpdateInfo({ version: "", notes: "", available: false });
+      }
+    } catch {
+      // 非 Tauri 环境（浏览器开发模式），回退到 GitHub API
+      await checkForUpdate();
+    }
+  };
 
   useEffect(() => {
     try {
@@ -452,6 +536,81 @@ export default function SettingsPage() {
 
       {/* v3.6.0: MinerU PDF 转换 */}
       <MinerUSection />
+
+      {/* 应用更新 */}
+      <div className="glass-card p-5 space-y-4">
+        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>应用更新</h3>
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          检查 GitHub Release 获取最新版本。桌面端支持自动下载安装，移动端请前往应用商店更新。
+        </p>
+        <div className="flex items-center gap-3">
+          <button className="btn-gradient btn-click text-xs" disabled={checkingUpdate}
+            onClick={nativeUpdate}
+          >
+            {checkingUpdate ? "检查中..." : "检查更新"}
+          </button>
+          <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            当前版本: v4.0.0
+          </span>
+        </div>
+
+        {updateError && (
+          <div className="text-xs p-3 rounded-lg" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}>
+            ❌ {updateError}
+          </div>
+        )}
+
+        {updateInfo && !updateInfo.available && !updateError && (
+          <div className="text-xs p-3 rounded-lg" style={{ background: "rgba(16,185,129,0.1)", color: "var(--accent-green)" }}>
+            ✅ 已是最新版本
+          </div>
+        )}
+
+        {updateInfo && updateInfo.available && (
+          <div className="space-y-3 p-4 rounded-lg" style={{ background: "var(--hover-bg)", border: "1px solid var(--border-color)" }}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                🆕 新版本 v{updateInfo.version} 可用
+              </span>
+            </div>
+            <div className="text-xs max-h-32 overflow-y-auto whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>
+              {updateInfo.notes}
+            </div>
+            {updateInfo.downloading ? (
+              <div className="space-y-1">
+                <div className="text-xs" style={{ color: "var(--text-muted)" }}>下载中...</div>
+                <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "var(--border-color)" }}>
+                  <div className="h-full rounded-full transition-all" style={{ background: "var(--accent-blue)", width: updateInfo.progress ? `${Math.min(100, updateInfo.progress)}%` : "0%" }} />
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button className="btn-gradient btn-click text-xs"
+                  onClick={async () => {
+                    try {
+                      const { check } = await import("@tauri-apps/plugin-updater");
+                      const { relaunch } = await import("@tauri-apps/plugin-process");
+                      const update = await check();
+                      if (update) {
+                        setUpdateInfo(prev => prev ? { ...prev, downloading: true } : null);
+                        await update.downloadAndInstall();
+                        setUpdateInfo(prev => prev ? { ...prev, downloading: false } : null);
+                        await relaunch();
+                      }
+                    } catch {
+                      // 非 Tauri 环境，打开浏览器下载
+                      window.open(`https://github.com/chenjingwei/AI-Nexus-Assistant/releases/latest`, "_blank");
+                    }
+                  }}
+                >
+                  {typeof window !== "undefined" && "__TAURI_INTERNALS__" in window ? "自动更新" : "前往下载"}
+                </button>
+                <button className="btn-ghost text-xs" onClick={() => setUpdateInfo(null)}>忽略</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* 数据管理 */}
       <div className="glass-card p-5 space-y-4">

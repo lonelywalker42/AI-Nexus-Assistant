@@ -1,0 +1,11 @@
+{
+  "identifier": "mobile",
+  "description": "Mobile permissions - Android/iOS",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "os:default",
+    "dialog:default",
+    "shell:allow-open"
+  ]
+}

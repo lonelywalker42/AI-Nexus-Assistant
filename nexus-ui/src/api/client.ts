@@ -1,11 +1,62 @@
 /**
  * AI Nexus Assistant — API 客户端
  * 连接 Tauri 前端与 Python FastAPI 后端
+ * v4.0.0: 添加 JWT 认证支持
  */
 
-const API_BASE = "http://127.0.0.1:8765";
+export const API_BASE = "http://127.0.0.1:8765";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
+
+// ── 认证 Token 管理 ───────────────────────────────────────
+
+let _accessToken: string | null = null;
+let _refreshToken: string | null = null;
+
+function getStoredTokens(): { access: string | null; refresh: string | null } {
+  try {
+    return {
+      access: localStorage.getItem("nexus_access_token"),
+      refresh: localStorage.getItem("nexus_refresh_token"),
+    };
+  } catch {
+    return { access: null, refresh: null };
+  }
+}
+
+function storeTokens(access: string, refresh?: string) {
+  _accessToken = access;
+  if (refresh) _refreshToken = refresh;
+  try {
+    localStorage.setItem("nexus_access_token", access);
+    if (refresh) localStorage.setItem("nexus_refresh_token", refresh);
+  } catch {}
+}
+
+function clearTokens() {
+  _accessToken = null;
+  _refreshToken = null;
+  try {
+    localStorage.removeItem("nexus_access_token");
+    localStorage.removeItem("nexus_refresh_token");
+  } catch {}
+}
+
+function getAuthHeader(): Record<string, string> {
+  const token = _accessToken || getStoredTokens().access;
+  if (token) return { Authorization: `Bearer ${token}` };
+  return {};
+}
+
+export function isLoggedIn(): boolean {
+  return !!( _accessToken || getStoredTokens().access);
+}
+
+export function logout() {
+  clearTokens();
+}
+
+// ── 后端就绪检测 ─────────────────────────────────────────
 
 async function waitForBackend(): Promise<void> {
   for (let i = 0; i < MAX_RETRIES; i++) {
@@ -27,12 +78,73 @@ async function ensureBackend() {
   }
 }
 
+// ── 认证 API ──────────────────────────────────────────────
+
+export interface AuthResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  user: { username: string; role: string };
+}
+
+export const authApi = {
+  login: async (username: string, password: string): Promise<AuthResponse> => {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "登录失败" }));
+      throw new Error(err.detail || "登录失败");
+    }
+    const data: AuthResponse = await res.json();
+    storeTokens(data.access_token, data.refresh_token);
+    return data;
+  },
+  refresh: async (): Promise<boolean> => {
+    const refresh = _refreshToken || getStoredTokens().refresh;
+    if (!refresh) return false;
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refresh }),
+      });
+      if (!res.ok) { clearTokens(); return false; }
+      const data = await res.json();
+      storeTokens(data.access_token);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+// ── 通用请求函数（带认证 + 自动刷新）────────────────────────
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   await ensureBackend();
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...getAuthHeader(),
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  let res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+  // 401 → 尝试刷新 token → 重试
+  if (res.status === 401) {
+    const refreshed = await authApi.refresh();
+    if (refreshed) {
+      const retryHeaders = {
+        "Content-Type": "application/json",
+        ...getAuthHeader(),
+        ...(options?.headers as Record<string, string> || {}),
+      };
+      res = await fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders });
+    }
+  }
+
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`API Error ${res.status}: ${err}`);
@@ -290,7 +402,7 @@ export const chatApi = {
   stream: async function* (sessionId: string, modelId?: string, signal?: AbortSignal) {
     const res = await fetch(`${API_BASE}/api/chat/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAuthHeader() },
       body: JSON.stringify({ session_id: sessionId, model_id: modelId }),
       signal,
     });
@@ -510,7 +622,7 @@ export const reviewsApi = {
   generate: async function* (paperIds: string[], title?: string) {
     const res = await fetch(`${API_BASE}/api/reviews/generate`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAuthHeader() },
       body: JSON.stringify({ paper_ids: paperIds, title: title || "" }),
     });
     const reader = res.body?.getReader();

@@ -64,6 +64,7 @@ try:
     from app.services import task_service, experiment_service, knowledge_service, chat_service, paper_service
     from app.ai.router import AIRouter
     from app.ai.search_service import start_search_service
+    from app.auth import init_auth, authenticate_user, create_access_token, create_refresh_token, refresh_access_token, verify_token
 
     # 初始化数据库
     init_db()
@@ -103,6 +104,9 @@ try:
 
     _auto_migrate()
 
+    # 初始化认证模块（创建默认 admin 用户）
+    init_auth(data_dir)
+
     # 启动 open-webSearch 聚合搜索服务（后台子进程）
     try:
         _search_ok = start_search_service()
@@ -127,6 +131,68 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── JWT 认证依赖 ─────────────────────────────────────────────
+
+async def get_current_user(request: Request) -> Optional[dict]:
+    """从 Authorization header 提取当前用户（可选依赖）"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[7:]
+    return verify_token(token)
+
+
+async def require_auth(request: Request) -> dict:
+    """要求认证（必须有有效 token）"""
+    from fastapi import HTTPException
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未认证或 token 已过期")
+    return user
+
+
+# ── 认证 API ─────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@app.post("/api/auth/login")
+async def auth_login(body: LoginRequest):
+    """登录：返回 access_token + refresh_token"""
+    user = authenticate_user(body.username, body.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    return {
+        "access_token": create_access_token(user["username"], user["role"]),
+        "refresh_token": create_refresh_token(user["username"], user["role"]),
+        "token_type": "bearer",
+        "user": {"username": user["username"], "role": user["role"]},
+    }
+
+
+@app.post("/api/auth/refresh")
+async def auth_refresh(body: RefreshRequest):
+    """刷新 access_token"""
+    new_token = refresh_access_token(body.refresh_token)
+    if not new_token:
+        raise HTTPException(status_code=401, detail="refresh token 无效或已过期")
+    return {"access_token": new_token, "token_type": "bearer"}
+
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request):
+    """获取当前用户信息"""
+    user = await require_auth(request)
+    return user
+
 
 # AI 路由器（延迟初始化）
 _ai_router: AIRouter | None = None

@@ -896,7 +896,58 @@ iOS Keychain > Android Keystore > 加密文件 > localStorage > 明文
 
 ---
 
-## 十一、后续版本路线图
+## 十一、v4.0.0 构建状态
+
+### 11.1 Windows 构建 ✅ 完成
+
+| 产出物 | 大小 | 路径 |
+|--------|------|------|
+| 便携版 exe | 87 MB | `release/AI-Nexus-Assistant.exe` |
+| NSIS 安装包 | 75 MB | `release/AI Nexus Assistant_4.0.0_x64-setup.exe` |
+| MSI 安装包 | 77 MB | `release/AI Nexus Assistant_4.0.0_x64_en-US.msi` |
+| WebView2 loader | 134 KB | `release/nexus_ui_lib.dll` |
+| 更新清单 | - | `release/latest.json` |
+
+### 11.2 Android 构建 — 通过 GitHub Actions
+
+本地构建受 Windows 中文用户名路径编码问题影响（Kotlin 编译器无法处理非 ASCII 路径）。
+已配置 GitHub Actions 工作流 `.github/workflows/build-android.yml`，在干净的 Linux 环境中构建。
+
+**触发方式**:
+```bash
+# 推送 tag 触发自动构建
+git tag v4.0.0
+git push origin v4.0.0
+
+# 或手动触发
+gh workflow run build-android.yml
+```
+
+**产出物**: APK 文件（通过 GitHub Actions Artifacts 下载）
+
+### 11.3 iOS 构建 — 通过 GitHub Actions
+
+iOS 构建必须在 macOS 环境中进行。已配置 GitHub Actions 工作流 `.github/workflows/build-ios.yml`。
+
+**触发方式**:
+```bash
+# 同样通过 tag 或手动触发
+gh workflow run build-ios.yml
+```
+
+**产出物**: IPA 文件（通过 GitHub Actions Artifacts 下载）
+
+### 11.4 已知限制
+
+| 问题 | 原因 | 解决方案 |
+|------|------|---------|
+| Android 本地构建失败 | Windows 中文用户名导致 Kotlin 路径编码错误 | 使用 GitHub Actions 构建 |
+| iOS 无法本地构建 | 必须 macOS 环境 | 使用 GitHub Actions 构建 |
+| updater 插件仅桌面端 | Tauri 官方限制 | 移动端走应用商店更新 |
+
+---
+
+## 十二、后续版本路线图
 
 | 版本 | 主题 | 关键特性 | 预计时间 |
 |------|------|---------|---------|

@@ -13,7 +13,10 @@ import MusicPage from "./pages/MusicPage";
 import BookshelfPage from "./pages/BookshelfPage";
 import WritingPage from "./pages/WritingPage";
 import ResearchAgentPage from "./pages/ResearchAgentPage";
-import { dashboardApi } from "./api/client";
+import { dashboardApi, isLoggedIn, API_BASE } from "./api/client";
+import LoginPage from "./pages/LoginPage";
+import { usePlatform } from "./hooks/usePlatform";
+import MobileLayout from "./layouts/MobileLayout";
 import {
   IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat,
   IconGear, IconX, IconMinus, IconMaximize, IconCalendar, IconLightbulb, IconImage,
@@ -85,7 +88,9 @@ async function windowClose() {
 function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(isLoggedIn());
   const { name } = useAppName();
+  const { isMobile } = usePlatform();
 
   // 初始化主题（跟随 OS 暗色模式）
   useEffect(() => {
@@ -110,6 +115,12 @@ function App() {
         }, 1000);
       });
   }, []);
+
+  // 登录页面（仅远程 API 模式需要认证，本地 localhost 跳过）
+  const isRemoteApi = !API_BASE.includes("127.0.0.1") && !API_BASE.includes("localhost");
+  if (!authenticated && isRemoteApi) {
+    return <LoginPage onLogin={() => setAuthenticated(true)} />;
+  }
 
   if (loading) {
     return (
@@ -154,6 +165,16 @@ function App() {
     }
   };
 
+  // 移动端布局
+  if (isMobile) {
+    return (
+      <MobileLayout activePage={activePage} onNavigate={setActivePage}>
+        {renderPage()}
+      </MobileLayout>
+    );
+  }
+
+  // 桌面端布局
   return (
     <div className="flex h-screen overflow-hidden select-none" style={{ background: 'var(--bg-gradient)' }}>
       {/* 标题栏 */}

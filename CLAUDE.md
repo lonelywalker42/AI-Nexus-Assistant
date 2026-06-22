@@ -4,7 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v3.7.0**.
+AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v4.0.0**.
+
+## v4.0.0 Features (Multi-platform + Auto-update)
+
+**Auto-update** (`tauri-plugin-updater`):
+- Desktop app checks GitHub Release on startup
+- Ed25519 signature verification for update packages
+- Frontend UI in SettingsPage: "检查更新" button + update dialog
+- Config: `tauri.conf.json` → `plugins.updater.endpoints`
+- Signing key: `~/.tauri/nexus.key` (generate with `npx tauri signer generate`)
+
+**JWT Authentication** (`app/auth.py`):
+- Endpoints: `POST /api/auth/login`, `POST /api/auth/refresh`, `GET /api/auth/me`
+- Default user: admin / nexus2024
+- Access token: 15min, Refresh token: 7 days
+- Frontend: `client.ts` auto-adds Bearer token, auto-refreshes on 401
+- Local mode (localhost): auth skipped; Remote mode: login required
+
+**Mobile Support** (Android/iOS):
+- Platform detection: `usePlatform()` hook (`src/hooks/usePlatform.ts`)
+- Mobile layout: `MobileLayout.tsx` with bottom tab navigation
+- Mobile CSS: `src/styles/mobile.css` (safe areas, touch optimization)
+- Conditional features: `#[cfg(desktop)]` / `#[cfg(mobile)]` in lib.rs
+- Capabilities: `capabilities/mobile.json` for mobile permissions
 
 ## Dual Frontend Architecture
 

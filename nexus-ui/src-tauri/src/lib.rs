@@ -24,12 +24,19 @@ fn kill_process_tree(pid: u32) {
 /// Windows CREATE_NO_WINDOW — 不弹出控制台窗口
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+// 桌面端专用导入
+#[cfg(desktop)]
 use tauri::tray::{TrayIconBuilder, MouseButton, TrayIconEvent};
+#[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::WebviewUrl;
 
+// 桌面端专用：后端进程管理
+#[cfg(desktop)]
 struct BackendProcess(Mutex<Option<Child>>);
 
+#[cfg(desktop)]
 impl Drop for BackendProcess {
     fn drop(&mut self) {
         if let Ok(mut g) = self.0.lock() {
@@ -47,6 +54,7 @@ const INPUT_LABEL: &str = "countdown_input";
 const TODO_LABEL: &str = "todo_calendar";
 
 /// 防止并发创建日历窗口的锁
+#[cfg(desktop)]
 static TODO_CREATING: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
@@ -54,6 +62,7 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! Welcome to AI Nexus Assistant.", name)
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn show_main_window(app: tauri::AppHandle) {
     close_clock(&app);
@@ -68,21 +77,25 @@ fn show_main_window(app: tauri::AppHandle) {
     }
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn close_clock_window(app: tauri::AppHandle) {
     close_clock(&app);
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn close_input_window(app: tauri::AppHandle) {
     close_input(&app);
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn close_todo_window(app: tauri::AppHandle) {
     close_todo(&app);
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn set_countdown(app: tauri::AppHandle, minutes: u64) {
     close_input(&app);
@@ -95,6 +108,7 @@ fn set_countdown(app: tauri::AppHandle, minutes: u64) {
     }
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn cancel_countdown(app: tauri::AppHandle) {
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
@@ -102,6 +116,7 @@ fn cancel_countdown(app: tauri::AppHandle) {
     }
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn toggle_bg(app: tauri::AppHandle) {
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
@@ -166,6 +181,7 @@ fn read_file_base64(file_path: String) -> Result<String, String> {
     Ok(base64::engine::general_purpose::STANDARD.encode(&data))
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn resize_clock(app: tauri::AppHandle, width: f64, height: f64) {
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
@@ -176,6 +192,7 @@ fn resize_clock(app: tauri::AppHandle, width: f64, height: f64) {
     }
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 fn show_context_menu(app: tauri::AppHandle, has_cd: bool, is_trans: bool) {
     match build_context_menu(&app, has_cd, is_trans) {
@@ -188,28 +205,33 @@ fn show_context_menu(app: tauri::AppHandle, has_cd: bool, is_trans: bool) {
     }
 }
 
+#[cfg(desktop)]
 fn close_clock(app: &tauri::AppHandle) {
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
         let _ = cw.hide();
     }
 }
 
+#[cfg(desktop)]
 fn close_input(app: &tauri::AppHandle) {
     if let Some(iw) = app.get_webview_window(INPUT_LABEL) {
         let _ = iw.close();
     }
 }
 
+#[cfg(desktop)]
 fn close_todo(app: &tauri::AppHandle) {
     if let Some(tw) = app.get_webview_window(TODO_LABEL) {
         let _ = tw.destroy();
     }
 }
 
+#[cfg(desktop)]
 fn is_port_open(port: u16) -> bool {
     std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok()
 }
 
+#[cfg(desktop)]
 fn wait_for_backend(port: u16, timeout: Duration) -> bool {
     let addr = format!("127.0.0.1:{}", port);
     let start = Instant::now();
@@ -220,6 +242,7 @@ fn wait_for_backend(port: u16, timeout: Duration) -> bool {
     false
 }
 
+#[cfg(desktop)]
 fn try_embedded_sidecar(port: u16, app: &tauri::App) -> bool {
     let sidecar_bytes: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/nexus-sidecar.exe"));
     if sidecar_bytes.len() < 1024 { return false; }
@@ -254,6 +277,7 @@ fn try_embedded_sidecar(port: u16, app: &tauri::App) -> bool {
 }
 
 /// 创建原生右键菜单
+#[cfg(desktop)]
 fn build_context_menu(app: &tauri::AppHandle, has_cd: bool, is_trans: bool) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
     let m15 = MenuItem::with_id(app, "cd15", "⏱ 15 分钟", true, None::<&str>)?;
@@ -277,6 +301,7 @@ fn build_context_menu(app: &tauri::AppHandle, has_cd: bool, is_trans: bool) -> t
 }
 
 /// 创建时钟窗口（异步，避免菜单事件死锁）
+#[cfg(desktop)]
 fn create_clock_window(app: &tauri::AppHandle) {
     let app_handle = app.clone();
     // 在新线程中执行，避免阻塞菜单事件处理
@@ -285,6 +310,7 @@ fn create_clock_window(app: &tauri::AppHandle) {
     });
 }
 
+#[cfg(desktop)]
 fn do_create_clock(app: &tauri::AppHandle) {
     // 尝试显示已有窗口（隐藏状态的窗口仍存在）
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
@@ -352,6 +378,7 @@ fn do_create_clock(app: &tauri::AppHandle) {
 }
 
 /// 创建待办日历窗口（带创建锁，防止并发重复创建）
+#[cfg(desktop)]
 fn create_todo_window(app: &tauri::AppHandle) {
     // 自旋锁：确保同一时刻只有一个线程在创建窗口
     while TODO_CREATING.compare_exchange_weak(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
@@ -370,6 +397,7 @@ fn create_todo_window(app: &tauri::AppHandle) {
     TODO_CREATING.store(false, Ordering::SeqCst);
 }
 
+#[cfg(desktop)]
 fn do_create_todo(app: &tauri::AppHandle) {
     let ipc_script = r#"
         (function() {
@@ -402,6 +430,7 @@ fn do_create_todo(app: &tauri::AppHandle) {
 }
 
 /// 创建游戏窗口（复古像素游戏机）
+#[cfg(desktop)]
 fn create_games_window(app: &tauri::AppHandle) {
     let app_handle = app.clone();
     std::thread::spawn(move || {
@@ -445,6 +474,7 @@ fn create_games_window(app: &tauri::AppHandle) {
 }
 
 /// 创建自定义倒计时输入窗口
+#[cfg(desktop)]
 fn create_input_window(app: &tauri::AppHandle) {
     if let Some(iw) = app.get_webview_window(INPUT_LABEL) {
         let _ = iw.show();
@@ -518,117 +548,148 @@ document.getElementById('min').select();
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(BackendProcess(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    // 注册命令：桌面端包含所有命令，移动端只包含跨平台命令
+    #[cfg(desktop)]
+    {
+        builder = builder.invoke_handler(tauri::generate_handler![
             greet, show_main_window, close_clock_window, close_input_window, close_todo_window,
             set_countdown, cancel_countdown, toggle_bg,
             show_context_menu, resize_clock,
             list_audio_files, read_file_base64
-        ])
+        ]);
+    }
+    #[cfg(mobile)]
+    {
+        builder = builder.invoke_handler(tauri::generate_handler![
+            greet, list_audio_files, read_file_base64
+        ]);
+    }
+
+    // 桌面端专用：updater 插件
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        builder = builder.plugin(tauri_plugin_process::init());
+    }
+
+    // 桌面端专用：后端进程管理
+    #[cfg(desktop)]
+    {
+        builder = builder.manage(BackendProcess(Mutex::new(None)));
+    }
+
+    builder
         .setup(|app| {
-            // 托盘
-            let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
-            let clock_item = MenuItem::with_id(app, "clock", "显示时钟", true, None::<&str>)?;
-            let todo_item = MenuItem::with_id(app, "todo", "显示待办日历", true, None::<&str>)?;
-            let exit_item = MenuItem::with_id(app, "exit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &clock_item, &todo_item, &exit_item])?;
+            // 桌面端：系统托盘 + 多窗口
+            #[cfg(desktop)]
+            {
+                let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+                let clock_item = MenuItem::with_id(app, "clock", "显示时钟", true, None::<&str>)?;
+                let todo_item = MenuItem::with_id(app, "todo", "显示待办日历", true, None::<&str>)?;
+                let exit_item = MenuItem::with_id(app, "exit", "退出", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show_item, &clock_item, &todo_item, &exit_item])?;
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("AI Nexus Assistant")
-                .menu(&menu)
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = event {
-                        show_main_window(tray.app_handle().clone());
-                    }
-                })
-                .build(app)?;
+                let _tray = TrayIconBuilder::new()
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .tooltip("AI Nexus Assistant")
+                    .menu(&menu)
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = event {
+                            show_main_window(tray.app_handle().clone());
+                        }
+                    })
+                    .build(app)?;
 
-            // 全局菜单事件处理（时钟右键菜单 + 托盘菜单，统一注册一次）
-            app.on_menu_event(move |app, event| {
-                let id = event.id().as_ref();
-                match id {
-                    // 时钟右键菜单
-                    "cd15" => { set_countdown(app.clone(), 15); }
-                    "cd30" => { set_countdown(app.clone(), 30); }
-                    "cd45" => { set_countdown(app.clone(), 45); }
-                    "cd60" => { set_countdown(app.clone(), 60); }
-                    "cd90" => { set_countdown(app.clone(), 90); }
-                    "custom" => { create_input_window(app); }
-                    "cancel" => { cancel_countdown(app.clone()); }
-                    "bg" => { toggle_bg(app.clone()); }
-                    // 共享菜单项
-                    "games" => { create_games_window(app); }
-                    "todo" => { create_todo_window(app); }
-                    "back" => { show_main_window(app.clone()); }
-                    // 托盘菜单
-                    "show" => { show_main_window(app.clone()); }
-                    "clock" => { create_clock_window(app); }
-                    "exit" => {
-                        if let Some(s) = app.try_state::<BackendProcess>() {
-                            if let Ok(mut g) = s.0.lock() {
-                                if let Some(ref mut c) = *g {
-                                    kill_process_tree(c.id());
-                                    let _ = c.wait();
+                // 全局菜单事件处理
+                app.on_menu_event(move |app, event| {
+                    let id = event.id().as_ref();
+                    match id {
+                        "cd15" => { set_countdown(app.clone(), 15); }
+                        "cd30" => { set_countdown(app.clone(), 30); }
+                        "cd45" => { set_countdown(app.clone(), 45); }
+                        "cd60" => { set_countdown(app.clone(), 60); }
+                        "cd90" => { set_countdown(app.clone(), 90); }
+                        "custom" => { create_input_window(app); }
+                        "cancel" => { cancel_countdown(app.clone()); }
+                        "bg" => { toggle_bg(app.clone()); }
+                        "games" => { create_games_window(app); }
+                        "todo" => { create_todo_window(app); }
+                        "back" => { show_main_window(app.clone()); }
+                        "show" => { show_main_window(app.clone()); }
+                        "clock" => { create_clock_window(app); }
+                        "exit" => {
+                            #[cfg(desktop)]
+                            {
+                                if let Some(s) = app.try_state::<BackendProcess>() {
+                                    if let Ok(mut g) = s.0.lock() {
+                                        if let Some(ref mut c) = *g {
+                                            kill_process_tree(c.id());
+                                            let _ = c.wait();
+                                        }
+                                        *g = None;
+                                    }
                                 }
-                                *g = None;
                             }
+                            app.exit(0);
                         }
-                        app.exit(0);
-                    }
-                    _ => {}
-                }
-            });
-
-            // 主窗口关闭 → 时钟
-            let ah = app.handle().clone();
-            if let Some(window) = app.get_webview_window("main") {
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        // Notify frontend BEFORE hiding (visibilitychange doesn't fire in WebView2)
-                        if let Some(w) = ah.get_webview_window("main") {
-                            let _ = w.eval("window.dispatchEvent(new CustomEvent('nexus-window-hide'))");
-                            let _ = w.set_skip_taskbar(true);
-                            let _ = w.hide();
-                        }
-                        create_clock_window(&ah);
-                        create_todo_window(&ah);
+                        _ => {}
                     }
                 });
-            }
 
-            // 启动后端
-            let port: u16 = 8765;
-            if is_port_open(port) { return Ok(()); }
-            let mut started = try_embedded_sidecar(port, app);
-            if let Ok(exe) = std::env::current_exe() {
-                if let Some(dir) = exe.parent() {
-                    if !started {
-                        let mut cmd = Command::new(dir.join("nexus-server-x86_64-pc-windows-msvc.exe"));
-                        cmd.args(["--port",&port.to_string()]);
-                        cmd.env("NEXUS_APP_DIR", dir);
-                        #[cfg(target_os = "windows")]
-                        cmd.creation_flags(CREATE_NO_WINDOW);
-                        if let Ok(c) = cmd.spawn() {
-                            *app.state::<BackendProcess>().0.lock().unwrap() = Some(c);
-                            started = wait_for_backend(port, Duration::from_secs(30));
+                // 主窗口关闭 → 时钟
+                let ah = app.handle().clone();
+                if let Some(window) = app.get_webview_window("main") {
+                    window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            if let Some(w) = ah.get_webview_window("main") {
+                                let _ = w.eval("window.dispatchEvent(new CustomEvent('nexus-window-hide'))");
+                                let _ = w.set_skip_taskbar(true);
+                                let _ = w.hide();
+                            }
+                            create_clock_window(&ah);
+                            create_todo_window(&ah);
                         }
-                    }
-                    if !started {
-                        let mut cmd = Command::new("python");
-                        cmd.arg(dir.join("server.py")).args(["--port",&port.to_string()]);
-                        #[cfg(target_os = "windows")]
-                        cmd.creation_flags(CREATE_NO_WINDOW);
-                        if let Ok(c) = cmd.spawn() {
-                            *app.state::<BackendProcess>().0.lock().unwrap() = Some(c);
-                            started = wait_for_backend(port, Duration::from_secs(15));
+                    });
+                }
+
+                // 启动后端 sidecar
+                let port: u16 = 8765;
+                if !is_port_open(port) {
+                    let mut started = try_embedded_sidecar(port, app);
+                    if let Ok(exe) = std::env::current_exe() {
+                        if let Some(dir) = exe.parent() {
+                            if !started {
+                                let mut cmd = Command::new(dir.join("nexus-server-x86_64-pc-windows-msvc.exe"));
+                                cmd.args(["--port",&port.to_string()]);
+                                cmd.env("NEXUS_APP_DIR", dir);
+                                #[cfg(target_os = "windows")]
+                                cmd.creation_flags(CREATE_NO_WINDOW);
+                                if let Ok(c) = cmd.spawn() {
+                                    *app.state::<BackendProcess>().0.lock().unwrap() = Some(c);
+                                    started = wait_for_backend(port, Duration::from_secs(30));
+                                }
+                            }
+                            if !started {
+                                let mut cmd = Command::new("python");
+                                cmd.arg(dir.join("server.py")).args(["--port",&port.to_string()]);
+                                #[cfg(target_os = "windows")]
+                                cmd.creation_flags(CREATE_NO_WINDOW);
+                                if let Ok(c) = cmd.spawn() {
+                                    *app.state::<BackendProcess>().0.lock().unwrap() = Some(c);
+                                    started = wait_for_backend(port, Duration::from_secs(15));
+                                }
+                            }
                         }
                     }
                 }
             }
+
             Ok(())
         })
         .run(tauri::generate_context!())
