@@ -117,15 +117,16 @@ class UnifiedSearchEngine:
                 executor.submit(self._search_one, engine, query, max_results): name
                 for name, engine in engines.items()
             }
-            for future in concurrent.futures.as_completed(futures, timeout=PER_SOURCE_TIMEOUT):
+            for future in concurrent.futures.as_completed(futures):
                 name = futures[future]
                 try:
                     papers = future.result(timeout=PER_SOURCE_TIMEOUT)
                     all_papers.extend(papers)
                 except concurrent.futures.TimeoutError:
-                    print(f"⏰ {name} 搜索超时 ({PER_SOURCE_TIMEOUT}s)")
+                    print(f"[TIMEOUT] {name} 搜索超时 ({PER_SOURCE_TIMEOUT}s)")
                 except Exception as e:
-                    print(f"❌ {name} 搜索异常: {e}")
+                    print(f"[ERROR] {name} 搜索异常: {e}")
+            # with 退出时 executor.shutdown(wait=True) 自动等待所有线程完成
 
         # 去重 (DOI 优先 + 标题模糊 + URL 规范化)
         unique = self._deduplicate(all_papers)

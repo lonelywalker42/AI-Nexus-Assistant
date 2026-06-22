@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { knowledgeApi, chatApi, type KnowledgeCard } from "../api/client";
+import { useEffect, useState, useRef } from "react";
+import { knowledgeApi, chatApi, importGroupApi, type KnowledgeCard, type ImportGroup } from "../api/client";
 import { IconFile, IconChat, IconArrowLeft, IconStar, IconLightbulb, IconX, IconGlobe } from "../components/Icons";
 
 const CATEGORIES = [
@@ -22,9 +22,15 @@ export default function KnowledgePage() {
   const [importStatus, setImportStatus] = useState("");
 
   // 视图状态
-  const [view, setView] = useState<"categories" | "list" | "detail">("categories");
+  const [view, setView] = useState<"categories" | "list" | "detail" | "importGroups" | "importGroupDetail">("categories");
   const [activeCategory, setActiveCategory] = useState("");
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
+
+  // 导入分组
+  const [importGroups, setImportGroups] = useState<ImportGroup[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<ImportGroup | null>(null);
+  const [groupCards, setGroupCards] = useState<KnowledgeCard[]>([]);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 随手记
   const [showQuickNote, setShowQuickNote] = useState(false);
@@ -45,20 +51,15 @@ export default function KnowledgePage() {
   const [graphEdges, setGraphEdges] = useState<{ from: string; to: string }[]>([]);
 
   const buildGraph = () => {
-    // 构建知识图谱数据
     const nodes: typeof graphNodes = [];
     const edges: typeof graphEdges = [];
     const tagMap = new Map<string, string[]>();
-
-    // 收集标签关联
     cards.forEach(card => {
       (card.tags || []).forEach(tag => {
         if (!tagMap.has(tag)) tagMap.set(tag, []);
         tagMap.get(tag)!.push(card.id);
       });
     });
-
-    // 创建节点
     cards.forEach((card, i) => {
       const angle = (i / cards.length) * Math.PI * 2;
       const radius = 150;
@@ -71,8 +72,6 @@ export default function KnowledgePage() {
         color: CATEGORIES.find(c => c.key === card.source_type)?.color || "#64748b",
       });
     });
-
-    // 创建边（通过共同标签连接）
     tagMap.forEach((cardIds, _tag) => {
       for (let i = 0; i < cardIds.length; i++) {
         for (let j = i + 1; j < cardIds.length; j++) {
@@ -80,7 +79,6 @@ export default function KnowledgePage() {
         }
       }
     });
-
     setGraphNodes(nodes);
     setGraphEdges(edges);
     setShowGraph(true);
@@ -100,26 +98,19 @@ export default function KnowledgePage() {
   };
 
   const selectAll = () => {
-    if (selectedIds.size === cards.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(cards.map(c => c.id)));
-    }
+    if (selectedIds.size === cards.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(cards.map(c => c.id)));
   };
 
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
     if (!confirm(`确定删除选中的 ${selectedIds.size} 张卡片？`)) return;
     try {
-      for (const id of selectedIds) {
-        await knowledgeApi.deleteCard(id);
-      }
+      for (const id of selectedIds) await knowledgeApi.deleteCard(id);
       setSelectedIds(new Set());
       setBatchMode(false);
       loadCards();
-    } catch (err) {
-      alert("批量删除失败: " + err);
-    }
+    } catch (err) { alert("批量删除失败: " + err); }
   };
 
   const handleBatchExport = () => {
@@ -129,9 +120,7 @@ export default function KnowledgePage() {
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `knowledge_cards_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
+    a.href = url; a.download = `knowledge_cards_${new Date().toISOString().slice(0, 10)}.json`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -149,18 +138,17 @@ export default function KnowledgePage() {
   useEffect(() => { loadCards(); }, [debouncedSearch, sortBy, sortOrder, starMin, tagFilter]);
 
   // 加载标签
-  useEffect(() => {
-    knowledgeApi.listTags().then(setAllTags).catch(() => {});
-  }, []);
+  useEffect(() => { knowledgeApi.listTags().then(setAllTags).catch(() => {}); }, []);
+
+  // 加载导入分组
+  const loadImportGroups = () => importGroupApi.list().then(setImportGroups).catch(console.error);
 
   const categoryCounts = CATEGORIES.map(cat => ({
     ...cat,
     count: cards.filter(c => c.source_type === cat.key).length,
   }));
 
-  const filteredCards = activeCategory
-    ? cards.filter(c => c.source_type === activeCategory)
-    : cards;
+  const filteredCards = activeCategory ? cards.filter(c => c.source_type === activeCategory) : cards;
 
   const handleCreate = async () => {
     const title = prompt("卡片标题:");
@@ -169,17 +157,10 @@ export default function KnowledgePage() {
     loadCards();
   };
 
-  // 随手记快速创建
   const handleQuickNote = async () => {
     if (!quickTitle.trim()) return;
-    await knowledgeApi.createCard({
-      title: quickTitle.trim(),
-      summary: quickContent.trim(),
-      source_type: "note",
-    });
-    setQuickTitle("");
-    setQuickContent("");
-    setShowQuickNote(false);
+    await knowledgeApi.createCard({ title: quickTitle.trim(), summary: quickContent.trim(), source_type: "note" });
+    setQuickTitle(""); setQuickContent(""); setShowQuickNote(false);
     loadCards();
   };
 
@@ -188,56 +169,47 @@ export default function KnowledgePage() {
     if (!confirm("确定删除？")) return;
     await knowledgeApi.deleteCard(id);
     loadCards();
-    if (selectedCard?.id === id) {
-      setSelectedCard(null);
-      setView(activeCategory ? "list" : "categories");
-    }
+    if (selectedCard?.id === id) { setSelectedCard(null); setView(activeCategory ? "list" : "categories"); }
   };
 
   const handleCardClick = async (card: KnowledgeCard) => {
-    try {
-      const full = await knowledgeApi.getCard(card.id);
-      setSelectedCard(full);
-    } catch {
-      setSelectedCard(card);
-    }
+    try { const full = await knowledgeApi.getCard(card.id); setSelectedCard(full); }
+    catch { setSelectedCard(card); }
     setView("detail");
   };
 
   const handleBackFromDetail = () => {
     setSelectedCard(null);
-    setView(activeCategory ? "list" : "categories");
+    if (selectedGroup) setView("importGroupDetail");
+    else setView(activeCategory ? "list" : "categories");
   };
 
   const handleCategoryClick = (key: string) => {
-    setActiveCategory(key);
-    setView("list");
+    if (key === "deepseek") { loadImportGroups(); setView("importGroups"); }
+    else { setActiveCategory(key); setView("list"); }
   };
 
-  const handleBackFromList = () => {
-    setActiveCategory("");
-    setView("categories");
-  };
+  const handleBackFromList = () => { setActiveCategory(""); setView("categories"); };
 
-  // 从随手记卡片创建 AI 对话
   const handleChatFromCard = async (card: KnowledgeCard) => {
+    // 如果卡片已有 chat_session_id，直接跳转
+    if (card.chat_session_id) {
+      window.location.hash = `chat-${card.chat_session_id}`;
+      return;
+    }
     try {
       const res = await chatApi.createSession(`IDEA: ${card.title.slice(0, 30)}`, "idea");
       await chatApi.addMessage(res.id,
         `请帮我分析和拓展以下想法：\n\n标题：${card.title}\n内容：${card.summary || "无"}\n\n请提供：1) 这个想法的可行性分析 2) 可能的研究方向 3) 建议的下一步行动`
       );
-      // 更新卡片，关联对话 session
       await knowledgeApi.updateCard(card.id, { user_notes: `chat_session:${res.id}` });
-      // 跳转到对话页面（通过 hash 标记 session id）
       window.location.hash = `chat-${res.id}`;
-      alert(`已创建 AI 对话「IDEA: ${card.title.slice(0, 30)}」，请前往 AI 对话页面查看`);
-    } catch (err) {
-      alert("创建对话失败: " + err);
-    }
+    } catch (err) { alert("创建对话失败: " + err); }
   };
 
-  // JSON 导入
-  const handleImportJSON = () => {
+  // ── DeepSeek 智能导入 ──────────────────────────────────────
+
+  const handleDeepSeekImport = () => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json";
@@ -249,23 +221,107 @@ export default function KnowledgePage() {
       try {
         const text = await file.text();
         const data = JSON.parse(text);
+        setImportStatus(`解析完成，正在启动 AI 处理 pipeline...`);
+        const result = await importGroupApi.importDeepseek(data, file.name);
+        setImportStatus(`已启动处理: ${result.conversations} 个对话, ${result.total_messages} 条消息\n正在通过 LLM 生成知识卡片，请等待...`);
+
+        // 开始轮询进度
+        startProgressPolling(result.group_id);
+      } catch (err) {
+        setImportStatus(`导入失败: ${err}`);
+        setImporting(false);
+      }
+    };
+    input.click();
+  };
+
+  const startProgressPolling = (groupId: string) => {
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    pollingRef.current = setInterval(async () => {
+      try {
+        const progress = await importGroupApi.getProgress(groupId);
+        setImportStatus(`[${progress.status}] ${progress.progress}\n已生成 ${progress.card_count} 张卡片`);
+        if (progress.status === "completed" || progress.status === "failed") {
+          if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
+          setImporting(false);
+          if (progress.status === "completed") {
+            setImportStatus(`✅ ${progress.progress}`);
+            loadCards();
+            loadImportGroups();
+          } else {
+            setImportStatus(`❌ 导入失败: ${progress.error}`);
+          }
+        }
+      } catch {
+        // 忽略轮询错误
+      }
+    }, 2000);
+  };
+
+  // 清理轮询
+  useEffect(() => {
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+  }, []);
+
+  // ── 导入分组详情 ──────────────────────────────────────────
+
+  const handleGroupClick = async (group: ImportGroup) => {
+    try {
+      const detail = await importGroupApi.get(group.id);
+      setSelectedGroup(detail);
+      setGroupCards(detail.cards || []);
+      setView("importGroupDetail");
+    } catch (err) {
+      alert("加载分组详情失败: " + err);
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!confirm("确定删除该导入分组及其所有卡片和关联对话？")) return;
+    try {
+      await importGroupApi.delete(groupId);
+      loadImportGroups();
+      if (selectedGroup?.id === groupId) { setSelectedGroup(null); setView("importGroups"); }
+      loadCards();
+    } catch (err) { alert("删除失败: " + err); }
+  };
+
+  const handleViewGroupChat = async (group: ImportGroup) => {
+    // 获取该分组关联的对话
+    try {
+      const msgs = await importGroupApi.getMessages(group.id);
+      if (msgs.sessions.length > 0) {
+        const sid = msgs.sessions[0].session_id;
+        window.location.hash = `chat-${sid}`;
+      } else {
+        alert("该分组未关联原始对话");
+      }
+    } catch { alert("获取对话失败"); }
+  };
+
+  // ── 普通 JSON 导入 ──────────────────────────────────────
+
+  const handleImportJSON = () => {
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      setImporting(true); setImportStatus(`正在解析: ${file.name}...`);
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
         const isAiLiterature = !!(data.kbPapers || data.papers);
-        const isDeepSeek = !!(data.topics);
-        const isChatGPT = !!(data.messages) && Array.isArray(data.messages);
-        const isMimo = !!(data.conversations) || !!(data.data?.conversation);
-        const format = isAiLiterature ? "ai-literature" : isDeepSeek ? "DeepSeek" : isChatGPT ? "ChatGPT" : isMimo ? "mimo" : "未知";
+        const format = isAiLiterature ? "ai-literature" : "未知";
         setImportStatus(`检测到 ${format} 格式，正在导入...`);
         const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/json", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
         });
         const result = await res.json();
         setImportStatus(`导入完成: ${result.imported} 条记录 (${format} 格式)`);
         loadCards();
-      } catch (err) {
-        setImportStatus(`导入失败: ${err}`);
-      }
+      } catch (err) { setImportStatus(`导入失败: ${err}`); }
       setImporting(false);
     };
     input.click();
@@ -273,26 +329,20 @@ export default function KnowledgePage() {
 
   const handleImportMD = () => {
     const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".md,.txt";
+    input.type = "file"; input.accept = ".md,.txt";
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-      setImporting(true);
-      setImportStatus("正在导入 Markdown...");
+      setImporting(true); setImportStatus("正在导入 Markdown...");
       try {
         const text = await file.text();
         const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/md", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: text, filename: file.name }),
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: text, filename: file.name }),
         });
         const result = await res.json();
         setImportStatus(`导入完成: ${result.imported} 条记录`);
         loadCards();
-      } catch (err) {
-        setImportStatus(`导入失败: ${err}`);
-      }
+      } catch (err) { setImportStatus(`导入失败: ${err}`); }
       setImporting(false);
     };
     input.click();
@@ -300,15 +350,12 @@ export default function KnowledgePage() {
 
   const handleImportPDF = () => {
     const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".pdf";
-    input.multiple = true;
+    input.type = "file"; input.accept = ".pdf"; input.multiple = true;
     input.onchange = async (e) => {
       const files = Array.from((e.target as HTMLInputElement).files || []);
       if (files.length === 0) return;
       setImporting(true);
-      let successCount = 0;
-      let failCount = 0;
+      let successCount = 0, failCount = 0;
       const results: string[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -317,54 +364,31 @@ export default function KnowledgePage() {
           const arrayBuffer = await file.arrayBuffer();
           const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/pdf", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/octet-stream",
-              "X-Filename": encodeURIComponent(file.name),
-            },
+            headers: { "Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(file.name) },
             body: arrayBuffer,
           });
           const result = await res.json();
-          if (result.error) {
-            failCount++;
-            results.push(`❌ ${file.name}: ${result.error}`);
-          } else {
-            successCount++;
-            results.push(`✅ ${file.name}: ${result.title}`);
-          }
-        } catch (err) {
-          failCount++;
-          results.push(`❌ ${file.name}: ${err}`);
-        }
+          if (result.error) { failCount++; results.push(`❌ ${file.name}: ${result.error}`); }
+          else { successCount++; results.push(`✅ ${file.name}: ${result.title}`); }
+        } catch (err) { failCount++; results.push(`❌ ${file.name}: ${err}`); }
       }
       setImportStatus(`处理完成: ${successCount} 成功, ${failCount} 失败\n${results.join("\n")}`);
-      setImporting(false);
-      loadCards();
+      setImporting(false); loadCards();
     };
     input.click();
   };
 
-  // URL 导入
   const handleImportUrl = async () => {
     if (!importUrl.trim()) return;
-    setImporting(true);
-    setImportStatus(`正在抓取: ${importUrl}...`);
+    setImporting(true); setImportStatus(`正在抓取: ${importUrl}...`);
     try {
       const res = await fetch("http://127.0.0.1:8765/api/knowledge/import/url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: importUrl }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: importUrl }),
       });
       const result = await res.json();
-      if (result.error) {
-        setImportStatus(`❌ 导入失败: ${result.error}`);
-      } else {
-        setImportStatus(`✅ 导入完成: ${result.title}`);
-        setImportUrl("");
-        loadCards();
-      }
-    } catch (err) {
-      setImportStatus(`❌ 导入失败: ${err}`);
-    }
+      if (result.error) setImportStatus(`❌ 导入失败: ${result.error}`);
+      else { setImportStatus(`✅ 导入完成: ${result.title}`); setImportUrl(""); loadCards(); }
+    } catch (err) { setImportStatus(`❌ 导入失败: ${err}`); }
     setImporting(false);
   };
 
@@ -373,8 +397,13 @@ export default function KnowledgePage() {
       {/* 头部 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {view !== "categories" && (
-            <button onClick={view === "detail" ? handleBackFromDetail : handleBackFromList}
+          {(view === "detail" || view === "list" || view === "importGroups" || view === "importGroupDetail") && (
+            <button onClick={() => {
+              if (view === "detail") handleBackFromDetail();
+              else if (view === "importGroupDetail") { setSelectedGroup(null); setView("importGroups"); }
+              else if (view === "importGroups") { setActiveCategory(""); setView("categories"); }
+              else handleBackFromList();
+            }}
               className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors cursor-pointer"
               style={{ color: "var(--text-secondary)" }}
               onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
@@ -383,6 +412,8 @@ export default function KnowledgePage() {
           )}
           <h2 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
             {view === "detail" ? selectedCard?.title || "卡片详情" :
+             view === "importGroupDetail" ? selectedGroup?.title || "导入详情" :
+             view === "importGroups" ? "AI 对话导入" :
              view === "list" ? (CATEGORIES.find(c => c.key === activeCategory)?.label || "全部卡片") :
              "IDEA"}
           </h2>
@@ -409,20 +440,11 @@ export default function KnowledgePage() {
             <button className="cursor-pointer" style={{ color: "var(--text-muted)" }}
               onClick={() => setShowQuickNote(false)}><IconX size={14} /></button>
           </div>
-          <input
-            className="input-glass text-sm"
-            placeholder="想法标题..."
-            value={quickTitle}
+          <input className="input-glass text-sm" placeholder="想法标题..." value={quickTitle}
             onChange={e => setQuickTitle(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) handleQuickNote(); }}
-          />
-          <textarea
-            className="input-glass text-sm"
-            rows={3}
-            placeholder="详细描述你的想法..."
-            value={quickContent}
-            onChange={e => setQuickContent(e.target.value)}
-          />
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) handleQuickNote(); }} />
+          <textarea className="input-glass text-sm" rows={3} placeholder="详细描述你的想法..."
+            value={quickContent} onChange={e => setQuickContent(e.target.value)} />
           <div className="flex justify-end gap-2">
             <button className="btn-ghost text-xs py-1.5" onClick={() => setShowQuickNote(false)}>取消</button>
             <button className="btn-gradient btn-click text-xs py-1.5 px-4" onClick={handleQuickNote}>保存</button>
@@ -435,14 +457,15 @@ export default function KnowledgePage() {
         <div className="glass-card p-4 space-y-3">
           <div className="flex gap-3 items-center flex-wrap">
             <span className="text-sm" style={{ color: "var(--text-secondary)" }}>导入:</span>
+            <button onClick={handleDeepSeekImport} disabled={importing}
+              className="text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+              style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6", fontWeight: 600 }}>
+              🧠 DeepSeek 智能导入
+            </button>
             <button onClick={handleImportJSON} disabled={importing} className="btn-ghost text-xs py-1.5 disabled:opacity-50">JSON 文件</button>
             <button onClick={handleImportMD} disabled={importing} className="btn-ghost text-xs py-1.5 disabled:opacity-50">Markdown 文件</button>
             <button onClick={handleImportPDF} disabled={importing} className="btn-ghost text-xs py-1.5 disabled:opacity-50">PDF 文献</button>
-            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              支持 ai-literature/DeepSeek/ChatGPT/mimo JSON、Markdown、PDF
-            </span>
           </div>
-          {/* URL 导入 */}
           <div className="flex gap-2 items-center">
             <input className="input-glass flex-1 text-xs py-1.5" placeholder="粘贴网页链接导入知识卡片..."
               value={importUrl} onChange={e => setImportUrl(e.target.value)}
@@ -454,9 +477,9 @@ export default function KnowledgePage() {
           </div>
           {importStatus && (
             <pre className="text-xs whitespace-pre-wrap rounded-lg p-3" style={{
-              color: importStatus.includes("失败") || importStatus.includes("❌") ? "#ef4444" : "#10b981",
-              background: "var(--hover-bg)",
-              fontFamily: "inherit",
+              color: importStatus.includes("失败") || importStatus.includes("❌") ? "#ef4444" :
+                     importStatus.includes("✅") ? "#10b981" : "var(--text-secondary)",
+              background: "var(--hover-bg)", fontFamily: "inherit",
             }}>
               {importStatus}
             </pre>
@@ -465,7 +488,7 @@ export default function KnowledgePage() {
       )}
 
       {/* 搜索 + 筛选 */}
-      {view !== "categories" && (
+      {(view === "list" || view === "detail") && (
         <div className="space-y-2">
           <div className="flex gap-2 items-center">
             <input className="input-glass flex-1 text-sm" placeholder="搜索知识卡片..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -497,15 +520,12 @@ export default function KnowledgePage() {
                 <span className="text-xs" style={{ color: viewMode === "grid" ? "var(--accent-blue)" : "var(--text-muted)" }}>⊞</span>
               </button>
             </div>
-            <button
-              className="px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
+            <button className="px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
               style={batchMode ? { background: "rgba(59,130,246,0.15)", color: "var(--accent-blue)" } : { background: "var(--hover-bg)", color: "var(--text-muted)" }}
-              onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}
-            >
+              onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}>
               {batchMode ? "取消" : "批量"}
             </button>
           </div>
-          {/* 批量操作栏 */}
           {batchMode && (
             <div className="flex gap-2 items-center px-2 py-1.5 rounded-lg" style={{ background: "rgba(59,130,246,0.06)" }}>
               <button className="text-xs cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={selectAll}>
@@ -520,7 +540,6 @@ export default function KnowledgePage() {
               )}
             </div>
           )}
-          {/* 标签筛选 */}
           {allTags.length > 0 && (
             <div className="flex gap-1 flex-wrap">
               <button className="px-2 py-0.5 rounded text-[10px] cursor-pointer transition-colors"
@@ -544,13 +563,11 @@ export default function KnowledgePage() {
           {categoryCounts.map(cat => {
             const CatIcon = CATEGORY_ICONS[cat.iconKey] || IconFile;
             return (
-            <div
-              key={cat.key}
-              className="glass-card p-5 cursor-pointer glass-card-hover"
-              onClick={() => handleCategoryClick(cat.key)}
-            >
+            <div key={cat.key} className="glass-card p-5 cursor-pointer glass-card-hover"
+              onClick={() => handleCategoryClick(cat.key)}>
               <div className="flex items-center gap-3 mb-3">
-                <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${cat.color}15`, color: cat.color }}><CatIcon size={18} /></span>
+                <span className="w-8 h-8 rounded-lg flex items-center justify-center"
+                  style={{ background: `${cat.color}15`, color: cat.color }}><CatIcon size={18} /></span>
                 <div>
                   <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{cat.label}</h3>
                   <p className="text-xs" style={{ color: "var(--text-muted)" }}>{cat.count} 张卡片</p>
@@ -565,6 +582,200 @@ export default function KnowledgePage() {
         </div>
       )}
 
+      {/* ═══ 导入分组列表 ═══ */}
+      {view === "importGroups" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+              DeepSeek 对话导入记录（{importGroups.length} 个分组）
+            </span>
+            <button onClick={handleDeepSeekImport} disabled={importing}
+              className="text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+              style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6", fontWeight: 600 }}>
+              + 新增导入
+            </button>
+          </div>
+
+          {importGroups.length === 0 ? (
+            <div className="glass-card p-8 text-center">
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>暂无导入记录</p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                点击「新增导入」上传 DeepSeek 对话 JSON，AI 将自动分析生成知识卡片
+              </p>
+            </div>
+          ) : importGroups.map(group => (
+            <div key={group.id}
+              className="glass-card p-4 cursor-pointer glass-card-hover group"
+              onClick={() => handleGroupClick(group)}>
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                      style={{
+                        background: group.status === "completed" ? "rgba(16,185,129,0.1)" :
+                                   group.status === "failed" ? "rgba(239,68,68,0.1)" : "rgba(59,130,246,0.1)",
+                        color: group.status === "completed" ? "#10b981" :
+                               group.status === "failed" ? "#ef4444" : "#3b82f6",
+                      }}>
+                      {group.status === "completed" ? "完成" : group.status === "failed" ? "失败" : "处理中"}
+                    </span>
+                    <h3 className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>{group.title}</h3>
+                  </div>
+
+                  {group.status === "processing" && (
+                    <p className="text-xs mb-1" style={{ color: "#3b82f6" }}>{group.progress}</p>
+                  )}
+
+                  {group.summary && (
+                    <p className="text-xs line-clamp-2 mb-1" style={{ color: "var(--text-secondary)" }}>{group.summary}</p>
+                  )}
+
+                  <div className="flex gap-3 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    <span>{group.message_count} 条消息</span>
+                    <span>{group.card_count} 张卡片</span>
+                    <span>{new Date(group.created_at).toLocaleString("zh-CN")}</span>
+                    {group.original_filename && <span>📁 {group.original_filename}</span>}
+                  </div>
+
+                  {group.knowledge_domain && group.knowledge_domain.length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {group.knowledge_domain.map(d => (
+                        <span key={d} className="text-[9px] px-1.5 py-0.5 rounded"
+                          style={{ background: "rgba(139,92,246,0.08)", color: "#8b5cf6" }}>{d}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {group.chat_session_id && (
+                    <button onClick={(e) => { e.stopPropagation(); handleViewGroupChat(group); }}
+                      className="text-xs px-2 py-1 rounded-lg cursor-pointer"
+                      style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}
+                      title="查看原始对话">
+                      <IconChat size={12} />
+                    </button>
+                  )}
+                  <button onClick={(e) => handleDeleteGroup(group.id, e)}
+                    className="text-xs px-2 py-1 rounded-lg cursor-pointer"
+                    style={{ color: "var(--text-muted)" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}>
+                    删除
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ═══ 导入分组详情 ═══ */}
+      {view === "importGroupDetail" && selectedGroup && (
+        <div className="space-y-4">
+          {/* 分组信息 */}
+          <div className="glass-card p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                style={{
+                  background: selectedGroup.status === "completed" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
+                  color: selectedGroup.status === "completed" ? "#10b981" : "#ef4444",
+                }}>
+                {selectedGroup.status === "completed" ? "处理完成" : "处理失败"}
+              </span>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {selectedGroup.message_count} 条消息 → {selectedGroup.card_count} 张知识卡片
+              </span>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {new Date(selectedGroup.created_at).toLocaleString("zh-CN")}
+              </span>
+              <div className="flex-1" />
+              <button onClick={() => handleViewGroupChat(selectedGroup)}
+                className="btn-ghost text-xs py-1.5 flex items-center gap-1.5"
+                style={{ color: "#8b5cf6" }}>
+                <IconChat size={13} /> 查看原始对话
+              </button>
+              <button onClick={(e) => handleDeleteGroup(selectedGroup.id, e)}
+                className="text-xs px-2 py-1.5 rounded-lg cursor-pointer"
+                style={{ color: "#ef4444" }}>
+                删除分组
+              </button>
+            </div>
+
+            {selectedGroup.summary && (
+              <div>
+                <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-muted)" }}>会话摘要</p>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>{selectedGroup.summary}</p>
+              </div>
+            )}
+
+            {selectedGroup.knowledge_domain && selectedGroup.knowledge_domain.length > 0 && (
+              <div className="flex gap-1 flex-wrap">
+                {selectedGroup.knowledge_domain.map(d => (
+                  <span key={d} className="text-[10px] px-2 py-0.5 rounded-full"
+                    style={{ background: "rgba(139,92,246,0.08)", color: "#8b5cf6" }}>{d}</span>
+                ))}
+              </div>
+            )}
+
+            {selectedGroup.error && (
+              <p className="text-xs" style={{ color: "#ef4444" }}>错误: {selectedGroup.error}</p>
+            )}
+          </div>
+
+          {/* 话题卡片列表 */}
+          <div className="space-y-2">
+            <p className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
+              话题知识卡片（{groupCards.length} 张）
+            </p>
+            {groupCards.map(card => (
+              <div key={card.id}
+                className="glass-card p-4 cursor-pointer glass-card-hover group"
+                onClick={() => { setSelectedCard(card); setView("detail"); }}>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>{card.title}</h3>
+                    <p className="text-xs line-clamp-2 mb-1" style={{ color: "var(--text-secondary)" }}>{card.summary || "无摘要"}</p>
+                    {card.key_points && card.key_points.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {card.key_points.slice(0, 3).map((kp, i) => (
+                          <span key={i} className="text-[9px] px-1.5 py-0.5 rounded"
+                            style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>
+                            {kp.length > 30 ? kp.slice(0, 30) + "..." : kp}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {card.tags && card.tags.length > 0 && (
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {card.tags.map(t => (
+                          <span key={t} className="text-[9px] px-1.5 py-0.5 rounded"
+                            style={{ background: "rgba(139,92,246,0.08)", color: "#8b5cf6" }}>{t}</span>
+                        ))}
+                      </div>
+                    )}
+                    {card.category_path && (
+                      <span className="text-[9px] mt-1 inline-block" style={{ color: "var(--text-muted)" }}>
+                        📂 {card.category_path}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {card.chat_session_id && (
+                      <button onClick={(e) => { e.stopPropagation(); window.location.hash = `chat-${card.chat_session_id}`; }}
+                        className="text-xs px-2 py-1 rounded-lg cursor-pointer"
+                        style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>
+                        <IconChat size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 卡片列表 / 网格 */}
       {view === "list" && viewMode === "list" && (
         <div className="space-y-2">
@@ -573,19 +784,13 @@ export default function KnowledgePage() {
               <p style={{ color: "var(--text-muted)" }}>该分类下暂无卡片</p>
             </div>
           ) : filteredCards.map(card => (
-            <div
-              key={card.id}
+            <div key={card.id}
               className="glass-card p-4 flex items-start gap-4 cursor-pointer glass-card-hover group"
-              onClick={() => batchMode ? toggleSelect(card.id) : handleCardClick(card)}
-            >
+              onClick={() => batchMode ? toggleSelect(card.id) : handleCardClick(card)}>
               {batchMode && (
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(card.id)}
-                  onChange={() => toggleSelect(card.id)}
-                  className="mt-1 flex-shrink-0"
-                  onClick={e => e.stopPropagation()}
-                />
+                <input type="checkbox" checked={selectedIds.has(card.id)}
+                  onChange={() => toggleSelect(card.id)} className="mt-1 flex-shrink-0"
+                  onClick={e => e.stopPropagation()} />
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -593,6 +798,9 @@ export default function KnowledgePage() {
                   <span className="flex-shrink-0 flex gap-0.5" style={{ color: "#fbbf24" }}>
                     {Array.from({length: 5}, (_, i) => <IconStar key={i} size={12} filled={i < card.star_rating} />)}
                   </span>
+                  {card.import_group_id && (
+                    <span className="text-[9px] px-1 py-0.5 rounded" style={{ background: "rgba(139,92,246,0.08)", color: "#8b5cf6" }}>导入</span>
+                  )}
                 </div>
                 <p className="text-xs line-clamp-2" style={{ color: "var(--text-secondary)" }}>{card.summary || "无摘要"}</p>
                 {card.tags && card.tags.length > 0 && (
@@ -609,14 +817,12 @@ export default function KnowledgePage() {
                 <button onClick={(e) => { e.stopPropagation(); handleChatFromCard(card); }}
                   className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
                   style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}
-                  title="AI 对话分析"
-                ><IconChat size={12} /></button>
+                  title="AI 对话分析"><IconChat size={12} /></button>
                 <button onClick={(e) => handleDelete(card.id, e)}
                   className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
                   style={{ color: "var(--text-muted)" }}
                   onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
-                  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
-                >删除</button>
+                  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}>删除</button>
               </div>
             </div>
           ))}
@@ -631,8 +837,7 @@ export default function KnowledgePage() {
               <p style={{ color: "var(--text-muted)" }}>该分类下暂无卡片</p>
             </div>
           ) : filteredCards.map(card => (
-            <div key={card.id}
-              className="glass-card p-3 cursor-pointer glass-card-hover group flex flex-col gap-2"
+            <div key={card.id} className="glass-card p-3 cursor-pointer glass-card-hover group flex flex-col gap-2"
               onClick={() => handleCardClick(card)}>
               <h3 className="text-sm font-semibold line-clamp-2" style={{ color: "var(--text-primary)" }}>{card.title}</h3>
               <p className="text-xs line-clamp-3 flex-1" style={{ color: "var(--text-secondary)" }}>{card.summary || "无摘要"}</p>
@@ -650,7 +855,6 @@ export default function KnowledgePage() {
                 </span>
                 <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{new Date(card.updated_at || card.created_at).toLocaleDateString()}</span>
               </div>
-              {/* Hover actions */}
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={(e) => { e.stopPropagation(); handleChatFromCard(card); }}
                   className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer"
@@ -681,30 +885,20 @@ export default function KnowledgePage() {
               {new Date(selectedCard.created_at).toLocaleString("zh-CN")}
             </span>
             <div className="flex-1" />
-            {/* AI 对话按钮 */}
-            <button
-              className="btn-ghost text-xs py-1.5 flex items-center gap-1.5"
-              onClick={() => handleChatFromCard(selectedCard)}
-            >
+            <button className="btn-ghost text-xs py-1.5 flex items-center gap-1.5"
+              onClick={() => handleChatFromCard(selectedCard)}>
               <IconChat size={13} /> AI 对话分析
             </button>
-            {/* 如果有关联对话，显示链接 */}
-            {selectedCard.user_notes?.startsWith("chat_session:") && (
-              <button
-                className="text-xs px-2 py-1.5 rounded-lg cursor-pointer"
+            {(selectedCard as any).chat_session_id && (
+              <button className="text-xs px-2 py-1.5 rounded-lg cursor-pointer"
                 style={{ background: "rgba(139,92,246,0.1)", color: "#8b5cf6" }}
-                onClick={() => {
-                  const sid = selectedCard.user_notes.replace("chat_session:", "");
-                  window.location.hash = `chat-${sid}`;
-                  alert("请前往 AI 对话页面查看关联对话");
-                }}
-              >查看关联对话</button>
+                onClick={() => { window.location.hash = `chat-${(selectedCard as any).chat_session_id}`; }}>
+                查看关联对话
+              </button>
             )}
           </div>
 
-          <div>
-            <h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>{selectedCard.title}</h3>
-          </div>
+          <div><h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>{selectedCard.title}</h3></div>
 
           {selectedCard.summary && (
             <div>
@@ -721,8 +915,7 @@ export default function KnowledgePage() {
               <ul className="space-y-1">
                 {selectedCard.key_points.map((kp, i) => (
                   <li key={i} className="text-sm flex items-start gap-2" style={{ color: "var(--text-secondary)" }}>
-                    <span className="flex-shrink-0" style={{ color: "var(--accent-blue)" }}>•</span>
-                    {kp}
+                    <span className="flex-shrink-0" style={{ color: "var(--accent-blue)" }}>•</span>{kp}
                   </li>
                 ))}
               </ul>
@@ -755,19 +948,14 @@ export default function KnowledgePage() {
             </div>
             <div className="relative" style={{ height: "400px", background: "var(--hover-bg)", borderRadius: "12px" }}>
               <svg width="100%" height="100%" viewBox="0 0 400 400">
-                {/* 边 */}
                 {graphEdges.map((edge, i) => {
                   const from = graphNodes.find(n => n.id === edge.from);
                   const to = graphNodes.find(n => n.id === edge.to);
                   if (!from || !to) return null;
-                  return (
-                    <line key={i} x1={from.x} y1={from.y} x2={to.x} y2={to.y}
-                      stroke="var(--border-color)" strokeWidth="1" opacity="0.5" />
-                  );
+                  return <line key={i} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="var(--border-color)" strokeWidth="1" opacity="0.5" />;
                 })}
-                {/* 节点 */}
                 {graphNodes.map(node => (
-                  <g key={node.id} onClick={() => { const card = cards.find(c => c.id === node.id); if (card) { setSelectedCard(card); setShowGraph(false); } }}
+                  <g key={node.id} onClick={() => { const card = cards.find(c => c.id === node.id); if (card) { setSelectedCard(card); setShowGraph(false); setView("detail"); } }}
                     style={{ cursor: "pointer" }}>
                     <circle cx={node.x} cy={node.y} r={node.size} fill={node.color} opacity="0.8" />
                     <text x={node.x} y={node.y + node.size + 12} textAnchor="middle" fontSize="10"

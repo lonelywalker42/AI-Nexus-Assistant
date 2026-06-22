@@ -77,7 +77,11 @@ class ExperimentDesignAgent(WorkflowEngine):
         query = workflow.config.get("query", workflow.title)
         from app.search.engine import UnifiedSearchEngine
         engine = UnifiedSearchEngine()
-        papers = engine.search(query, max_results=15, enrich=True)
+        try:
+            papers = await asyncio.to_thread(engine.search, query, None, 15, True)
+        except Exception as e:
+            print(f"[experiment_agent] 搜索异常: {e}", flush=True)
+            papers = []
 
         paper_list = []
         for p in papers[:15]:
@@ -129,7 +133,7 @@ class ExperimentDesignAgent(WorkflowEngine):
         hypothesis_text = hypothesis_result.get("content", "")
 
         # 检查是否返回了错误信息
-        if hypothesis_text.startswith("❌"):
+        if hypothesis_text.startswith("[ERROR]"):
             raise Exception(hypothesis_text)
 
         # 解析假设

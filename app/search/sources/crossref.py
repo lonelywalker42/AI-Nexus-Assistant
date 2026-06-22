@@ -27,7 +27,7 @@ class CrossRefSearch(SearchEngine):
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            print(f"❌ CrossRef 搜索错误: {e}")
+            print(f"[ERROR] CrossRef 搜索错误: {e}")
             return []
 
         papers = []

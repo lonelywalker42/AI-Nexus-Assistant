@@ -17,7 +17,7 @@ class GoogleScholarSearch(SearchEngine):
         try:
             from scholarly import scholarly
         except ImportError:
-            print("❌ 未安装 scholarly 库")
+            print("[ERROR] 未安装 scholarly 库")
             return []
 
         self._rate_limit()
@@ -39,7 +39,7 @@ class GoogleScholarSearch(SearchEngine):
                     continue
             return papers
         except Exception as e:
-            print(f"❌ Google Scholar 搜索错误: {e}")
+            print(f"[ERROR] Google Scholar 搜索错误: {e}")
             return []
 
     def _parse(self, pub: dict) -> PaperData | None:

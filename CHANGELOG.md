@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.0.1 (2026-06-22) — DeepSeek 对话智能导入
+
+### 新增
+- **DeepSeek 对话智能导入**: IDEA 页面新增「🧠 DeepSeek 智能导入」按钮，上传 DeepSeek JSON 后自动通过 LLM 生成结构化知识卡片
+- **导入 Pipeline**: 解析 mapping 树 → 消息预处理 → 会话摘要 → 话题切分 → 知识卡片生成 → 标签归一化，完整 6 步 pipeline
+- **对话重建**: 导入的 DeepSeek 对话自动重建为 AI 会话（ChatSession），可在 AI 对话页面查看原始对话
+- **导入分组管理**: 「AI 对话」分类下新增导入分组列表视图，支持查看分组详情、话题卡片、原始对话
+- **进度轮询**: 导入过程中实时显示 LLM 处理进度（2 秒轮询）
+- **LLM 并发控制**: 信号量限制最大 20 个并发 LLM 请求，避免 API 过载
+- **4 种 JSON 格式支持**: DeepSeek mapping 树、单对话对象、简单 messages 数组、含 messages 键的对象
+
+### 改动
+- KnowledgeCard 新增 `import_group_id` 和 `chat_session_id` 字段
+- 新增 `ImportGroup` 数据模型（import_groups 表）
+- 新增 6 个 API 端点: import/deepseek、import-groups CRUD、progress 轮询、messages 获取
+- 卡片列表和详情接口返回 `import_group_id` 和 `chat_session_id` 字段
+
 ## v3.7.0 (2026-06-21) — 体验优化 + Bug修复 + 游戏增强
 
 ### 新增

@@ -5,6 +5,7 @@ from .search_history import SearchHistory
 from .experiment import Experiment, ExperimentResult
 from .knowledge import KnowledgeCard, Tag, CardTag
 from .chat import ChatSession, ChatMessage
+from .import_group import ImportGroup
 from .review import Review
 from .writing import WritingDocument
 from app.services.metrics_service import MetricEvent
@@ -18,6 +19,7 @@ __all__ = [
     "Experiment", "ExperimentResult",
     "KnowledgeCard", "Tag", "CardTag",
     "ChatSession", "ChatMessage",
+    "ImportGroup",
     "Review",
     "WritingDocument",
     "MetricEvent",

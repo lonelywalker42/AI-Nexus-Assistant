@@ -18,6 +18,8 @@ class KnowledgeCard(Base):
     key_points: Mapped[str] = mapped_column(Text, default="[]")  # JSON array
     source_type: Mapped[str] = mapped_column(String(20), default="manual")  # deepseek/literature/manual
     paper_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # FK -> papers
+    import_group_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # FK -> import_groups
+    chat_session_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # FK -> chat_sessions (原始对话)
     embedding_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # ChromaDB vector ID
     category_path: Mapped[str] = mapped_column(Text, default="")  # e.g. "控制/飞行控制/PID"
     star_rating: Mapped[int] = mapped_column(Integer, default=0)  # 0-5

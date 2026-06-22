@@ -312,8 +312,11 @@ fn create_clock_window(app: &tauri::AppHandle) {
 
 #[cfg(desktop)]
 fn do_create_clock(app: &tauri::AppHandle) {
-    // 尝试显示已有窗口（隐藏状态的窗口仍存在）
+    // 尝试显示已有窗口（隐藏状态的窗口仍存在）→ 重置为默认大小
     if let Some(cw) = app.get_webview_window(CLOCK_LABEL) {
+        let _ = cw.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+            width: 360, height: 180,
+        }));
         let _ = cw.show();
         let _ = cw.set_focus();
         return;

@@ -68,7 +68,7 @@ class AIRouter:
              model_id: str | None = None, **kwargs) -> dict:
         model = self._resolve_model(model_id, purpose)
         if not model:
-            return {"thinking": "", "content": "❌ 未配置 AI 模型，请在设置中添加。"}
+            return {"thinking": "", "content": "[ERROR] 未配置 AI 模型，请在设置中添加。"}
 
         if model.protocol == "anthropic":
             try:
@@ -82,9 +82,9 @@ class AIRouter:
         try:
             import openai
         except ImportError as e:
-            return {"thinking": "", "content": f"❌ 未安装 openai 库: {e}"}
+            return {"thinking": "", "content": f"[ERROR] 未安装 openai 库: {e}"}
         except Exception as e:
-            return {"thinking": "", "content": f"❌ openai 导入异常: {type(e).__name__}: {e}"}
+            return {"thinking": "", "content": f"[ERROR] openai 导入异常: {type(e).__name__}: {e}"}
 
         # 确保 base_url 以 /v1 结尾
         base_url = model.base_url.rstrip("/")
@@ -109,15 +109,15 @@ class AIRouter:
             print(f"[router] API call succeeded, content length={len(content)}", flush=True)
             return {"thinking": thinking, "content": content}
         except openai.NotFoundError as e:
-            error_msg = f"❌ API 端点不存在 (404): base_url={base_url}, model={model.model_name}。请检查配置。错误: {e}"
+            error_msg = f"[ERROR] API 端点不存在 (404): base_url={base_url}, model={model.model_name}。请检查配置。错误: {e}"
             print(f"[router] {error_msg}", flush=True)
             return {"thinking": "", "content": error_msg}
         except openai.AuthenticationError as e:
-            error_msg = f"❌ API 认证失败 (401): 请检查 API Key。错误: {e}"
+            error_msg = f"[ERROR] API 认证失败 (401): 请检查 API Key。错误: {e}"
             print(f"[router] {error_msg}", flush=True)
             return {"thinking": "", "content": error_msg}
         except Exception as e:
-            error_msg = f"❌ AI 调用失败: {type(e).__name__}: {e}"
+            error_msg = f"[ERROR] AI 调用失败: {type(e).__name__}: {e}"
             print(f"[router] {error_msg}", flush=True)
             return {"thinking": "", "content": error_msg}
 
@@ -125,7 +125,7 @@ class AIRouter:
         try:
             import anthropic
         except ImportError:
-            return {"thinking": "", "content": "❌ 未安装 anthropic 库"}
+            return {"thinking": "", "content": "[ERROR] 未安装 anthropic 库"}
 
         client = anthropic.Anthropic(api_key=model.api_key)
         try:
@@ -152,7 +152,7 @@ class AIRouter:
                     content = block.text
             return {"thinking": thinking, "content": content}
         except Exception as e:
-            return {"thinking": "", "content": f"❌ AI 调用失败: {e}"}
+            return {"thinking": "", "content": f"[ERROR] AI 调用失败: {e}"}
 
     # ── 流式调用（支持工具调用）─────────────────────────────────
 
@@ -160,7 +160,7 @@ class AIRouter:
                     model_id: str | None = None, **kwargs) -> Generator[dict, None, None]:
         model = self._resolve_model(model_id, purpose)
         if not model:
-            yield {"type": "content", "data": "❌ 未配置 AI 模型"}
+            yield {"type": "content", "data": "[ERROR] 未配置 AI 模型"}
             return
 
         if model.protocol == "anthropic":
@@ -183,10 +183,10 @@ class AIRouter:
         try:
             import openai
         except ImportError as e:
-            yield {"type": "content", "data": f"❌ 未安装 openai 库: {e}"}
+            yield {"type": "content", "data": f"[ERROR] 未安装 openai 库: {e}"}
             return
         except Exception as e:
-            yield {"type": "content", "data": f"❌ openai 导入异常: {type(e).__name__}: {e}"}
+            yield {"type": "content", "data": f"[ERROR] openai 导入异常: {type(e).__name__}: {e}"}
             return
 
         # 确保 base_url 以 /v1 结尾
@@ -346,7 +346,7 @@ class AIRouter:
                                 if delta.content:
                                     yield {"type": "content", "data": delta.content}
                         except Exception as e:
-                            yield {"type": "content", "data": f"\n\n❌ {e}"}
+                            yield {"type": "content", "data": f"\n\n[ERROR] {e}"}
                         return
 
                     tool_calls_for_msg.append({
@@ -386,8 +386,8 @@ class AIRouter:
             except Exception as e:
                 import traceback
                 print(f"[router] round {round_num} exception: {e}", flush=True)
-                traceback.print_exc()
-                yield {"type": "content", "data": f"\n\n❌ 流式调用失败: {e}"}
+                print(traceback.format_exc(), flush=True)
+                yield {"type": "content", "data": f"\n\n[ERROR] 流式调用失败: {e}"}
                 return
 
     def _stream_anthropic_with_tools(self, model: ModelConfig, messages: list[dict], **kwargs):
@@ -395,7 +395,7 @@ class AIRouter:
         try:
             import anthropic
         except ImportError:
-            yield {"type": "content", "data": "❌ 未安装 anthropic 库"}
+            yield {"type": "content", "data": "[ERROR] 未安装 anthropic 库"}
             return
 
         client = anthropic.Anthropic(api_key=model.api_key)
@@ -506,8 +506,8 @@ class AIRouter:
             except Exception as e:
                 import traceback
                 print(f"[router] round {round_num} exception: {e}", flush=True)
-                traceback.print_exc()
-                yield {"type": "content", "data": f"\n\n❌ 流式调用失败: {e}"}
+                print(traceback.format_exc(), flush=True)
+                yield {"type": "content", "data": f"\n\n[ERROR] 流式调用失败: {e}"}
                 return
 
     def _resolve_model(self, model_id: str | None, purpose: str) -> ModelConfig | None:

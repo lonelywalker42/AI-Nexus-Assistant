@@ -241,7 +241,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(self._nav_list, 1)
 
         # 底部版本标签（药丸样式）
-        version_label = QLabel("v0.3.0")
+        version_label = QLabel("v4.0.1")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(f"""
             color: {self._theme.get('text_d')};

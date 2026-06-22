@@ -39,10 +39,14 @@ class LiteratureReviewAgent(WorkflowEngine):
         query = workflow.config.get("query", workflow.title)
         max_results = workflow.config.get("max_results", 30)
 
-        # 使用搜索引擎
+        # 使用搜索引擎（在线程池中执行，避免阻塞事件循环）
         from app.search.engine import UnifiedSearchEngine
         engine = UnifiedSearchEngine()
-        papers = engine.search(query, max_results=max_results, enrich=True)
+        try:
+            papers = await asyncio.to_thread(engine.search, query, None, max_results, True)
+        except Exception as e:
+            print(f"[review_agent] 搜索异常: {e}", flush=True)
+            papers = []
 
         # 转换为字典格式
         paper_list = []
@@ -109,11 +113,14 @@ class LiteratureReviewAgent(WorkflowEngine):
         ]
 
         model_id = workflow.config.get("model_id")
-        result = await asyncio.to_thread(self.ai_router.chat, messages, "review", model_id)
+        try:
+            result = await asyncio.to_thread(self.ai_router.chat, messages, "review", model_id)
+        except Exception as e:
+            raise Exception(f"AI 调用失败: {e}")
 
         content = result.get("content", "")
         # 检查是否返回了错误信息
-        if content.startswith("❌"):
+        if content.startswith("[ERROR]"):
             raise Exception(content)
 
         return {

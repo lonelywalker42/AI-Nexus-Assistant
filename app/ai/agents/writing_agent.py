@@ -110,7 +110,7 @@ class PaperWritingAgent(WorkflowEngine):
             result = await asyncio.to_thread(self.ai_router.chat, messages, "writing", model_id)
             content = result.get("content", "")
             # 检查是否返回了错误信息
-            if content.startswith("❌"):
+            if content.startswith("[ERROR]"):
                 raise Exception(content)
             chapter_contents[chapter] = content
 

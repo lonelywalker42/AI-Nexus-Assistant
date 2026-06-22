@@ -33,7 +33,7 @@ class PubMedSearch(SearchEngine):
             data = resp.json()
             ids = data.get("esearchresult", {}).get("idlist", [])
         except Exception as e:
-            print(f"❌ PubMed esearch 错误: {e}")
+            print(f"[ERROR] PubMed esearch 错误: {e}")
             return []
 
         if not ids:
@@ -51,7 +51,7 @@ class PubMedSearch(SearchEngine):
             resp.raise_for_status()
             root = ET.fromstring(resp.text)
         except Exception as e:
-            print(f"❌ PubMed efetch 错误: {e}")
+            print(f"[ERROR] PubMed efetch 错误: {e}")
             return []
 
         papers = []

@@ -25,12 +25,12 @@ class ScopusSearch(SearchEngine):
         try:
             resp = requests.get(self.BASE_URL, headers=headers, params=params, timeout=15)
             if resp.status_code == 400:
-                print(f"❌ Scopus 请求参数错误")
+                print(f"[ERROR] Scopus 请求参数错误")
                 return []
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            print(f"❌ Scopus 搜索错误: {e}")
+            print(f"[ERROR] Scopus 搜索错误: {e}")
             return []
 
         papers = []

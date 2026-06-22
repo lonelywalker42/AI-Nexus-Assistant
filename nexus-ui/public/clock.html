@@ -28,7 +28,7 @@ body.transparent .tube::after{background:rgba(26,26,32,0.4);border-color:rgba(48
 body.transparent .player-wrap{background:rgba(6,6,8,0.45);backdrop-filter:blur(10px);border-color:rgba(18,18,26,0.2)}
 body.transparent .spec-canvas{opacity:0.7}
 
-.wrap{display:flex;flex-direction:column;align-items:center;gap:6px}
+.wrap{display:flex;flex-direction:column;align-items:center;gap:6px;transform-origin:center center;transition:transform 0.15s ease-out}
 .row{display:flex;align-items:center;gap:2px;position:relative;cursor:move}
 .tube{
   width:38px;height:72px;background:var(--tube);border:1px solid var(--tube-b);
@@ -958,13 +958,6 @@ document.addEventListener('contextmenu',function(e){
   if(window.invoke) window.invoke('show_context_menu',{hasCd:!!window._isCD,isTrans:!!window._trans}).catch(function(){});
 });
 
-// 双击返回主窗口
-document.addEventListener('dblclick',function(e){
-  if(e.target.closest('.xbtn'))return;
-  if(e.target.closest('.player-wrap'))return;
-  if(window.invoke) window.invoke('show_main_window',{}).catch(function(){});
-});
-
 // 关闭按钮
 $('xB').addEventListener('click',function(e){
   e.stopPropagation();
@@ -977,26 +970,40 @@ $('dragZone').addEventListener('mousedown',function(e){
   if(typeof window.startDrag==='function') window.startDrag();
 });
 
-// ── 滚轮缩放 ──
-var CW=360, CH=180, SCALE=1;
+// ── 缩放系统（CSS transform 统一缩放所有元素）──
+var BASE_W=360, BASE_H=180, SCALE=1;
+var wrap=document.querySelector('.wrap');
+var scaleTimer=null;
+
+function applyScale(s){
+  SCALE=Math.max(0.6,Math.min(2.5,s));
+  wrap.style.transform='scale('+SCALE+')';
+}
+
+// 滚轮缩放 → 直接控制 SCALE + transform + 窗口大小
 document.addEventListener('wheel',function(e){
   e.preventDefault();
   var step = e.deltaY < 0 ? 0.1 : -0.1;
-  SCALE = Math.max(0.6, Math.min(2.5, SCALE + step));
-  CW = Math.round(360 * SCALE);
-  CH = Math.round(180 * SCALE);
-  var s = SCALE;
-  document.querySelectorAll('.tube').forEach(function(t){t.style.width=(38*s)+'px';t.style.height=(72*s)+'px'});
-  document.querySelectorAll('.dg').forEach(function(d){d.style.fontSize=(48*s)+'px'});
-  document.querySelectorAll('.cd').forEach(function(c){c.style.width=(8*s)+'px';c.style.height=(8*s)+'px'});
-  document.querySelectorAll('.col').forEach(function(c){c.style.gap=(16*s)+'px'});
-  document.querySelector('.led-t').style.fontSize=(14*s)+'px';
-  // 缩放播放器
-  document.querySelector('.player-wrap').style.padding=(4*s)+'px '+(8*s)+'px';
-  document.querySelector('.spec-canvas').style.height=(24*s)+'px';
-  // 调整窗口大小
-  if(window.invoke)window.invoke('resize_clock',{width:CW,height:CH}).catch(function(){});
+  applyScale(SCALE+step);
+  var w=Math.round(BASE_W*SCALE), h=Math.round(BASE_H*SCALE);
+  if(window.invoke)window.invoke('resize_clock',{width:w,height:h}).catch(function(){});
 },{passive:false});
+
+// OS 拖拽调整窗口大小时，自动缩放内容适配
+new ResizeObserver(function(){
+  if(scaleTimer) clearTimeout(scaleTimer);
+  scaleTimer=setTimeout(function(){
+    var s=Math.min(window.innerWidth/BASE_W, window.innerHeight/BASE_H);
+    if(s>0.1&&s<4) applyScale(s);
+  },80);
+}).observe(document.documentElement);
+
+// 双击：返回主窗口（非播放器区域）
+document.addEventListener('dblclick',function(e){
+  if(e.target.closest('.xbtn'))return;
+  if(e.target.closest('.player-wrap'))return;
+  if(window.invoke) window.invoke('show_main_window',{}).catch(function(){});
+});
 
 </script>
 </body>

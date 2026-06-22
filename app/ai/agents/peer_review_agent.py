@@ -99,7 +99,7 @@ class PeerReviewAgent(WorkflowEngine):
         review_text = result.get("content", "")
 
         # 检查是否返回了错误信息
-        if review_text.startswith("❌"):
+        if review_text.startswith("[ERROR]"):
             raise Exception(review_text)
 
         # 解析评审结果

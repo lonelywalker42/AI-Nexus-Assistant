@@ -26,7 +26,7 @@ class SemanticScholarSearch(SearchEngine):
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            print(f"❌ Semantic Scholar 搜索错误: {e}")
+            print(f"[ERROR] Semantic Scholar 搜索错误: {e}")
             return []
 
         papers = []

@@ -17,7 +17,7 @@ class ArxivSearch(SearchEngine):
         try:
             import arxiv
         except ImportError:
-            print("❌ 未安装 arxiv 库")
+            print("[ERROR] 未安装 arxiv 库")
             return []
 
         try:
@@ -30,7 +30,7 @@ class ArxivSearch(SearchEngine):
                     papers.append(paper)
             return papers
         except Exception as e:
-            print(f"❌ arXiv 搜索错误: {e}")
+            print(f"[ERROR] arXiv 搜索错误: {e}")
             return []
 
     def _parse(self, result) -> PaperData | None:

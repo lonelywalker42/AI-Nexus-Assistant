@@ -338,6 +338,8 @@ export interface KnowledgeCard {
   category_path: string;
   star_rating: number;
   user_notes: string;
+  import_group_id?: string;
+  chat_session_id?: string;
   tags?: string[];
   created_at: string;
   updated_at?: string;
@@ -363,6 +365,46 @@ export const knowledgeApi = {
     request<{ id: string }>(`/api/knowledge/cards/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteCard: (id: string) => request<{ ok: boolean }>(`/api/knowledge/cards/${id}`, { method: "DELETE" }),
   listTags: () => request<{ name: string; usage_count: number; status: string }[]>("/api/knowledge/tags"),
+};
+
+// ── Import Groups ──────────────────────────────────────────
+
+export interface ImportGroup {
+  id: string;
+  title: string;
+  source_type: string;
+  source_url: string;
+  original_filename: string;
+  message_count: number;
+  summary: string;
+  knowledge_domain: string[];
+  card_count: number;
+  chat_session_id: string | null;
+  status: string;
+  error: string;
+  progress: string;
+  created_at: string;
+  cards?: KnowledgeCard[];
+}
+
+export const importGroupApi = {
+  list: () => request<ImportGroup[]>("/api/knowledge/import-groups"),
+  get: (id: string) => request<ImportGroup>(`/api/knowledge/import-groups/${id}`),
+  getProgress: (id: string) => request<{ status: string; progress: string; card_count: number; error: string }>(
+    `/api/knowledge/import-groups/${id}/progress`
+  ),
+  delete: (id: string) => request<{ ok: boolean; deleted_cards: number }>(
+    `/api/knowledge/import-groups/${id}`, { method: "DELETE" }
+  ),
+  getMessages: (id: string) => request<{ group_id: string; sessions: { session_id: string; title: string; messages: { role: string; content: string }[] }[] }>(
+    `/api/knowledge/import-groups/${id}/messages`
+  ),
+  importDeepseek: (data: any, filename?: string) => request<{ group_id: string; conversations: number; total_messages: number; status: string }>(
+    "/api/knowledge/import/deepseek", {
+      method: "POST",
+      body: JSON.stringify({ data, filename }),
+    }
+  ),
 };
 
 // ── Chat ───────────────────────────────────────────────────

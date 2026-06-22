@@ -12,8 +12,56 @@ import logging
 from datetime import date, datetime
 from typing import Optional
 from pathlib import Path
+import builtins
 
-# 冻结模式（PyInstaller）下将 stderr 重定向到日志文件，方便排查启动问题
+
+class _SafeWriter:
+    """GBK 安全输出流 — 将非 encodable 字符替换为 ?，防止 Windows 控制台编码崩溃"""
+    def __init__(self, stream):
+        self._stream = stream
+        self.encoding = getattr(stream, 'encoding', 'utf-8')
+    def write(self, s):
+        try:
+            self._stream.write(s)
+        except UnicodeEncodeError:
+            enc = getattr(self._stream, 'encoding', None) or 'utf-8'
+            self._stream.write(s.encode(enc, errors='replace').decode(enc))
+    def flush(self):
+        try:
+            self._stream.flush()
+        except Exception:
+            pass
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+# 立即包装 stdout/stderr（无论 frozen 与否），防止任何后续代码触发 GBK 编码错误
+sys.stdout = _SafeWriter(sys.stdout)
+sys.stderr = _SafeWriter(sys.stderr)
+
+# 保存原始 print 引用并替换为安全版本
+_real_print = builtins.print
+
+
+def _safe_print(*args, **kwargs):
+    """GBK 安全打印 — 将非 GBK 字符替换为 ? 避免 Windows 控制台编码错误"""
+    try:
+        _real_print(*args, **kwargs)
+    except UnicodeEncodeError:
+        safe_args = []
+        for a in args:
+            s = str(a)
+            try:
+                s.encode(sys.stdout.encoding or 'utf-8')
+            except (UnicodeEncodeError, LookupError):
+                s = s.encode(sys.stdout.encoding or 'utf-8', errors='replace').decode(sys.stdout.encoding or 'utf-8')
+            safe_args.append(s)
+        _real_print(*safe_args, **kwargs)
+
+
+builtins.print = _safe_print
+
+# 冻结模式（PyInstaller）下额外将输出重定向到日志文件
 if getattr(sys, 'frozen', False):
     _log_dir = Path(sys.executable).parent / "data"
     _log_dir.mkdir(parents=True, exist_ok=True)
@@ -42,7 +90,7 @@ try:
         sys.path.insert(0, str(base_dir))
 except Exception as e:
     print(f"[server] ERROR in path setup: {e}", flush=True)
-    import traceback; traceback.print_exc()
+    import traceback; print(traceback.format_exc(), flush=True)
     sys.exit(1)
 
 # 确保 data 目录存在（exe 旁边，不在临时目录）
@@ -51,7 +99,7 @@ data_dir.mkdir(parents=True, exist_ok=True)
 print(f"[server] data_dir={data_dir}", flush=True)
 
 try:
-    from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Request
+    from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Request, BackgroundTasks
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
@@ -61,7 +109,9 @@ try:
     from app.models import Experiment, ExperimentResult
     from app.models import KnowledgeCard, Tag, CardTag
     from app.models import ChatSession, ChatMessage
+    from app.models import ImportGroup
     from app.services import task_service, experiment_service, knowledge_service, chat_service, paper_service
+    from app.services import deepseek_import_service
     from app.ai.router import AIRouter
     from app.ai.search_service import start_search_service
     from app.auth import init_auth, authenticate_user, create_access_token, create_refresh_token, refresh_access_token, verify_token
@@ -83,8 +133,10 @@ try:
             from app.models.paper import Paper
             from app.models.chat import ChatSession, ChatMessage
             from app.models.experiment import Experiment, ExperimentResult
+            from app.models.knowledge import KnowledgeCard
+            from app.models.import_group import ImportGroup
 
-            models = [Paper, ChatSession, ChatMessage, Experiment, ExperimentResult]
+            models = [Paper, ChatSession, ChatMessage, Experiment, ExperimentResult, KnowledgeCard, ImportGroup]
             for model in models:
                 try:
                     cursor = conn.execute(f"PRAGMA table_info({model.__tablename__})")
@@ -117,11 +169,11 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="0.1.0")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.0.1")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
-    traceback.print_exc()
+    print(traceback.format_exc(), flush=True)
     sys.exit(1)
 
 # CORS（Tauri 前端需要）
@@ -1108,6 +1160,8 @@ def list_cards(search: str = "", category: str = "", tag: str = "", source_type:
                 "key_points": json.loads(c.key_points) if c.key_points else [],
                 "source_type": c.source_type, "category_path": c.category_path,
                 "star_rating": c.star_rating, "user_notes": c.user_notes,
+                "import_group_id": c.import_group_id,
+                "chat_session_id": c.chat_session_id,
                 "tags": [t.tag_name for t in card_tags],
                 "created_at": c.created_at.isoformat(),
                 "updated_at": c.updated_at.isoformat() if c.updated_at else c.created_at.isoformat(),
@@ -1142,6 +1196,8 @@ def get_card(card_id: str):
             "key_points": json.loads(card.key_points) if card.key_points else [],
             "source_type": card.source_type, "category_path": card.category_path,
             "star_rating": card.star_rating, "user_notes": card.user_notes,
+            "import_group_id": card.import_group_id,
+            "chat_session_id": card.chat_session_id,
             "created_at": card.created_at.isoformat(),
         }
     finally:
@@ -1436,7 +1492,7 @@ def save_paper_from_search(body: dict):
         return _paper_to_dict(paper)
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        print(traceback.format_exc(), flush=True)
         raise HTTPException(400, str(e))
     finally:
         db.close()
@@ -1617,7 +1673,7 @@ async def import_paper_pdf(request: Request):
         raise
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        print(traceback.format_exc(), flush=True)
         raise HTTPException(500, str(e))
     finally:
         try:
@@ -2628,6 +2684,237 @@ def import_json(data: dict):
         db.close()
 
 
+# ── DeepSeek 智能导入（LLM pipeline）───────────────────────────
+
+def _run_deepseek_import(group_id: str, data: dict | list, filename: str):
+    """后台任务: DeepSeek 导入 pipeline"""
+    db = get_session()
+    try:
+        conversations = deepseek_import_service.parse_deepseek_json(data)
+        if not conversations:
+            deepseek_import_service._update_group(db, group_id, status="failed", error="未能解析出有效对话")
+            return
+        deepseek_import_service.process_import(db, group_id, conversations)
+    except Exception as e:
+        print(f"[deepseek-import] pipeline 失败: {e}", flush=True)
+        try:
+            deepseek_import_service._update_group(db, group_id, status="failed", error=str(e))
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+@app.post("/api/knowledge/import/deepseek")
+async def import_deepseek(request: Request, background_tasks: BackgroundTasks):
+    """DeepSeek 对话 JSON 智能导入（异步 pipeline）
+
+    解析 JSON → 创建 ImportGroup → 后台执行 LLM pipeline
+    返回 group_id 用于轮询进度
+    """
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(400, f"无效的 JSON: {e}")
+
+    data = body.get("data", body)
+    filename = body.get("filename", "")
+
+    # 预解析验证
+    conversations = deepseek_import_service.parse_deepseek_json(data)
+    if not conversations:
+        raise HTTPException(400, "未能从 JSON 中解析出有效对话")
+
+    total_messages = sum(len(c["messages"]) for c in conversations)
+
+    # 创建 ImportGroup
+    db = get_session()
+    try:
+        group = ImportGroup(
+            title=conversations[0]["title"] if len(conversations) == 1 else f"批量导入 ({len(conversations)} 个对话)",
+            source_url=conversations[0].get("source_url") or "",
+            source_type="deepseek",
+            original_filename=filename,
+            message_count=total_messages,
+            status="processing",
+            progress=f"已解析 {len(conversations)} 个对话，共 {total_messages} 条消息，正在启动处理...",
+        )
+        db.add(group)
+        db.commit()
+        db.refresh(group)
+        group_id = group.id
+    finally:
+        db.close()
+
+    # 后台执行 pipeline
+    background_tasks.add_task(_run_deepseek_import, group_id, data, filename)
+
+    return {
+        "group_id": group_id,
+        "conversations": len(conversations),
+        "total_messages": total_messages,
+        "status": "processing",
+    }
+
+
+@app.get("/api/knowledge/import-groups")
+def list_import_groups():
+    """获取所有导入分组列表"""
+    db = get_session()
+    try:
+        groups = db.query(ImportGroup).order_by(ImportGroup.created_at.desc()).all()
+        result = []
+        for g in groups:
+            result.append({
+                "id": g.id,
+                "title": g.title,
+                "source_type": g.source_type,
+                "source_url": g.source_url,
+                "original_filename": g.original_filename,
+                "message_count": g.message_count,
+                "summary": g.summary,
+                "knowledge_domain": json.loads(g.knowledge_domain) if g.knowledge_domain else [],
+                "card_count": g.card_count,
+                "chat_session_id": g.chat_session_id,
+                "status": g.status,
+                "error": g.error,
+                "progress": g.progress,
+                "created_at": g.created_at.isoformat() if g.created_at else None,
+            })
+        return result
+    finally:
+        db.close()
+
+
+@app.get("/api/knowledge/import-groups/{group_id}")
+def get_import_group(group_id: str):
+    """获取单个导入分组详情（含关联的卡片列表）"""
+    db = get_session()
+    try:
+        g = db.get(ImportGroup, group_id)
+        if not g:
+            raise HTTPException(404, "导入分组不存在")
+
+        # 获取该分组下的所有卡片
+        cards = db.query(KnowledgeCard).filter(KnowledgeCard.import_group_id == group_id).all()
+        card_list = []
+        for c in cards:
+            tags = [ct.tag_name for ct in db.query(CardTag).filter(CardTag.card_id == c.id).all()]
+            card_list.append({
+                "id": c.id,
+                "title": c.title,
+                "summary": c.summary,
+                "key_points": json.loads(c.key_points) if c.key_points else [],
+                "source_type": c.source_type,
+                "category_path": c.category_path,
+                "star_rating": c.star_rating,
+                "chat_session_id": c.chat_session_id,
+                "tags": tags,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            })
+
+        return {
+            "id": g.id,
+            "title": g.title,
+            "source_type": g.source_type,
+            "source_url": g.source_url,
+            "original_filename": g.original_filename,
+            "message_count": g.message_count,
+            "summary": g.summary,
+            "knowledge_domain": json.loads(g.knowledge_domain) if g.knowledge_domain else [],
+            "card_count": g.card_count,
+            "chat_session_id": g.chat_session_id,
+            "status": g.status,
+            "error": g.error,
+            "progress": g.progress,
+            "created_at": g.created_at.isoformat() if g.created_at else None,
+            "cards": card_list,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/knowledge/import-groups/{group_id}/progress")
+def get_import_progress(group_id: str):
+    """轮询导入进度"""
+    db = get_session()
+    try:
+        g = db.get(ImportGroup, group_id)
+        if not g:
+            raise HTTPException(404, "导入分组不存在")
+        return {
+            "status": g.status,
+            "progress": g.progress,
+            "card_count": g.card_count,
+            "error": g.error,
+        }
+    finally:
+        db.close()
+
+
+@app.delete("/api/knowledge/import-groups/{group_id}")
+def delete_import_group(group_id: str):
+    """删除导入分组及其所有关联卡片"""
+    db = get_session()
+    try:
+        g = db.get(ImportGroup, group_id)
+        if not g:
+            raise HTTPException(404, "导入分组不存在")
+
+        # 删除该分组下的所有卡片和标签关联
+        cards = db.query(KnowledgeCard).filter(KnowledgeCard.import_group_id == group_id).all()
+        for card in cards:
+            db.query(CardTag).filter(CardTag.card_id == card.id).delete()
+        db.query(KnowledgeCard).filter(KnowledgeCard.import_group_id == group_id).delete()
+
+        # 删除关联的 chat session（如果有）
+        if g.chat_session_id:
+            chat_session = db.get(ChatSession, g.chat_session_id)
+            if chat_session:
+                db.query(ChatMessage).filter(ChatMessage.session_id == g.chat_session_id).delete()
+                db.delete(chat_session)
+
+        db.delete(g)
+        db.commit()
+        return {"ok": True, "deleted_cards": len(cards)}
+    finally:
+        db.close()
+
+
+@app.get("/api/knowledge/import-groups/{group_id}/messages")
+def get_import_group_messages(group_id: str):
+    """获取导入分组关联的原始对话消息"""
+    db = get_session()
+    try:
+        g = db.get(ImportGroup, group_id)
+        if not g:
+            raise HTTPException(404, "导入分组不存在")
+
+        # 收集所有关联的 chat session
+        session_ids = set()
+        if g.chat_session_id:
+            session_ids.add(g.chat_session_id)
+        cards = db.query(KnowledgeCard).filter(KnowledgeCard.import_group_id == group_id).all()
+        for c in cards:
+            if c.chat_session_id:
+                session_ids.add(c.chat_session_id)
+
+        sessions = []
+        for sid in session_ids:
+            cs = db.get(ChatSession, sid)
+            if cs:
+                msgs = db.query(ChatMessage).filter(ChatMessage.session_id == sid).order_by(ChatMessage.created_at.asc()).all()
+                sessions.append({
+                    "session_id": sid,
+                    "title": cs.title,
+                    "messages": [{"role": m.role, "content": m.content} for m in msgs],
+                })
+
+        return {"group_id": group_id, "sessions": sessions}
+    finally:
+        db.close()
+
+
 @app.post("/api/knowledge/import/pdf")
 async def import_pdf(request: Request):
     """导入 PDF 文件，提取文本生成知识卡片"""
@@ -2942,7 +3229,7 @@ def writing_ai_operation(doc_id: str, data: dict):
 
         content = result.get("content", "")
         # 检查是否返回了错误信息
-        if content.startswith("❌") or content.startswith("AI 调用失败"):
+        if content.startswith("[ERROR]") or content.startswith("AI 调用失败"):
             return {"error": content, "operation": operation}
 
         return {"result": content, "operation": operation}

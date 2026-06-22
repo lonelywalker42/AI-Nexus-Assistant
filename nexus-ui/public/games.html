@@ -464,7 +464,7 @@ function backToMenu() {
 //  2048
 // ══════════════════════════════════════════════
 class Game2048 {
-  constructor() { this.grid = []; this.score = 0; this.over = false; this.won = false; }
+  constructor() { this.grid = []; this.score = 0; this.over = false; this.won = false; this.wonContinue = false; }
 
   init(savedState) {
     if (savedState) {
@@ -472,9 +472,10 @@ class Game2048 {
       this.score = savedState.score;
       this.over = savedState.over || false;
       this.won = savedState.won || false;
+      this.wonContinue = savedState.wonContinue || false;
     } else {
       this.grid = Array.from({length:4}, () => Array(4).fill(0));
-      this.score = 0; this.over = false; this.won = false;
+      this.score = 0; this.over = false; this.won = false; this.wonContinue = false;
       this.spawn(); this.spawn();
     }
     this.draw();
@@ -483,7 +484,7 @@ class Game2048 {
   }
 
   saveProgress() {
-    saveGameProgress('2048', { grid: this.grid, score: this.score, over: this.over, won: this.won });
+    saveGameProgress('2048', { grid: this.grid, score: this.score, over: this.over, won: this.won, wonContinue: this.wonContinue });
   }
 
   destroy() { document.removeEventListener('keydown', this._keyH); }
@@ -537,6 +538,12 @@ class Game2048 {
     if (e.key==='Escape') { backToMenu(); return; }
     if (this.over && (e.key==='h' || e.key==='H')) { showHighScores('2048'); return; }
     if (this.over) return;
+    // 达到 2048 后按方向键继续游戏
+    if (this.won && !this.wonContinue) {
+      const map = {ArrowLeft:0,ArrowDown:1,ArrowRight:2,ArrowUp:3};
+      if (map[e.key]!==undefined) { this.wonContinue = true; this.move(map[e.key]); }
+      return;
+    }
     const map = {ArrowLeft:0,ArrowDown:1,ArrowRight:2,ArrowUp:3};
     if (map[e.key]!==undefined) this.move(map[e.key]);
   }
@@ -571,8 +578,8 @@ class Game2048 {
       }
     }
 
-    // Game over / Won
-    if (this.over || this.won) {
+    // Game over / Won (won 但未选择继续时也显示覆盖层)
+    if (this.over || (this.won && !this.wonContinue)) {
       ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,W,H);
       ctx.fillStyle = this.won ? C.yellow : C.red;
       ctx.font = '28px Consolas, monospace'; ctx.textAlign = 'center';
@@ -592,7 +599,11 @@ class Game2048 {
       }
 
       ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
-      ctx.fillText('R restart · ESC menu · H scores', W/2, H/2 + 50);
+      if (this.won && !this.wonContinue) {
+        ctx.fillText('Arrow keys continue · R restart · ESC menu', W/2, H/2 + 50);
+      } else {
+        ctx.fillText('R restart · ESC menu · H scores', W/2, H/2 + 50);
+      }
     }
   }
 }

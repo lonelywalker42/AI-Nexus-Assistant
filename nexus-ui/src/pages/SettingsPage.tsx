@@ -47,7 +47,7 @@ export default function SettingsPage() {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       const latestVer = (data.tag_name as string).replace("v", "");
-      const currentVer = "4.0.0"; // 与 tauri.conf.json version 一致
+      const currentVer = "4.0.1"; // 与 tauri.conf.json version 一致
       const available = compareVersions(latestVer, currentVer) > 0;
       setUpdateInfo({
         version: latestVer,
@@ -550,7 +550,7 @@ export default function SettingsPage() {
             {checkingUpdate ? "检查中..." : "检查更新"}
           </button>
           <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-            当前版本: v4.0.0
+            当前版本: v4.0.1
           </span>
         </div>
 

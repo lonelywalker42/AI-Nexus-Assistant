@@ -59,7 +59,11 @@ class DebateAgent(WorkflowEngine):
         query = workflow.config.get("query", workflow.title)
         from app.search.engine import UnifiedSearchEngine
         engine = UnifiedSearchEngine()
-        papers = engine.search(query, max_results=10, enrich=True)
+        try:
+            papers = await asyncio.to_thread(engine.search, query, None, 10, True)
+        except Exception as e:
+            print(f"[debate_agent] 搜索异常: {e}", flush=True)
+            papers = []
 
         paper_list = []
         for p in papers[:10]:
@@ -170,7 +174,7 @@ class DebateAgent(WorkflowEngine):
         )
 
         content = result.get("content", "")
-        if content.startswith("❌"):
+        if content.startswith("[ERROR]"):
             raise Exception(content)
 
         return {
@@ -213,7 +217,7 @@ class DebateAgent(WorkflowEngine):
         )
 
         content = result.get("content", "")
-        if content.startswith("❌"):
+        if content.startswith("[ERROR]"):
             raise Exception(content)
 
         return {
