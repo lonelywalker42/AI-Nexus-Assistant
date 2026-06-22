@@ -4,8 +4,21 @@
 启动方式: python server.py 或 uvicorn server:app --port 8765
 """
 
+# 强制 UTF-8 I/O，防止 Windows GBK 编码错误（必须在所有 import 之前）
 import sys
 import os
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import json
 import asyncio
 import logging
@@ -18,21 +31,27 @@ import builtins
 class _SafeWriter:
     """GBK 安全输出流 — 将非 encodable 字符替换为 ?，防止 Windows 控制台编码崩溃"""
     def __init__(self, stream):
-        self._stream = stream
-        self.encoding = getattr(stream, 'encoding', 'utf-8')
+        object.__setattr__(self, '_stream', stream)
+    @property
+    def encoding(self):
+        return getattr(object.__getattribute__(self, '_stream'), 'encoding', 'utf-8')
     def write(self, s):
+        stream = object.__getattribute__(self, '_stream')
         try:
-            self._stream.write(s)
+            stream.write(s)
         except UnicodeEncodeError:
-            enc = getattr(self._stream, 'encoding', None) or 'utf-8'
-            self._stream.write(s.encode(enc, errors='replace').decode(enc))
+            enc = getattr(stream, 'encoding', None) or 'utf-8'
+            try:
+                stream.write(s.encode(enc, errors='replace').decode(enc))
+            except Exception:
+                pass
     def flush(self):
         try:
-            self._stream.flush()
+            object.__getattribute__(self, '_stream').flush()
         except Exception:
             pass
     def __getattr__(self, name):
-        return getattr(self._stream, name)
+        return getattr(object.__getattribute__(self, '_stream'), name)
 
 
 # 立即包装 stdout/stderr（无论 frozen 与否），防止任何后续代码触发 GBK 编码错误
@@ -47,16 +66,25 @@ def _safe_print(*args, **kwargs):
     """GBK 安全打印 — 将非 GBK 字符替换为 ? 避免 Windows 控制台编码错误"""
     try:
         _real_print(*args, **kwargs)
-    except UnicodeEncodeError:
+    except (UnicodeEncodeError, OSError):
         safe_args = []
+        enc = getattr(sys.stdout, 'encoding', None) or 'utf-8'
         for a in args:
             s = str(a)
             try:
-                s.encode(sys.stdout.encoding or 'utf-8')
+                s.encode(enc)
             except (UnicodeEncodeError, LookupError):
-                s = s.encode(sys.stdout.encoding or 'utf-8', errors='replace').decode(sys.stdout.encoding or 'utf-8')
+                s = s.encode(enc, errors='replace').decode(enc)
             safe_args.append(s)
-        _real_print(*safe_args, **kwargs)
+        try:
+            _real_print(*safe_args, **kwargs)
+        except (UnicodeEncodeError, OSError):
+            # 最终兜底：直接用 bytes 写入
+            raw = " ".join(safe_args) + "\n"
+            try:
+                sys.stdout.buffer.write(raw.encode('utf-8', errors='replace'))
+            except Exception:
+                pass
 
 
 builtins.print = _safe_print

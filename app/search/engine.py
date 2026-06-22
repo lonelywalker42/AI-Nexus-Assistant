@@ -117,16 +117,24 @@ class UnifiedSearchEngine:
                 executor.submit(self._search_one, engine, query, max_results): name
                 for name, engine in engines.items()
             }
-            for future in concurrent.futures.as_completed(futures):
-                name = futures[future]
-                try:
-                    papers = future.result(timeout=PER_SOURCE_TIMEOUT)
-                    all_papers.extend(papers)
-                except concurrent.futures.TimeoutError:
-                    print(f"[TIMEOUT] {name} 搜索超时 ({PER_SOURCE_TIMEOUT}s)")
-                except Exception as e:
-                    print(f"[ERROR] {name} 搜索异常: {e}")
-            # with 退出时 executor.shutdown(wait=True) 自动等待所有线程完成
+            # as_completed 总超时 = per-source 超时 + 5s 余量，防止无限阻塞
+            total_timeout = PER_SOURCE_TIMEOUT + 5
+            try:
+                for future in concurrent.futures.as_completed(futures, timeout=total_timeout):
+                    name = futures[future]
+                    try:
+                        papers = future.result(timeout=2)
+                        all_papers.extend(papers)
+                    except concurrent.futures.TimeoutError:
+                        print(f"[TIMEOUT] {name} 搜索超时 ({PER_SOURCE_TIMEOUT}s)", flush=True)
+                    except Exception as e:
+                        print(f"[ERROR] {name} 搜索异常: {e}", flush=True)
+            except concurrent.futures.TimeoutError:
+                # 总超时：取消未完成的 future
+                unfinished = [f for f in futures if not f.done()]
+                for f in unfinished:
+                    f.cancel()
+                print(f"[TIMEOUT] 搜索总超时 ({total_timeout}s)，{len(unfinished)} 个源未完成，已取消", flush=True)
 
         # 去重 (DOI 优先 + 标题模糊 + URL 规范化)
         unique = self._deduplicate(all_papers)
