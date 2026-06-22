@@ -19,6 +19,42 @@ class PaperNote(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+class PaperCategory(Base):
+    """论文分类"""
+    __tablename__ = "paper_categories"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(100))
+    parent_id: Mapped[str] = mapped_column(String(36), default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    system_key: Mapped[str] = mapped_column(String(50), default="")  # all/recent/uncategorized/favorites
+
+
+class PaperCategoryLink(Base):
+    """论文-分类关联"""
+    __tablename__ = "paper_category_links"
+
+    paper_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    category_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+
+
+class Attachment(Base):
+    """论文附件"""
+    __tablename__ = "attachments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    paper_id: Mapped[str] = mapped_column(String(36), index=True)
+    kind: Mapped[str] = mapped_column(String(50), default="pdf")  # pdf/supplement/code/data
+    original_path: Mapped[str] = mapped_column(Text, default="")
+    stored_path: Mapped[str] = mapped_column(Text, default="")
+    file_name: Mapped[str] = mapped_column(Text, default="")
+    mime_type: Mapped[str] = mapped_column(String(100), default="")
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), default="")  # SHA-256
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 class Paper(Base):
     """学术文献"""
     __tablename__ = "papers"
@@ -35,6 +71,7 @@ class Paper(Base):
     citation: Mapped[str] = mapped_column(Text, default="")  # GB/T 7714 格式
     paper_type: Mapped[str] = mapped_column(String(50), default="未知")  # journal/conference/preprint
     has_fulltext: Mapped[bool] = mapped_column(Boolean, default=False)
+    fulltext: Mapped[str] = mapped_column(Text, default="")  # 提取的全文文本
     star_rating: Mapped[int] = mapped_column(Integer, default=0)  # 0-5
     user_notes: Mapped[str] = mapped_column(Text, default="")
     ai_summary: Mapped[str] = mapped_column(Text, default="")

@@ -614,6 +614,46 @@ export const papersApi = {
     if (!res.ok) throw new Error(`Import failed: ${res.status}`);
     return res.json() as Promise<{ results: { title: string; paper_id?: string; status: string }[]; total: number; imported: number }>;
   },
+
+  // v4.1.0 新增: 分步导入（提取元数据 → 确认入库）
+  extractMetadata: async (file: File) => {
+    const bytes = await file.arrayBuffer();
+    const res = await fetch(`${API_BASE}/api/papers/extract-metadata`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(file.name) },
+      body: bytes,
+    });
+    if (!res.ok) throw new Error(`Extract failed: ${res.status}`);
+    return res.json() as Promise<{
+      temp_id?: string; filename?: string;
+      metadata?: { title: string; authors: string[]; year: number; doi: string; abstract: string; journal: string };
+      has_text?: boolean; text_preview?: string;
+      duplicate?: boolean; paper?: PaperDetail;
+    }>;
+  },
+  confirmImport: (tempId: string, metadata: Record<string, unknown>, filename: string) =>
+    request<PaperDetail>("/api/papers/confirm-import", {
+      method: "POST", body: JSON.stringify({ temp_id: tempId, metadata, filename }),
+    }),
+  lookupMetadata: (doi: string, title: string) =>
+    request<{ metadata: Record<string, unknown> }>("/api/papers/lookup-metadata", {
+      method: "POST", body: JSON.stringify({ doi, title }),
+    }),
+
+  // v4.1.0 新增: 分类管理
+  listCategories: () => request<{ id: string; name: string; parent_id: string; sort_order: number; is_system: boolean; system_key: string; paper_count: number }[]>("/api/papers/categories"),
+  createCategory: (name: string, parentId?: string) =>
+    request<{ id: string; name: string }>("/api/papers/categories", {
+      method: "POST", body: JSON.stringify({ name, parent_id: parentId || "" }),
+    }),
+  updateCategory: (id: string, data: { name?: string; parent_id?: string; sort_order?: number }) =>
+    request<{ ok: boolean }>(`/api/papers/categories/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteCategory: (id: string) =>
+    request<{ ok: boolean }>(`/api/papers/categories/${id}`, { method: "DELETE" }),
+  setPaperCategories: (paperId: string, categoryIds: string[]) =>
+    request<{ ok: boolean; count: number }>(`/api/papers/${paperId}/categories`, {
+      method: "PUT", body: JSON.stringify({ category_ids: categoryIds }),
+    }),
 };
 
 // ── arXiv ──────────────────────────────────────────────────

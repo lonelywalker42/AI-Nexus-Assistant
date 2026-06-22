@@ -321,15 +321,12 @@ export default function LiteraturePage() {
     if (!files?.length) return;
     for (const file of Array.from(files)) {
       try {
-        const bytes = await file.arrayBuffer();
-        const res = await fetch("http://127.0.0.1:8765/api/papers/import-pdf", {
-          method: "POST",
-          headers: { "Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(file.name) },
-          body: bytes,
-        });
-        const data = await res.json();
-        if (data.error) {
-          alert(`导入失败: ${data.error}`);
+        const result = await papersApi.extractMetadata(file);
+        if (result.duplicate) {
+          alert(`"${file.name}" 已存在文献库中`);
+        } else if (result.temp_id && result.metadata) {
+          // 直接确认导入（LiteraturePage 不需要确认对话框）
+          await papersApi.confirmImport(result.temp_id, result.metadata, result.filename || file.name);
         }
       } catch (err) {
         alert(`导入失败: ${err}`);

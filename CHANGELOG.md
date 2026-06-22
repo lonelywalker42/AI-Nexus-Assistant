@@ -1,5 +1,28 @@
 # Changelog
 
+## v4.1.0 (2026-06-23) — PDF 文献导入体验升级（借鉴 PaperQuay）
+
+### 新增
+- **分步导入确认对话框**: PDF 导入不再直接入库，先提取元数据预览，用户可编辑后确认导入
+- **自动填充元数据**: 导入确认对话框中支持一键查询 OpenAlex/Crossref 自动填充缺失元数据
+- **布局分析标题提取**: 基于 PyMuPDF 字体大小分析的多策略标题提取，替代简单的首行推断
+- **OpenAlex + Crossref 双级元数据增强**: DOI 提取后先查 OpenAlex，缺失字段再查 Crossref 兜底
+- **标题相似度去重**: Dice 系数 + 0.78 阈值，DOI 缺失时防止重复导入
+- **拖拽上传**: 文献库页面支持拖放 PDF 文件直接导入
+- **自动全文提取**: PDF 导入后自动提取全文文本存入数据库，供后续 RAG 使用
+- **通用标题过滤**: 自动排除 "untitled"、"Microsoft Word"、"CNKI" 等无意义标题
+- **DOI 正则标准化**: 使用更精确的 `10.\d{4,9}/[-._;()/:A-Z0-9]+` 模式
+- **论文分类系统**: 新增 PaperCategory 模型，支持分类 CRUD 端点
+- **附件管理表**: 新增 Attachment 模型，支持一个论文关联多个文件
+
+### 改动
+- Paper 模型新增 `fulltext` 字段（Text），存储提取的全文文本
+- 新增 PaperCategory、PaperCategoryLink、Attachment 数据模型
+- 新增 API 端点: extract-metadata、confirm-import、lookup-metadata、categories CRUD
+- `import-pdf` 端点增加标题相似度去重和自动全文提取
+- `has_fulltext` 字段在所有 PDF 导入路径中一致设置为 True
+- LiteraturePage PDF 导入也走 extract-metadata 流程（带去重检查）
+
 ## v4.0.1 (2026-06-22) — DeepSeek 对话智能导入
 
 ### 新增

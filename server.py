@@ -1661,6 +1661,18 @@ async def import_paper_pdf(request: Request):
             finally:
                 db.close()
 
+        # 标题相似度去重（DOI 缺失时的兜底）
+        if not doi and meta.get("title"):
+            from app.services.pdf_service import title_similarity
+            db = get_session()
+            try:
+                candidates = db.query(Paper).filter(Paper.title.isnot(None)).limit(200).all()
+                for c in candidates:
+                    if title_similarity(meta["title"], c.title) >= 0.78:
+                        return _paper_to_dict(c)
+            finally:
+                db.close()
+
         # 保存 PDF 文件
         pdf_dir = data_dir / "pdfs"
         pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -1678,6 +1690,9 @@ async def import_paper_pdf(request: Request):
         except Exception:
             pass
 
+        # 自动提取全文文本
+        fulltext = text[:100000] if text.strip() else ""
+
         db = get_session()
         try:
             paper = paper_service.create_paper(
@@ -1693,6 +1708,8 @@ async def import_paper_pdf(request: Request):
                 citation=citation,
                 ai_summary=str(meta.get("summary", ""))[:2000],
                 local_path=str(pdf_path),
+                has_fulltext=True,
+                fulltext=fulltext,
             )
             return _paper_to_dict(paper)
         finally:
@@ -1739,6 +1756,367 @@ def _parse_ai_json(content: str) -> dict:
             pass
 
     return {}
+
+
+# ── 分步导入：提取元数据 + 确认入库 ────────────────────────
+
+# 临时导入文件存储
+_import_temp_dir = data_dir / "tmp_import"
+_import_temp_dir.mkdir(parents=True, exist_ok=True)
+
+
+@app.post("/api/papers/extract-metadata")
+async def extract_paper_metadata(request: Request):
+    """从 PDF 提取元数据预览（不入库），用于导入确认对话框"""
+    import urllib.parse
+    import uuid as _uuid
+
+    try:
+        import fitz
+    except ImportError:
+        raise HTTPException(500, "PyMuPDF 未安装，请运行: pip install pymupdf")
+
+    filename_raw = request.headers.get("x-filename", "paper.pdf")
+    filename = urllib.parse.unquote(filename_raw)
+    file_bytes = await request.body()
+
+    if not file_bytes or len(file_bytes) < 100:
+        raise HTTPException(400, f"文件太小 ({len(file_bytes) if file_bytes else 0} bytes)")
+
+    # 保存到临时目录
+    temp_id = _uuid.uuid4().hex[:12]
+    temp_path = _import_temp_dir / f"{temp_id}.pdf"
+    with open(temp_path, "wb") as f:
+        f.write(file_bytes)
+
+    try:
+        from app.services.pdf_service import extract_pdf_metadata
+        meta = extract_pdf_metadata(str(temp_path))
+
+        # 提取全文文本
+        doc = fitz.open(str(temp_path))
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        doc.close()
+
+        # 确保 authors 是列表
+        if isinstance(meta.get("authors"), str):
+            meta["authors"] = [a.strip() for a in meta["authors"].split(",") if a.strip()]
+        elif not isinstance(meta.get("authors"), list):
+            meta["authors"] = []
+
+        # 确保 year 是整数
+        try:
+            meta["year"] = int(meta.get("year", 0))
+        except (ValueError, TypeError):
+            meta["year"] = 0
+
+        # DOI 去重检查
+        doi = str(meta.get("doi", "")).strip().lower()
+        if doi:
+            db = get_session()
+            try:
+                from sqlalchemy import func
+                existing = db.query(Paper).filter(func.lower(Paper.doi) == doi).first()
+                if existing:
+                    os.unlink(temp_path)
+                    return {"duplicate": True, "paper": _paper_to_dict(existing)}
+            finally:
+                db.close()
+
+        return {
+            "temp_id": temp_id,
+            "filename": filename,
+            "metadata": {
+                "title": meta.get("title", ""),
+                "authors": meta.get("authors", []),
+                "year": meta.get("year", 0),
+                "doi": meta.get("doi", ""),
+                "abstract": meta.get("abstract", "")[:2000],
+                "journal": meta.get("journal", ""),
+            },
+            "has_text": bool(text.strip()),
+            "text_preview": text[:500] if text.strip() else "",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc(), flush=True)
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/papers/confirm-import")
+async def confirm_paper_import(body: dict):
+    """确认导入 PDF（用户编辑元数据后调用）"""
+    import uuid as _uuid
+
+    temp_id = body.get("temp_id", "")
+    meta = body.get("metadata", {})
+    filename = body.get("filename", "paper.pdf")
+
+    if not temp_id:
+        raise HTTPException(400, "缺少 temp_id")
+
+    temp_path = _import_temp_dir / f"{temp_id}.pdf"
+    if not temp_path.exists():
+        raise HTTPException(404, "临时文件已过期，请重新上传")
+
+    try:
+        import fitz
+
+        # 读取全文文本
+        doc = fitz.open(str(temp_path))
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        doc.close()
+
+        # 标题相似度去重
+        title = meta.get("title", "").strip()
+        if title:
+            from app.services.pdf_service import title_similarity
+            db = get_session()
+            try:
+                candidates = db.query(Paper).filter(Paper.title.isnot(None)).limit(200).all()
+                for c in candidates:
+                    if title_similarity(title, c.title) >= 0.78:
+                        os.unlink(temp_path)
+                        return {"duplicate": True, "paper": _paper_to_dict(c)}
+            finally:
+                db.close()
+
+        # 移动 PDF 到正式目录
+        pdf_dir = data_dir / "pdfs"
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+        pdf_filename = f"{_uuid.uuid4().hex[:8]}_{filename}"
+        pdf_path = pdf_dir / pdf_filename
+        import shutil
+        shutil.move(str(temp_path), str(pdf_path))
+
+        # 生成引用
+        citation = ""
+        try:
+            from app.search.citation import format_gb
+            citation = format_gb(meta, 1)
+        except Exception:
+            pass
+
+        # 自动提取全文
+        fulltext = text[:100000] if text.strip() else ""
+
+        db = get_session()
+        try:
+            paper = paper_service.create_paper(
+                db,
+                title=title[:200] if title else filename.replace(".pdf", ""),
+                authors=json.dumps(meta.get("authors", []), ensure_ascii=False),
+                year=meta.get("year", 0),
+                doi=str(meta.get("doi", ""))[:200],
+                abstract=str(meta.get("abstract", ""))[:10000],
+                journal=str(meta.get("journal", ""))[:500],
+                source="pdf_import",
+                paper_type="journal",
+                citation=citation,
+                local_path=str(pdf_path),
+                has_fulltext=True,
+                fulltext=fulltext,
+            )
+            return _paper_to_dict(paper)
+        finally:
+            db.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc(), flush=True)
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/papers/lookup-metadata")
+async def lookup_paper_metadata(body: dict):
+    """查询 OpenAlex/Crossref 元数据（用于导入确认对话框的"自动填充"）"""
+    doi = body.get("doi", "").strip()
+    title = body.get("title", "").strip()
+
+    if not doi and not title:
+        raise HTTPException(400, "需要提供 doi 或 title")
+
+    from app.services.pdf_service import _fetch_from_openalex, _fetch_from_crossref
+
+    result = {}
+
+    # 优先用 DOI 查询
+    if doi:
+        result = _fetch_from_openalex(doi)
+        if not result:
+            result = _fetch_from_crossref(doi)
+
+    # DOI 查询失败，用标题搜索 OpenAlex
+    if not result and title:
+        try:
+            import urllib.request
+            import urllib.parse
+            encoded_title = urllib.parse.quote(title)
+            url = f"https://api.openalex.org/works?filter=title.search:{encoded_title}&per_page=1"
+            req = urllib.request.Request(url, headers={"User-Agent": "AI-Nexus-Assistant/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            results = data.get("results", [])
+            if results:
+                from app.services.pdf_service import _reconstruct_abstract
+                item = results[0]
+                if item.get("title"):
+                    result["title"] = item["title"]
+                if item.get("authorships"):
+                    authors = []
+                    for a in item["authorships"]:
+                        name = a.get("author", {}).get("display_name", "")
+                        if name:
+                            authors.append(name)
+                    if authors:
+                        result["authors"] = authors[:10]
+                if item.get("publication_year"):
+                    result["year"] = item["publication_year"]
+                if item.get("primary_location", {}).get("source", {}).get("display_name"):
+                    result["journal"] = item["primary_location"]["source"]["display_name"]
+                if item.get("doi"):
+                    result["doi"] = item["doi"].replace("https://doi.org/", "")
+                if item.get("abstract_inverted_index"):
+                    result["abstract"] = _reconstruct_abstract(item["abstract_inverted_index"])
+        except Exception:
+            pass
+
+    return {"metadata": result}
+
+
+@app.get("/api/papers/categories")
+def list_paper_categories():
+    """获取所有论文分类"""
+    from app.models.paper import PaperCategory, PaperCategoryLink
+    db = get_session()
+    try:
+        cats = db.query(PaperCategory).order_by(PaperCategory.sort_order).all()
+        result = []
+        for c in cats:
+            # 计算分类下的论文数
+            count = db.query(PaperCategoryLink).filter(PaperCategoryLink.category_id == c.id).count()
+            result.append({
+                "id": c.id, "name": c.name, "parent_id": c.parent_id,
+                "sort_order": c.sort_order, "is_system": c.is_system,
+                "system_key": c.system_key, "paper_count": count,
+            })
+        return result
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/categories")
+def create_paper_category(body: dict):
+    """创建论文分类"""
+    from app.models.paper import PaperCategory
+    import uuid as _uuid
+
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "分类名不能为空")
+
+    db = get_session()
+    try:
+        cat = PaperCategory(
+            id=str(_uuid.uuid4()),
+            name=name,
+            parent_id=body.get("parent_id", ""),
+            sort_order=body.get("sort_order", 0),
+        )
+        db.add(cat)
+        db.commit()
+        db.refresh(cat)
+        return {"id": cat.id, "name": cat.name, "parent_id": cat.parent_id}
+    finally:
+        db.close()
+
+
+@app.put("/api/papers/categories/{cat_id}")
+def update_paper_category(cat_id: str, body: dict):
+    """更新论文分类"""
+    from app.models.paper import PaperCategory
+    db = get_session()
+    try:
+        cat = db.get(PaperCategory, cat_id)
+        if not cat:
+            raise HTTPException(404, "分类不存在")
+        if cat.is_system:
+            raise HTTPException(400, "系统分类不可修改")
+        if "name" in body:
+            cat.name = body["name"]
+        if "parent_id" in body:
+            cat.parent_id = body["parent_id"]
+        if "sort_order" in body:
+            cat.sort_order = body["sort_order"]
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@app.delete("/api/papers/categories/{cat_id}")
+def delete_paper_category(cat_id: str):
+    """删除论文分类"""
+    from app.models.paper import PaperCategory, PaperCategoryLink
+    db = get_session()
+    try:
+        cat = db.get(PaperCategory, cat_id)
+        if not cat:
+            raise HTTPException(404, "分类不存在")
+        if cat.is_system:
+            raise HTTPException(400, "系统分类不可删除")
+        # 删除关联
+        db.query(PaperCategoryLink).filter(PaperCategoryLink.category_id == cat_id).delete()
+        db.delete(cat)
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@app.put("/api/papers/{paper_id}/categories")
+def set_paper_categories(paper_id: str, body: dict):
+    """设置论文的分类"""
+    from app.models.paper import PaperCategoryLink
+
+    category_ids = body.get("category_ids", [])
+    db = get_session()
+    try:
+        paper = db.get(Paper, paper_id)
+        if not paper:
+            raise HTTPException(404, "论文不存在")
+        # 删除旧关联
+        db.query(PaperCategoryLink).filter(PaperCategoryLink.paper_id == paper_id).delete()
+        # 添加新关联
+        for cid in category_ids:
+            db.add(PaperCategoryLink(paper_id=paper_id, category_id=cid))
+        db.commit()
+        return {"ok": True, "count": len(category_ids)}
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/attachments/{paper_id}")
+def list_attachments(paper_id: str):
+    """获取论文附件列表"""
+    from app.models.paper import Attachment
+    db = get_session()
+    try:
+        items = db.query(Attachment).filter(Attachment.paper_id == paper_id).all()
+        return [{
+            "id": a.id, "paper_id": a.paper_id, "kind": a.kind,
+            "file_name": a.file_name, "mime_type": a.mime_type,
+            "file_size": a.file_size, "created_at": a.created_at.isoformat(),
+        } for a in items]
+    finally:
+        db.close()
 
 
 @app.post("/api/topics/build")

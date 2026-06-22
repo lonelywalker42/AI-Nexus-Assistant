@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { papersApi, reviewsApi, type PaperDetail, type Review } from "../api/client";
 import { IconSearch, IconStar, IconFile, IconUpload, IconX } from "../components/Icons";
 
@@ -77,6 +77,22 @@ export default function PaperLibraryPage() {
   const [notes, setNotes] = useState<{ id: string; content: string; created_at?: string }[]>([]);
   const [newNote, setNewNote] = useState("");
 
+  // v4.1.0: 导入确认对话框
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importQueue, setImportQueue] = useState<{
+    file: File; tempId?: string; metadata?: Record<string, unknown>;
+    filename?: string; hasText?: boolean; status: "pending"|"extracting"|"ready"|"importing"|"done"|"error"|"duplicate";
+    error?: string; duplicatePaper?: PaperDetail;
+  }[]>([]);
+  const [currentImportIdx, setCurrentImportIdx] = useState(0);
+  const [autoFilling, setAutoFilling] = useState(false);
+
+  // v4.1.0: 拖拽上传
+  const [dragOver, setDragOver] = useState(false);
+
+  // v4.1.0: 分类系统
+  const [categories, setCategories] = useState<{ id: string; name: string; parent_id: string; sort_order: number; is_system: boolean; system_key: string; paper_count: number }[]>([]);
+
   const selected = papers.find(p => p.id === selectedId);
 
   const loadPapers = () => {
@@ -96,6 +112,7 @@ export default function PaperLibraryPage() {
 
   useEffect(() => { loadPapers(); }, [search, sortBy, sortOrder]);
   useEffect(() => { reviewsApi.list().then(setReviews).catch(console.error); }, []);
+  useEffect(() => { papersApi.listCategories().then(setCategories).catch(console.error); }, []);
 
   // 加载引用
   useEffect(() => {
@@ -153,30 +170,116 @@ export default function PaperLibraryPage() {
   const handleImportPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files?.length) return;
-    setImporting(true);
-    for (const file of Array.from(files)) {
-      try {
-        const bytes = await file.arrayBuffer();
-        const res = await fetch("http://127.0.0.1:8765/api/papers/import-pdf", {
-          method: "POST",
-          headers: { "Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(file.name) },
-          body: bytes,
-        });
-        const data = await res.json();
-        if (data.error) {
-          alert(`导入失败: ${data.error}`);
-        } else {
-          setPapers(prev => [data, ...prev]);
-          setSelectedId(data.id);
-          setShowDetail(true);
-        }
-      } catch (err) {
-        alert(`导入失败: ${err}`);
-      }
-    }
-    setImporting(false);
+    startImport(Array.from(files));
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
+
+  // v4.1.0: 分步导入 — 提取元数据 → 确认对话框
+  const startImport = async (files: File[]) => {
+    const queue = files.map(f => ({ file: f, status: "pending" as const }));
+    setImportQueue(queue);
+    setCurrentImportIdx(0);
+    setShowImportDialog(true);
+
+    // 逐个提取元数据
+    for (let i = 0; i < queue.length; i++) {
+      setCurrentImportIdx(i);
+      setImportQueue(prev => prev.map((item, idx) => idx === i ? { ...item, status: "extracting" } : item));
+      try {
+        const result = await papersApi.extractMetadata(files[i]);
+        if (result.duplicate && result.paper) {
+          setImportQueue(prev => prev.map((item, idx) => idx === i ? { ...item, status: "duplicate", duplicatePaper: result.paper } : item));
+        } else {
+          setImportQueue(prev => prev.map((item, idx) => idx === i ? {
+            ...item, status: "ready", tempId: result.temp_id,
+            metadata: result.metadata, filename: result.filename, hasText: result.has_text,
+          } : item));
+        }
+      } catch (err) {
+        setImportQueue(prev => prev.map((item, idx) => idx === i ? { ...item, status: "error", error: String(err) } : item));
+      }
+    }
+  };
+
+  // 确认导入单个文件
+  const confirmImportItem = async (idx: number) => {
+    const item = importQueue[idx];
+    if (!item.tempId || !item.metadata) return;
+    setImportQueue(prev => prev.map((it, i) => i === idx ? { ...it, status: "importing" } : it));
+    try {
+      const paper = await papersApi.confirmImport(item.tempId, item.metadata, item.filename || "paper.pdf");
+      setImportQueue(prev => prev.map((it, i) => i === idx ? { ...it, status: "done" } : it));
+      setPapers(prev => [paper, ...prev]);
+      setSelectedId(paper.id);
+      setShowDetail(true);
+    } catch (err) {
+      setImportQueue(prev => prev.map((it, i) => i === idx ? { ...it, status: "error", error: String(err) } : it));
+    }
+  };
+
+  // 全部确认
+  const confirmAllImports = async () => {
+    for (let i = 0; i < importQueue.length; i++) {
+      if (importQueue[i].status === "ready") {
+        await confirmImportItem(i);
+      }
+    }
+  };
+
+  // 自动填充元数据
+  const handleAutoFill = async (idx: number) => {
+    const item = importQueue[idx];
+    if (!item.metadata) return;
+    setAutoFilling(true);
+    try {
+      const doi = String(item.metadata.doi || "");
+      const title = String(item.metadata.title || "");
+      const result = await papersApi.lookupMetadata(doi, title);
+      if (result.metadata) {
+        const merged = { ...item.metadata } as Record<string, unknown>;
+        for (const [key, val] of Object.entries(result.metadata)) {
+          if (val && !merged[key]) {
+            merged[key] = val;
+          }
+        }
+        setImportQueue(prev => prev.map((it, i) => i === idx ? { ...it, metadata: merged } : it));
+      }
+    } catch {
+      // 静默失败
+    }
+    setAutoFilling(false);
+  };
+
+  // 更新导入队列中的元数据
+  const updateImportMeta = (idx: number, field: string, value: unknown) => {
+    setImportQueue(prev => prev.map((it, i) => {
+      if (i !== idx || !it.metadata) return it;
+      return { ...it, metadata: { ...it.metadata, [field]: value } };
+    }));
+  };
+
+  // v4.1.0: 拖拽上传
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith(".pdf"));
+    if (files.length > 0) {
+      startImport(files);
+    }
+  }, []);
 
   const handleGenerateReview = async () => {
     if (selectedForReview.length === 0) return;
@@ -407,8 +510,18 @@ export default function PaperLibraryPage() {
 
       {/* 卡片网格 + 详情面板 */}
       <div className="flex-1 flex gap-4 min-h-0">
-        {/* 卡片网格 */}
-        <div className={`flex-1 overflow-y-auto min-w-0 ${showDetail ? "hidden lg:block" : ""}`}>
+        {/* 卡片网格（支持拖拽上传） */}
+        <div className={`flex-1 overflow-y-auto min-w-0 ${showDetail ? "hidden lg:block" : ""} ${dragOver ? "ring-2 ring-blue-400 ring-opacity-60" : ""}`}
+          onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+          {dragOver && (
+            <div className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none" style={{ background: "rgba(59,130,246,0.08)" }}>
+              <div className="glass-card p-8 text-center" style={{ border: "2px dashed var(--accent-blue)" }}>
+                <IconUpload size={40} style={{ color: "var(--accent-blue)", margin: "0 auto" }} />
+                <p className="mt-3 text-lg font-semibold" style={{ color: "var(--accent-blue)" }}>拖放 PDF 到此处导入</p>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>支持多个文件同时导入</p>
+              </div>
+            </div>
+          )}
           {loading && <p className="text-xs text-center py-8" style={{ color: "var(--text-muted)" }}>加载中...</p>}
 
           {!loading && papers.length === 0 && (
@@ -814,6 +927,196 @@ export default function PaperLibraryPage() {
                 disabled={fetching || (!fetchDoi && !fetchTitle)}>
                 {fetching ? "拉取中..." : "开始拉取"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v4.1.0: 导入确认对话框 */}
+      {showImportDialog && importQueue.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="glass-card p-6 w-[640px] max-h-[85vh] flex flex-col" style={{ background: "var(--glass-bg)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
+                📄 导入 PDF 确认 {importQueue.length > 1 && `(${currentImportIdx + 1}/${importQueue.length})`}
+              </h3>
+              <button onClick={() => { setShowImportDialog(false); setImportQueue([]); }}
+                className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
+            </div>
+
+            {/* 文件列表（多文件时显示） */}
+            {importQueue.length > 1 && (
+              <div className="flex gap-1 mb-3 overflow-x-auto pb-1">
+                {importQueue.map((item, idx) => (
+                  <button key={idx}
+                    onClick={() => setCurrentImportIdx(idx)}
+                    className="px-2 py-1 rounded text-[10px] whitespace-nowrap cursor-pointer"
+                    style={{
+                      background: idx === currentImportIdx ? "var(--accent-blue)" : "var(--hover-bg)",
+                      color: idx === currentImportIdx ? "#fff" : "var(--text-secondary)",
+                    }}>
+                    {item.status === "done" ? "✓" : item.status === "error" ? "✕" : item.status === "extracting" ? "⏳" : ""} {item.file.name.slice(0, 20)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* 当前文件内容 */}
+            {(() => {
+              const item = importQueue[currentImportIdx];
+              if (!item) return null;
+
+              if (item.status === "extracting") {
+                return (
+                  <div className="text-center py-12">
+                    <div className="animate-spin w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full mx-auto" />
+                    <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>正在提取元数据...</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{item.file.name}</p>
+                  </div>
+                );
+              }
+
+              if (item.status === "error") {
+                return (
+                  <div className="text-center py-12">
+                    <p className="text-sm" style={{ color: "#ef4444" }}>提取失败: {item.error}</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{item.file.name}</p>
+                  </div>
+                );
+              }
+
+              if (item.status === "duplicate" && item.duplicatePaper) {
+                return (
+                  <div className="text-center py-8">
+                    <p className="text-sm" style={{ color: "#f59e0b" }}>⚠️ 文献库中已存在相似文献</p>
+                    <p className="text-xs mt-2 font-medium" style={{ color: "var(--text-primary)" }}>{item.duplicatePaper.title}</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{item.duplicatePaper.year} · {item.duplicatePaper.journal}</p>
+                  </div>
+                );
+              }
+
+              if (item.status === "done") {
+                return (
+                  <div className="text-center py-8">
+                    <p className="text-lg" style={{ color: "var(--accent-green)" }}>✅ 导入成功</p>
+                  </div>
+                );
+              }
+
+              if (item.status === "importing") {
+                return (
+                  <div className="text-center py-12">
+                    <div className="animate-spin w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full mx-auto" />
+                    <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>正在导入...</p>
+                  </div>
+                );
+              }
+
+              // status === "ready" — 显示可编辑元数据
+              const meta = item.metadata || {};
+              return (
+                <div className="flex-1 overflow-y-auto space-y-3">
+                  {/* 自动填充按钮 */}
+                  <div className="flex justify-end">
+                    <button className="btn-ghost text-xs flex items-center gap-1"
+                      onClick={() => handleAutoFill(currentImportIdx)} disabled={autoFilling}>
+                      {autoFilling ? "查询中..." : "🔄 自动填充元数据"}
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>标题</label>
+                    <input className="input-glass text-xs mt-1 w-full" value={String(meta.title || "")}
+                      onChange={e => updateImportMeta(currentImportIdx, "title", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>作者（逗号分隔）</label>
+                    <input className="input-glass text-xs mt-1 w-full"
+                      value={Array.isArray(meta.authors) ? meta.authors.join(", ") : String(meta.authors || "")}
+                      onChange={e => updateImportMeta(currentImportIdx, "authors", e.target.value.split(",").map(a => a.trim()).filter(Boolean))} />
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>年份</label>
+                      <input className="input-glass text-xs mt-1 w-full" type="number" value={Number(meta.year) || ""}
+                        onChange={e => updateImportMeta(currentImportIdx, "year", parseInt(e.target.value) || 0)} />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>DOI</label>
+                      <input className="input-glass text-xs mt-1 w-full" value={String(meta.doi || "")}
+                        onChange={e => updateImportMeta(currentImportIdx, "doi", e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>期刊</label>
+                    <input className="input-glass text-xs mt-1 w-full" value={String(meta.journal || "")}
+                      onChange={e => updateImportMeta(currentImportIdx, "journal", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>摘要</label>
+                    <textarea className="input-glass text-xs mt-1 w-full" rows={3} value={String(meta.abstract || "")}
+                      onChange={e => updateImportMeta(currentImportIdx, "abstract", e.target.value)} />
+                  </div>
+
+                  {/* 分类选择 */}
+                  {categories.length > 0 && (
+                    <div>
+                      <label className="text-[10px] font-medium" style={{ color: "var(--text-muted)" }}>分类</label>
+                      <select className="input-glass text-xs mt-1 w-full"
+                        onChange={e => {
+                          if (e.target.value) {
+                            papersApi.setPaperCategories("", [e.target.value]).catch(() => {});
+                          }
+                        }}>
+                        <option value="">不设置分类</option>
+                        {categories.filter(c => !c.is_system).map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {item.hasText === false && (
+                    <p className="text-[10px]" style={{ color: "#f59e0b" }}>⚠ 该 PDF 可能是扫描版，无法提取文本</p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* 底部按钮 */}
+            <div className="flex items-center justify-between mt-4 pt-3 border-t" style={{ borderColor: "var(--border-color)" }}>
+              <div className="flex gap-2">
+                {importQueue.length > 1 && (
+                  <button className="btn-ghost text-xs" onClick={confirmAllImports}
+                    disabled={!importQueue.some(i => i.status === "ready")}>
+                    全部确认导入
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button className="btn-ghost text-xs"
+                  onClick={() => { setShowImportDialog(false); setImportQueue([]); }}>
+                  取消
+                </button>
+                {importQueue[currentImportIdx]?.status === "ready" && (
+                  <button className="btn-gradient btn-click text-xs"
+                    onClick={() => confirmImportItem(currentImportIdx)}>
+                    确认导入
+                  </button>
+                )}
+                {importQueue[currentImportIdx]?.status === "done" && currentImportIdx < importQueue.length - 1 && (
+                  <button className="btn-gradient btn-click text-xs"
+                    onClick={() => setCurrentImportIdx(prev => prev + 1)}>
+                    下一个
+                  </button>
+                )}
+                {importQueue.every(i => i.status === "done" || i.status === "error" || i.status === "duplicate") && (
+                  <button className="btn-gradient btn-click text-xs"
+                    onClick={() => { setShowImportDialog(false); setImportQueue([]); loadPapers(); }}>
+                    完成
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
