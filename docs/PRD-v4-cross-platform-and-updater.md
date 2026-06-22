@@ -908,41 +908,42 @@ iOS Keychain > Android Keystore > 加密文件 > localStorage > 明文
 | WebView2 loader | 134 KB | `release/nexus_ui_lib.dll` |
 | 更新清单 | - | `release/latest.json` |
 
-### 11.2 Android 构建 — 通过 GitHub Actions
+### 11.2 Android 构建 ✅ 完成
 
-本地构建受 Windows 中文用户名路径编码问题影响（Kotlin 编译器无法处理非 ASCII 路径）。
-已配置 GitHub Actions 工作流 `.github/workflows/build-android.yml`，在干净的 Linux 环境中构建。
+通过 `cargo ndk` 预编译 Rust 库 + `GRADLE_USER_HOME=C:\gradle-home` 解决中文路径问题。
 
-**触发方式**:
+| 产出物 | 大小 | 路径 |
+|--------|------|------|
+| Universal APK | 52 MB | `release/nexus-ui-v4.0.0-android-universal.apk` |
+| ARM64 APK | 17 MB | `release/nexus-ui-v4.0.0-android-arm64.apk` |
+
+构建命令:
 ```bash
-# 推送 tag 触发自动构建
-git tag v4.0.0
-git push origin v4.0.0
+# 1. cargo ndk 编译 Rust 库
+cargo ndk -t arm64-v8a -o gen/android/app/src/main/jniLibs build --release
 
-# 或手动触发
-gh workflow run build-android.yml
+# 2. Gradle 组装 APK（跳过 Rust 构建步骤，设置 ASCII GRADLE_USER_HOME）
+GRADLE_USER_HOME=C:\gradle-home ./gradlew assembleRelease -x rustBuildArm64Release ...
 ```
 
-**产出物**: APK 文件（通过 GitHub Actions Artifacts 下载）
+### 11.3 iOS 构建 ❌ 环境限制
 
-### 11.3 iOS 构建 — 通过 GitHub Actions
+iOS 构建**物理不可行**于 Windows 环境——必须 macOS + Xcode，无任何变通方案。
 
-iOS 构建必须在 macOS 环境中进行。已配置 GitHub Actions 工作流 `.github/workflows/build-ios.yml`。
-
-**触发方式**:
+已配置 GitHub Actions 工作流 `.github/workflows/build-ios.yml`，需在可访问 GitHub 的环境中触发：
 ```bash
-# 同样通过 tag 或手动触发
+git push origin main --tags
 gh workflow run build-ios.yml
 ```
 
-**产出物**: IPA 文件（通过 GitHub Actions Artifacts 下载）
+**当前状态**: 工作流文件已就绪，待推送 GitHub 后由 macOS runner 构建 IPA。
 
 ### 11.4 已知限制
 
 | 问题 | 原因 | 解决方案 |
 |------|------|---------|
-| Android 本地构建失败 | Windows 中文用户名导致 Kotlin 路径编码错误 | 使用 GitHub Actions 构建 |
-| iOS 无法本地构建 | 必须 macOS 环境 | 使用 GitHub Actions 构建 |
+| ~~Android 本地构建失败~~ | ~~Windows 中文用户名路径编码~~ | ✅ 已解决: cargo-ndk + GRADLE_USER_HOME |
+| iOS 无法本地构建 | 必须 macOS 环境 | GitHub Actions（需推送代码） |
 | updater 插件仅桌面端 | Tauri 官方限制 | 移动端走应用商店更新 |
 
 ---
