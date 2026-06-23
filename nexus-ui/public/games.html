@@ -2154,33 +2154,39 @@ class GameSnake {
 
   loop() {
     if (this.over) { this.draw(); return; }
-    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
-    if (this.paused) { this.draw(); this._raf = requestAnimationFrame(() => this.loop()); return; }
-    const now = performance.now();
-    if (now - this.lastMove >= this.speed) {
-      this.lastMove = now;
-      this.dir = this.nextDir;
-      const head = this.snake[0];
-      const nx = head.x + this.dir.x;
-      const ny = head.y + this.dir.y;
-      if (nx < 0 || nx >= this.gridSize || ny < 0 || ny >= this.gridSize || this.snake.some(s => s.x === nx && s.y === ny)) {
-        this.over = true;
-        saveHighScore('snake', this.score, {});
-        clearGameProgress('snake');
-        this.draw();
-        return;
+    if (!this.showHelp) {
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      if (this.paused) { this.draw(); this._raf = requestAnimationFrame(() => this.loop()); return; }
+      const now = performance.now();
+      if (now - this.lastMove >= this.speed) {
+        this.lastMove = now;
+        this.dir = this.nextDir;
+        const head = this.snake[0];
+        const nx = head.x + this.dir.x;
+        const ny = head.y + this.dir.y;
+        if (nx < 0 || nx >= this.gridSize || ny < 0 || ny >= this.gridSize || this.snake.some(s => s.x === nx && s.y === ny)) {
+          this.over = true;
+          saveHighScore('snake', this.score, {});
+          clearGameProgress('snake');
+          this.draw();
+          return;
+        }
+        this.snake.unshift({ x: nx, y: ny });
+        if (nx === this.food.x && ny === this.food.y) {
+          this.score += 10;
+          this.speed = Math.max(40, 120 - Math.floor(this.score / 50) * 8);
+          this.spawnFood();
+        } else {
+          this.snake.pop();
+        }
       }
-      this.snake.unshift({ x: nx, y: ny });
-      if (nx === this.food.x && ny === this.food.y) {
-        this.score += 10;
-        this.speed = Math.max(40, 120 - Math.floor(this.score / 50) * 8);
-        this.spawnFood();
-      } else {
-        this.snake.pop();
-      }
+      this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
     }
-    this.draw();
-    this._raf = requestAnimationFrame(() => this.loop());
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
   }
 
   drawHelp() {
@@ -2347,11 +2353,17 @@ class GameBreakout {
 
   loop() {
     if (this.over) { this.draw(); return; }
-    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
-    if (this.paused) { this.draw(); this._raf = requestAnimationFrame(() => this.loop()); return; }
-    const now = performance.now(); const dt = Math.min((now - this.lastTime) / 1000, 0.05); this.lastTime = now;
-    this.update(dt); this.draw();
-    this._raf = requestAnimationFrame(() => this.loop());
+    if (!this.showHelp) {
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      if (this.paused) { this.draw(); this._raf = requestAnimationFrame(() => this.loop()); return; }
+      const now = performance.now(); const dt = Math.min((now - this.lastTime) / 1000, 0.05); this.lastTime = now;
+      this.update(dt); this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
+    }
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
   }
 
   update(dt) {
@@ -2593,7 +2605,7 @@ class GameMinesweeper {
   }
 
   handleClick(e) {
-    if (this.showHelp) { this.showHelp = false; this.loop(); return; }
+    if (this.showHelp) { this.showHelp = false; if (this._helpRaf) cancelAnimationFrame(this._helpRaf); this.loop(); return; }
     if (this.over || this.won) {
       // Detect click on retry button area (center of screen)
       const rect = canvas.getBoundingClientRect();
@@ -2650,6 +2662,7 @@ class GameMinesweeper {
       // Any other key dismisses help and starts the game
       this.showHelp = false;
       if (this._helpRaf) cancelAnimationFrame(this._helpRaf);
+      this._helpRaf = null;
       this.loop();
       return;
     }
@@ -2663,12 +2676,22 @@ class GameMinesweeper {
   }
 
   loop() {
-    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
-    this.draw();
-    this._raf = requestAnimationFrame(() => this.loop());
+    if (!this.showHelp) {
+      // Game mode
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      if (this._raf) cancelAnimationFrame(this._raf);
+      this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
+    }
+    // Help mode — but double-check in case showHelp was just set to false
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
   }
 
   drawHelp() {
+    if (!this.showHelp) return; // guard: don't draw help if we just exited
     ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center';
     ctx.fillStyle = C.green; ctx.font = '24px Consolas, monospace';
@@ -2732,8 +2755,8 @@ class GameMinesweeper {
         ctx.fillStyle = '#2a2a3a'; ctx.fillRect(x, y, cs, cs);
         ctx.strokeStyle = '#3a3a4a'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, cs, cs);
         if (this.flagged[r][c]) {
-          ctx.fillStyle = C.amber; ctx.font = (cs - 6) + 'px Consolas'; ctx.textAlign = 'center';
-          ctx.fillText('⚑', x + cs/2, y + cs - 4);
+          ctx.fillStyle = C.amber; ctx.font = (cs - 6) + 'px Consolas'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('⚑', x + cs/2, y + cs/2);
         }
       }
     }
@@ -2822,10 +2845,16 @@ class GameFlappy {
 
   loop() {
     if (this.over) { this.draw(); return; }
-    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
-    const now = performance.now(); const dt = Math.min((now - this.lastTime) / 1000, 0.05); this.lastTime = now;
-    this.update(dt); this.draw();
-    this._raf = requestAnimationFrame(() => this.loop());
+    if (!this.showHelp) {
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      const now = performance.now(); const dt = Math.min((now - this.lastTime) / 1000, 0.05); this.lastTime = now;
+      this.update(dt); this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
+    }
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
   }
 
   update(dt) {
@@ -3030,7 +3059,7 @@ class GamePacman {
 
   key(e) {
     if (e.key === 'Escape') { backToMenu(); return; }
-    if (this.showHelp) { this.showHelp = false; this.lastTime = performance.now(); this.loop(); return; }
+    if (this.showHelp) { this.showHelp = false; if (this._helpRaf) cancelAnimationFrame(this._helpRaf); this._helpRaf = null; this.lastTime = performance.now(); this.loop(); return; }
     if (this.over) {
       if (e.key === 'r') { this.destroy(); gameInstance = new GamePacman(); gameInstance.init(); return; }
       if (e.key === 'h' || e.key === 'H') { showHighScores('pacman'); return; }
@@ -3049,16 +3078,25 @@ class GamePacman {
 
   loop() {
     if (this.over) { this.draw(); return; }
-    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
-    const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
-    this.moveTimer += dt;
-    if (this.moveTimer >= this.moveSpeed) {
-      this.moveTimer = 0;
-      this.movePacman();
-      this.moveGhosts();
+    if (!this.showHelp) {
+      // Game mode — cancel any lingering help frame
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      if (this._raf) cancelAnimationFrame(this._raf);
+      const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
+      this.moveTimer += dt;
+      if (this.moveTimer >= this.moveSpeed) {
+        this.moveTimer = 0;
+        this.movePacman();
+        this.moveGhosts();
+      }
+      this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
     }
-    this.draw();
-    this._raf = requestAnimationFrame(() => this.loop());
+    // Help mode — guard in case showHelp was just set to false
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
   }
 
   movePacman() {
@@ -3136,7 +3174,7 @@ class GamePacman {
     ctx.fillText('P A C - M A N', W/2, 100); ctx.shadowBlur = 0;
     ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
     ctx.fillText('EAT ALL DOTS', W/2, 140);
-    const lines = [['↑ ↓ ← →', 'Move'],['',''],['Eat all dots','to win'],['Power pellets','turn tables on ghosts'],['Avoid ghosts','unless powered'],['',''],['3 lives total','']];
+    const lines = [['↑ ↓ ← →', 'Move'],['',''],['Eat all dots','to win'],['Power pellets','turn tables on ghosts'],['Avoid ghosts','unless powered'],['',''],['3 lives total',''],['ESC','Back to menu']];
     ctx.textAlign = 'left'; let ly = 180;
     lines.forEach(l => { if (l[0]&&l[1]) { ctx.fillStyle=C.cyan;ctx.font='13px Consolas,monospace';ctx.fillText(l[0],W/2-100,ly);ctx.fillStyle=C.white;ctx.fillText(l[1],W/2+20,ly); } ly+=28; });
     ctx.textAlign='center';ctx.fillStyle=C.amber;ctx.font='14px Consolas,monospace';
@@ -3272,11 +3310,17 @@ class GamePong {
 
   loop() {
     if (this.over) { this.draw(); return; }
-    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
-    if (this.paused) { this.draw(); this._raf = requestAnimationFrame(() => this.loop()); return; }
-    const now = performance.now(); const dt = Math.min((now - this.lastTime)/1000, 0.05); this.lastTime = now;
-    this.update(dt); this.draw();
-    this._raf = requestAnimationFrame(() => this.loop());
+    if (!this.showHelp) {
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      if (this.paused) { this.draw(); this._raf = requestAnimationFrame(() => this.loop()); return; }
+      const now = performance.now(); const dt = Math.min((now - this.lastTime)/1000, 0.05); this.lastTime = now;
+      this.update(dt); this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
+    }
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
   }
 
   _checkLevelUp() {
@@ -3505,10 +3549,16 @@ class GameFrogger {
 
   loop() {
     if (this.over) { this.draw(); return; }
-    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
-    const now = performance.now(); const dt = Math.min((now - this.lastTime)/1000, 0.05); this.lastTime = now;
-    this.update(dt); this.draw();
-    this._raf = requestAnimationFrame(() => this.loop());
+    if (!this.showHelp) {
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      const now = performance.now(); const dt = Math.min((now - this.lastTime)/1000, 0.05); this.lastTime = now;
+      this.update(dt); this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
+    }
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
   }
 
   update(dt) {
@@ -3724,10 +3774,16 @@ class GameBomberman {
 
   loop() {
     if (this.over) { this.draw(); return; }
-    if (this.showHelp) { this.drawHelp(); this._helpRaf = requestAnimationFrame(() => this.loop()); return; }
-    const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
-    this.update(dt); this.draw();
-    this._raf = requestAnimationFrame(() => this.loop());
+    if (!this.showHelp) {
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
+      this.update(dt); this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
+    }
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
   }
 
   update(dt) {
@@ -4305,6 +4361,7 @@ class GameRacer {
     this.road = []; this.segments = 200;
     this.cameraDepth = 100; this.cameraHeight = 120;
     this.drawDistance = 120;
+    this.roadOffset = 0; // animated road marking offset
     this.stars = Array.from({ length: 50 }, () => ({
       x: Math.random() * W, y: Math.random() * H / 2, s: Math.random() * 2
     }));
@@ -4312,7 +4369,7 @@ class GameRacer {
     // Obstacles (oncoming traffic)
     this.obstacles = [];
     this.obstacleTimer = 0;
-    this.obstacleInterval = 50; // frames between spawns
+    this.obstacleInterval = 60; // frames between spawns
     // Generate road curves
     for (let i = 0; i < this.segments; i++) {
       this.road.push({ curve: Math.sin(i * 0.02) * 3, y: 0 });
@@ -4334,7 +4391,7 @@ class GameRacer {
 
   key(e) {
     if (e.key === 'Escape') { backToMenu(); return; }
-    if (this.over && e.key === 'r') { this.init(); return; }
+    if (this.over && e.key === 'r') { this.destroy(); this.init(); return; }
     if (this.over && (e.key === 'h' || e.key === 'H')) { showHighScores('racer'); return; }
     if (this.over) return;
     if (e.key === 'ArrowUp') { e.preventDefault(); this.speed = Math.min(this.maxSpeed, this.speed + 3); }
@@ -4345,37 +4402,43 @@ class GameRacer {
 
   loop() {
     if (this.over) { this.draw(); return; }
+    if (this._raf) cancelAnimationFrame(this._raf);
     const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
     this.score += Math.floor(this.speed * dt / 1000);
-    // Spawn obstacles
-    if (this.speed > 3) {
+    // Animated road offset
+    this.roadOffset = (this.roadOffset + this.speed * dt / 1000) % 2;
+    // Spawn obstacles — further away, avoid player's lane
+    if (this.speed > 5) {
       this.obstacleTimer++;
       if (this.obstacleTimer >= this.obstacleInterval) {
         this.obstacleTimer = 0;
-        // Random lane position: -0.6 to 0.6 (avoid edges)
-        const lane = (Math.random() - 0.5) * 1.2;
         const colors = [C.red, C.amber, C.cyan, C.magenta, C.blue, '#ff6600', '#cc33ff', '#33ccff', '#ffcc00', '#66ff33'];
-        this.obstacles.push({ x: lane, dist: -0.5, color: colors[Math.floor(Math.random() * colors.length)] });
+        // Spawn in a random lane but avoid player's current lane (±0.2 safe zone)
+        let lane;
+        do { lane = (Math.random() - 0.5) * 1.2; } while (Math.abs(lane - this.playerX) < 0.25);
+        // Spawn further ahead — scale with speed so faster = more reaction time
+        const spawnDist = 1.8 + Math.min(this.speed / 80, 1.5);
+        this.obstacles.push({ x: lane, dist: spawnDist, color: colors[Math.floor(Math.random() * colors.length)] });
       }
     }
-    // Move obstacles toward player
+    // Move obstacles toward player (they come FROM the front)
     const moveSpeed = this.speed * dt / 1000;
-    this.obstacles.forEach(o => { o.dist += moveSpeed; });
-    // Remove passed obstacles
-    this.obstacles = this.obstacles.filter(o => o.dist < 1.2);
-    // Collision detection
-    const playerCarY = H - 80;
-    this.obstacles.forEach(o => {
-      if (o.dist > 0.82 && o.dist < 0.95) {
-        // Check horizontal overlap
+    this.obstacles.forEach(o => { o.dist -= moveSpeed; });
+    // Remove obstacles that passed the player
+    this.obstacles = this.obstacles.filter(o => o.dist > -0.3);
+    // Collision detection — continuous sweep to prevent tunneling at high speed
+    for (let i = 0; i < this.obstacles.length; i++) {
+      const o = this.obstacles[i];
+      if (o.dist > 0.75 && o.dist < 1.0) {
         const oScreenX = W / 2 + o.x * 60;
         const pScreenX = W / 2 + this.playerX * 60;
         if (Math.abs(oScreenX - pScreenX) < 42) {
           this.over = true;
           saveHighScore('racer', this.score, {});
+          break;
         }
       }
-    });
+    }
     this.draw();
     this._raf = requestAnimationFrame(() => this.loop());
   }
@@ -4390,20 +4453,28 @@ class GameRacer {
     this.stars.forEach(s => { ctx.fillStyle = `rgba(255,255,255,${s.s / 2})`; ctx.fillRect(s.x, s.y, s.s, s.s); });
     // Road
     const horizon = H / 2;
+    const off = this.roadOffset || 0;
     for (let i = 0; i < this.drawDistance; i++) {
       const t = i / this.drawDistance;
       const y = horizon + (1 - t) * (H / 2 - 20);
       const w = this.roadWidth * (1 - t);
       const x = W / 2 + this.playerX * w * 0.5;
+      // Animated stripe pattern (scrolling with speed)
+      const stripe = Math.floor(i + off * 10) % 2;
       // Road
-      ctx.fillStyle = i % 2 === 0 ? '#333' : '#2a2a2a';
+      ctx.fillStyle = stripe === 0 ? '#333' : '#2a2a2a';
       ctx.fillRect(x - w / 2, y, w, 4);
-      // Rumble strips
-      ctx.fillStyle = i % 2 === 0 ? C.red : '#fff';
+      // Center lane dashes (animated)
+      if (stripe === 0) {
+        ctx.fillStyle = '#aaa';
+        ctx.fillRect(x - 2, y, 4, 4);
+      }
+      // Rumble strips (animated red/white)
+      ctx.fillStyle = stripe === 0 ? C.red : '#fff';
       ctx.fillRect(x - w / 2 - 8, y, 8, 4);
       ctx.fillRect(x + w / 2, y, 8, 4);
       // Grass
-      ctx.fillStyle = i % 2 === 0 ? '#0a3a0a' : '#0a2a0a';
+      ctx.fillStyle = stripe === 0 ? '#0a3a0a' : '#0a2a0a';
       ctx.fillRect(0, y, x - w / 2 - 8, 4);
       ctx.fillRect(x + w / 2 + 8, y, W, 4);
     }
