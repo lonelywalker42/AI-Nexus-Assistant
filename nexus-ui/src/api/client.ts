@@ -415,6 +415,10 @@ export const knowledgeApi = {
   updateCard: (id: string, data: Partial<KnowledgeCard>) =>
     request<{ id: string }>(`/api/knowledge/cards/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteCard: (id: string) => request<{ ok: boolean }>(`/api/knowledge/cards/${id}`, { method: "DELETE" }),
+  regenerateSummary: (id: string) =>
+    request<{ card_id: string; title: string; summary: string; knowledge_domain: string[] }>(
+      `/api/knowledge/cards/${id}/regenerate-summary`, { method: "POST" }
+    ),
   listTags: () => request<{ name: string; usage_count: number; status: string }[]>("/api/knowledge/tags"),
 };
 

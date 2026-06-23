@@ -315,9 +315,9 @@ canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
   const my = (e.clientY - rect.top) * (H / rect.height);
   const mx = (e.clientX - rect.left) * (W / rect.width);
-  const COLS = 2, bw = 200, bh = 55, gap = 8;
+  const COLS = 2, bw = 200, bh = 48, gap = 6;
   const startX = (W - COLS * bw - (COLS - 1) * gap) / 2;
-  const startY = 120;
+  const startY = 95;
   let hovered = null;
   GAME_KEYS.forEach((k, i) => {
     const col = i % COLS, row = Math.floor(i / COLS);
@@ -333,9 +333,9 @@ canvas.addEventListener('click', (e) => {
   const rect = canvas.getBoundingClientRect();
   const my = (e.clientY - rect.top) * (H / rect.height);
   const mx = (e.clientX - rect.left) * (W / rect.width);
-  const COLS = 2, bw = 200, bh = 55, gap = 8;
+  const COLS = 2, bw = 200, bh = 48, gap = 6;
   const startX = (W - COLS * bw - (COLS - 1) * gap) / 2;
-  const startY = 120;
+  const startY = 95;
   GAME_KEYS.forEach((k, i) => {
     const col = i % COLS, row = Math.floor(i / COLS);
     const x = startX + col * (bw + gap);
@@ -365,7 +365,7 @@ function startGame(key) {
   const saved = loadGameProgress(key);
   if (saved && saved.state && !saved.state.over) {
     // Show restore prompt
-    showRestorePrompt(key, saved.state);
+    showRestorePrompt(key, saved);
   } else {
     gameInstance.init();
   }
@@ -393,8 +393,8 @@ function showRestorePrompt(key, savedState) {
     ctx.font = '12px Consolas, monospace';
     const timeStr = new Date(savedState.timestamp || Date.now()).toLocaleString();
     ctx.fillText('存档时间: ' + timeStr, W/2, 220);
-    if (savedState.score !== undefined) {
-      ctx.fillText('分数: ' + savedState.score, W/2, 245);
+    if (savedState.state?.score !== undefined) {
+      ctx.fillText('分数: ' + savedState.state.score, W/2, 245);
     }
 
     // Options
@@ -429,22 +429,29 @@ function showRestorePrompt(key, savedState) {
       selected = (selected + 1) % 2;
       drawPrompt();
     } else if (e.key === 'Enter') {
-      document.removeEventListener('keydown', promptKey);
+      cleanup();
       if (selected === 0) {
         // Restore progress
-        gameInstance.init(savedState);
+        gameInstance.init(savedState.state);
       } else {
         // New game
         clearGameProgress(key);
         gameInstance.init();
       }
     } else if (e.key === 'Escape') {
-      document.removeEventListener('keydown', promptKey);
+      cleanup();
+      clearGameProgress(key);
       backToMenu();
     }
   }
 
   // Mouse support
+  function cleanup() {
+    document.removeEventListener('keydown', promptKey);
+    canvas.removeEventListener('click', promptClick);
+    canvas.removeEventListener('mousemove', promptMouseMove);
+  }
+
   function promptClick(e) {
     const rect = canvas.getBoundingClientRect();
     const my = (e.clientY - rect.top) * (H / rect.height);
@@ -452,10 +459,9 @@ function showRestorePrompt(key, savedState) {
     options.forEach((_, i) => {
       const y = 320 + i * 60;
       if (mx > W/2-100 && mx < W/2+100 && my > y && my < y+45) {
-        document.removeEventListener('keydown', promptKey);
-        canvas.removeEventListener('click', promptClick);
+        cleanup();
         if (i === 0) {
-          gameInstance.init(savedState);
+          gameInstance.init(savedState.state);
         } else {
           clearGameProgress(key);
           gameInstance.init();
@@ -2392,9 +2398,10 @@ class GameBreakout {
     // Level complete
     if (this.bricks.every(b => !b.alive)) {
       this.level++;
-      this.ballDX *= 1.1; this.ballDY *= 1.1;
       this.ballX = W/2; this.ballY = H-60;
-      this.ballDX = 3; this.ballDY = -3;
+      const lvlSpd = 3 * (1 + (this.level - 1) * 0.1);
+      this.ballDX = lvlSpd * (Math.random() > 0.5 ? 1 : -1);
+      this.ballDY = -lvlSpd;
       this.initBricks();
     }
   }
@@ -2471,14 +2478,25 @@ class GameBreakout {
 // ══════════════════════════════════════════════
 class GameMinesweeper {
   constructor() {
-    this.cols = 12; this.rows = 12; this.mines = 20;
-    this.cellSize = Math.floor(Math.min((W - 40) / this.cols, (H - 130) / this.rows));
-    this.ox = (W - this.cols * this.cellSize) / 2;
-    this.oy = 80;
+    this.difficulty = 'medium'; // easy / medium / hard
+    this.difficulties = {
+      easy:   { cols: 9,  rows: 9,  mines: 10 },
+      medium: { cols: 12, rows: 12, mines: 20 },
+      hard:   { cols: 16, rows: 16, mines: 40 },
+    };
+    this.applyDifficulty();
     this.grid = []; this.revealed = []; this.flagged = [];
     this.score = 0; this.over = false; this.won = false;
     this.firstClick = true; this.startTime = 0; this.elapsed = 0;
     this.showHelp = true;
+  }
+
+  applyDifficulty() {
+    const d = this.difficulties[this.difficulty];
+    this.cols = d.cols; this.rows = d.rows; this.mines = d.mines;
+    this.cellSize = Math.floor(Math.min((W - 40) / this.cols, (H - 130) / this.rows));
+    this.ox = (W - this.cols * this.cellSize) / 2;
+    this.oy = 80;
   }
 
   init(savedState) {
@@ -2576,7 +2594,16 @@ class GameMinesweeper {
 
   handleClick(e) {
     if (this.showHelp) { this.showHelp = false; this.loop(); return; }
-    if (this.over || this.won) return;
+    if (this.over || this.won) {
+      // Detect click on retry button area (center of screen)
+      const rect = canvas.getBoundingClientRect();
+      const my = (e.clientY - rect.top) * (H / rect.height);
+      const mx = (e.clientX - rect.left) * (W / rect.width);
+      if (mx > W/2-80 && mx < W/2+80 && my > H/2+10 && my < H/2+50) {
+        this.destroy(); gameInstance = new GameMinesweeper(); gameInstance.init();
+      }
+      return;
+    }
     const rect = canvas.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (W / rect.width);
     const my = (e.clientY - rect.top) * (H / rect.height);
@@ -2610,7 +2637,18 @@ class GameMinesweeper {
   }
 
   handleKey(e) {
-    if (this.showHelp) { if (e.key === 'Escape') backToMenu(); return; }
+    if (this.showHelp) {
+      if (e.key === 'Escape') { backToMenu(); return; }
+      if (e.key === 'd' || e.key === 'D') {
+        const keys = Object.keys(this.difficulties);
+        const idx = (keys.indexOf(this.difficulty) + 1) % keys.length;
+        this.difficulty = keys[idx];
+        this.applyDifficulty();
+        this.drawHelp();
+        return;
+      }
+      return;
+    }
     if (this.over || this.won) {
       if (e.key === 'r') { this.destroy(); gameInstance = new GameMinesweeper(); gameInstance.init(); return; }
       if (e.key === 'h' || e.key === 'H') { showHighScores('minesweeper'); return; }
@@ -2634,6 +2672,10 @@ class GameMinesweeper {
     ctx.fillText('M I N E S W E E P E R', W/2, 100); ctx.shadowBlur = 0;
     ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
     ctx.fillText('CLEAR THE FIELD', W/2, 140);
+    const d = this.difficulties[this.difficulty];
+    const diffLabel = this.difficulty.toUpperCase() + ': ' + d.cols + 'x' + d.rows + ', ' + d.mines + ' mines';
+    ctx.fillStyle = C.cyan; ctx.font = '13px Consolas, monospace';
+    ctx.fillText('[ ' + diffLabel + ' ]', W/2, 165);
     const lines = [
       ['Left Click', 'Reveal cell'],
       ['Right Click', 'Flag/unflag mine'],
@@ -2641,9 +2683,9 @@ class GameMinesweeper {
       ['Numbers show', 'adjacent mines'],
       ['Reveal all safe', 'cells to win'],
       ['', ''],
-      ['20 mines total', '12×12 grid'],
+      ['D key', 'Cycle difficulty'],
     ];
-    ctx.textAlign = 'left'; let ly = 180;
+    ctx.textAlign = 'left'; let ly = 195;
     lines.forEach(l => {
       if (l[0] && l[1]) { ctx.fillStyle = C.cyan; ctx.font = '13px Consolas, monospace'; ctx.fillText(l[0], W/2-100, ly); ctx.fillStyle = C.white; ctx.fillText(l[1], W/2+20, ly); }
       ly += 28;
@@ -2699,8 +2741,14 @@ class GameMinesweeper {
       ctx.font = '28px Consolas, monospace'; ctx.fillText(this.won ? 'YOU WIN!' : 'GAME OVER', W/2, H/2 - 30);
       ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
       ctx.fillText('Score: ' + this.score + '  Time: ' + Math.floor(elapsed) + 's', W/2, H/2);
-      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
-      ctx.fillText('R restart · ESC menu · H scores', W/2, H/2 + 30);
+      // Clickable retry button
+      const btnX = W/2-80, btnY = H/2+10, btnW = 160, btnH = 40;
+      ctx.strokeStyle = C.amber; ctx.lineWidth = 2; ctx.strokeRect(btnX, btnY, btnW, btnH);
+      ctx.fillStyle = 'rgba(255,176,0,0.1)'; ctx.fillRect(btnX+1, btnY+1, btnW-2, btnH-2);
+      ctx.fillStyle = C.amber; ctx.font = '16px Consolas, monospace';
+      ctx.fillText('[ RESTART ]', W/2, btnY + 26);
+      ctx.fillStyle = C.dim; ctx.font = '10px Consolas, monospace';
+      ctx.fillText('Click button or press R · ESC menu · H scores', W/2, H/2 + 70);
     }
   }
 }
@@ -2713,7 +2761,7 @@ class GameFlappy {
     this.birdY = H / 2; this.birdV = 0; this.birdX = 80;
     this.gravity = 0.4; this.jumpForce = -7;
     this.pipes = []; this.score = 0; this.over = false;
-    this.pipeTimer = 0; this.pipeInterval = 90;
+    this.pipeTimer = 0; this.pipeInterval = 150;
     this.gap = 140; this.pipeW = 50;
     this.showHelp = true;
     this.stars = Array.from({ length: 40 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.5 + 0.5 }));
@@ -2789,7 +2837,7 @@ class GameFlappy {
       const gapY = 100 + Math.random() * (H - 280);
       this.pipes.push({ x: W, gapY, scored: false });
     }
-    this.pipes.forEach(p => p.x -= 120 * dt);
+    this.pipes.forEach(p => p.x -= 100 * dt);
     this.pipes = this.pipes.filter(p => p.x > -this.pipeW - 10);
     // Scoring
     this.pipes.forEach(p => {
@@ -3165,6 +3213,7 @@ class GamePong {
     this.score1 = 0; this.score2 = 0; this.maxScore = 11;
     this.over = false; this.paused = false; this.showHelp = true;
     this.keys = {}; this.aiSpeed = 3;
+    this.gameTime = 0; this.difficultyLevel = 1; this.nextDiffTime = 120;
   }
 
   init(savedState) {
@@ -3208,6 +3257,17 @@ class GamePong {
   }
 
   update(dt) {
+    // Difficulty timer — every 2 minutes, increase speed
+    this.gameTime += dt;
+    if (this.gameTime >= this.nextDiffTime) {
+      this.difficultyLevel++;
+      this.nextDiffTime += 120;
+      this.aiSpeed = 3 + this.difficultyLevel * 0.5;
+      // Speed up ball slightly
+      const factor = 1 + (this.difficultyLevel - 1) * 0.08;
+      this.ballDX *= factor;
+      this.ballDY *= factor;
+    }
     const spd = 350 * dt;
     // Player 1: W/S
     if (this.keys['w'] || this.keys['W']) this.p1Y = Math.max(0, this.p1Y - spd);
@@ -3221,7 +3281,8 @@ class GamePong {
     this.ballX += this.ballDX * dt * 60;
     this.ballY += this.ballDY * dt * 60;
     // Top/bottom bounce
-    if (this.ballY <= 0 || this.ballY >= H) this.ballDY = -this.ballDY;
+    if (this.ballY <= 0) { this.ballDY = Math.abs(this.ballDY); this.ballY = 0; }
+    if (this.ballY >= H) { this.ballDY = -Math.abs(this.ballDY); this.ballY = H; }
     // Paddle collision
     const p1x = 20, p2x = W - 30;
     if (this.ballDX < 0 && this.ballX <= p1x + this.paddleW && this.ballX >= p1x && this.ballY >= this.p1Y && this.ballY <= this.p1Y + this.paddleH) {
@@ -3282,6 +3343,11 @@ class GamePong {
     // Labels
     ctx.font = '10px Consolas, monospace'; ctx.fillStyle = C.dim;
     ctx.fillText('YOU (W/S)', W/4, 70); ctx.fillText('AI', W*3/4, 70);
+    // Difficulty level
+    if (this.difficultyLevel > 1) {
+      ctx.fillStyle = C.red; ctx.font = '10px Consolas, monospace'; ctx.textAlign = 'right';
+      ctx.fillText('LV' + this.difficultyLevel, W - 10, H - 10);
+    }
     // Paused
     if (this.paused) { ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = C.amber; ctx.font = '28px Consolas, monospace'; ctx.fillText('PAUSED', W/2, H/2); }
     // Game over
@@ -4193,6 +4259,10 @@ class GameRacer {
       x: Math.random() * W, y: Math.random() * H / 2, s: Math.random() * 2
     }));
     this.roadWidth = 1200;
+    // Obstacles (oncoming traffic)
+    this.obstacles = [];
+    this.obstacleTimer = 0;
+    this.obstacleInterval = 120; // frames between spawns
     // Generate road curves
     for (let i = 0; i < this.segments; i++) {
       this.road.push({ curve: Math.sin(i * 0.02) * 3, y: 0 });
@@ -4227,10 +4297,35 @@ class GameRacer {
     if (this.over) { this.draw(); return; }
     const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
     this.score += Math.floor(this.speed * dt / 1000);
-    // Auto crash if too slow
-    if (this.speed < 10 && this.score > 0) {
-      // Not crashing, just slow
+    // Spawn obstacles
+    if (this.speed > 20) {
+      this.obstacleTimer++;
+      if (this.obstacleTimer >= this.obstacleInterval) {
+        this.obstacleTimer = 0;
+        // Random lane position: -0.6 to 0.6 (avoid edges)
+        const lane = (Math.random() - 0.5) * 1.2;
+        const colors = [C.red, C.amber, C.cyan, C.magenta, C.blue];
+        this.obstacles.push({ x: lane, dist: 0, color: colors[Math.floor(Math.random() * colors.length)] });
+      }
     }
+    // Move obstacles toward player
+    const moveSpeed = (this.speed + 80) * dt / 1000;
+    this.obstacles.forEach(o => { o.dist += moveSpeed; });
+    // Remove passed obstacles
+    this.obstacles = this.obstacles.filter(o => o.dist < 1.2);
+    // Collision detection
+    const playerCarY = H - 80;
+    this.obstacles.forEach(o => {
+      if (o.dist > 0.82 && o.dist < 0.95) {
+        // Check horizontal overlap
+        const oScreenX = W / 2 + o.x * 60;
+        const pScreenX = W / 2 + this.playerX * 60;
+        if (Math.abs(oScreenX - pScreenX) < 28) {
+          this.over = true;
+          saveHighScore('racer', this.score, {});
+        }
+      }
+    });
     this.draw();
     this._raf = requestAnimationFrame(() => this.loop());
   }
@@ -4262,6 +4357,25 @@ class GameRacer {
       ctx.fillRect(0, y, x - w / 2 - 8, 4);
       ctx.fillRect(x + w / 2 + 8, y, W, 4);
     }
+    // Draw obstacles (oncoming traffic)
+    this.obstacles.forEach(o => {
+      if (o.dist > 0 && o.dist < 1) {
+        const t = o.dist;
+        const scale = 1 - t * 0.7;
+        const y = horizon + (1 - t) * (H / 2 - 20);
+        const roadW = this.roadWidth * (1 - t);
+        const roadX = W / 2 + this.playerX * roadW * 0.5;
+        const carX = roadX + o.x * roadW * 0.4;
+        const carW = 30 * scale, carH = 20 * scale;
+        ctx.fillStyle = o.color;
+        ctx.fillRect(carX - carW/2, y - carH, carW, carH);
+        ctx.fillRect(carX - carW*0.35, y - carH - 8*scale, carW*0.7, 8*scale);
+        // Headlights
+        ctx.fillStyle = '#ff8';
+        ctx.fillRect(carX - carW/2 + 2, y - carH + 2, 3*scale, 3*scale);
+        ctx.fillRect(carX + carW/2 - 5*scale, y - carH + 2, 3*scale, 3*scale);
+      }
+    });
     // Player car
     const carY = H - 80;
     const carX = W / 2 + this.playerX * 60;
@@ -4285,13 +4399,13 @@ class GameRacer {
     ctx.fillRect(10, 55, (this.speed / this.maxSpeed) * 100, 8);
     // Controls hint
     ctx.fillStyle = C.dim; ctx.font = '10px Consolas, monospace'; ctx.textAlign = 'center';
-    ctx.fillText('↑ ACCEL  ↓ BRAKE  ← → STEER', W / 2, H - 10);
-    // Game over (off-road detection simplified)
+    ctx.fillText('↑ ACCEL  ↓ BRAKE  ← → STEER  ·  AVOID CARS', W / 2, H - 10);
+    // Game over
     if (this.over) {
       ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
       ctx.textAlign = 'center';
       ctx.fillStyle = C.red; ctx.font = '28px Consolas, monospace';
-      ctx.fillText('GAME OVER', W / 2, H / 2 - 40);
+      ctx.fillText('CRASH!', W / 2, H / 2 - 40);
       ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace';
       ctx.fillText('Score: ' + this.score, W / 2, H / 2 - 10);
       ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
@@ -4421,7 +4535,7 @@ startGame = function(key) {
   // Check for saved progress
   const saved = loadGameProgress(key);
   if (saved && saved.state && !saved.state.over) {
-    showRestorePrompt(key, saved.state);
+    showRestorePrompt(key, saved);
   } else {
     gameInstance.init();
   }

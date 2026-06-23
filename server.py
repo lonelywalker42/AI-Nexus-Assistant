@@ -1243,6 +1243,19 @@ def delete_card(card_id: str):
         db.close()
 
 
+@app.post("/api/knowledge/cards/{card_id}/regenerate-summary")
+def regenerate_card_summary(card_id: str):
+    """为单张 DeepSeek 导入卡片重新生成 LLM 摘要"""
+    db = get_session()
+    try:
+        result = deepseek_import_service.regenerate_card_summary(db, card_id)
+        if result.get("error"):
+            raise HTTPException(400, result["error"])
+        return result
+    finally:
+        db.close()
+
+
 @app.get("/api/knowledge/tags")
 def list_tags():
     db = get_session()

@@ -365,10 +365,36 @@ def _update_group(db: Session, group_id: str, **kwargs):
 
 # ── 阶段 1: 解析 & 保存完整会话（无 LLM 调用）──────────────────
 
+def _is_duplicate_session(db: Session, title: str, source_url: str | None = None) -> bool:
+    """检查是否已存在相同或高度相似的导入会话（去重）"""
+    normalized = title.strip().lower()
+    # 1. 精确匹配已有导入会话标题
+    existing = db.query(ChatSession).filter(
+        ChatSession.category == "import",
+    ).all()
+    for s in existing:
+        existing_title = (s.title or "").replace("[导入] ", "").strip().lower()
+        if existing_title == normalized:
+            return True
+        # 模糊匹配：相似度 > 0.85
+        if SequenceMatcher(None, normalized, existing_title).ratio() > 0.85:
+            return True
+    # 2. 通过 source_url 匹配（如果有）
+    if source_url:
+        from app.models.knowledge import KnowledgeCard
+        card = db.query(KnowledgeCard).filter(
+            KnowledgeCard.user_notes.like(f"%{source_url}%"),
+        ).first()
+        if card:
+            return True
+    return False
+
+
 def save_conversations(db: Session, group_id: str, conversations: list[dict]) -> list[dict]:
     """阶段 1: 解析 & 预处理 & 批量保存会话到数据库
 
     不调用任何 LLM API，仅做 JSON 解析、消息清洗、写入 ChatSession + ChatMessage。
+    含去重逻辑：跳过已存在的相似会话。
 
     返回:
         session_infos: 每个会话的元数据列表
@@ -377,6 +403,7 @@ def save_conversations(db: Session, group_id: str, conversations: list[dict]) ->
     """
     total = len(conversations)
     session_infos = []
+    skipped = 0
 
     for i, conv in enumerate(conversations):
         title = conv["title"]
@@ -384,6 +411,12 @@ def save_conversations(db: Session, group_id: str, conversations: list[dict]) ->
         source_url = conv.get("source_url")
 
         _update_group(db, group_id, progress=f"[阶段1] 保存会话 [{i + 1}/{total}]: {title}")
+
+        # 去重检查
+        if _is_duplicate_session(db, title, source_url):
+            logger.info("跳过重复会话: %s", title)
+            skipped += 1
+            continue
 
         # 预处理（清洗 + 合并，不含 LLM）
         cleaned_msgs, conversation_text = preprocess(messages)
@@ -420,6 +453,8 @@ def save_conversations(db: Session, group_id: str, conversations: list[dict]) ->
         })
 
     db.commit()
+    if skipped > 0:
+        logger.info("去重跳过 %d 个重复会话", skipped)
     return session_infos
 
 
@@ -516,7 +551,7 @@ def _llm_batch_worker(args: tuple) -> dict:
             db.close()
 
 
-def process_llm_batch(db: Session, group_id: str, session_infos: list[dict], batch_size: int = 5) -> list[dict]:
+def process_llm_batch(db: Session, group_id: str, session_infos: list[dict], batch_size: int = 2) -> list[dict]:
     """阶段 2: 批量 LLM 处理所有已保存的会话
 
     分批次处理，每批次 batch_size 个会话，等待上一批次全部完成后再处理下一批次。
@@ -635,6 +670,77 @@ def process_import(db: Session, group_id: str, conversations: list[dict]) -> dic
         "conversations": len(session_infos),
         "total_cards": total_cards,
         "errors": errors,
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+#  单卡片摘要重新生成
+# ══════════════════════════════════════════════════════════════
+
+def regenerate_card_summary(db: Session, card_id: str) -> dict:
+    """为单张知识卡片重新生成 LLM 摘要
+
+    查找卡片关联的 ChatSession，重新调用 LLM 生成摘要，更新卡片内容。
+    """
+    card = db.get(KnowledgeCard, card_id)
+    if not card:
+        return {"error": "卡片不存在"}
+
+    session_id = card.chat_session_id
+    if not session_id:
+        return {"error": "该卡片没有关联的对话会话"}
+
+    chat_session = db.get(ChatSession, session_id)
+    if not chat_session:
+        return {"error": "关联的对话会话不存在"}
+
+    # 获取消息并构建对话文本
+    messages = db.query(ChatMessage).filter(
+        ChatMessage.session_id == session_id
+    ).order_by(ChatMessage.created_at).all()
+
+    if not messages:
+        return {"error": "对话会话中没有消息"}
+
+    msg_list = [{"role": m.role, "content": m.content} for m in messages]
+    cleaned_msgs, conversation_text = preprocess(msg_list)
+
+    if not conversation_text.strip():
+        return {"error": "预处理后无有效内容"}
+
+    # 调用 LLM 生成摘要
+    try:
+        summary_data = summarize_session(conversation_text)
+    except Exception as e:
+        logger.error("重新生成摘要失败 card=%s: %s", card_id, e)
+        return {"error": f"LLM 调用失败: {str(e)[:200]}"}
+
+    # 更新卡片
+    optimized_title = summary_data.get("session_title", card.title)
+    card.title = optimized_title[:200]
+    card.summary = summary_data.get("overall_summary", "")[:1000]
+    card.category_path = " > ".join(summary_data.get("knowledge_domain", []))
+
+    # 更新会话标题
+    if chat_session.title.startswith("[导入] "):
+        chat_session.title = f"[导入] {optimized_title}"
+    db.flush()
+
+    # 更新标签
+    existing_tags = [t.name for t in db.query(Tag).all()]
+    domain_tags = summary_data.get("knowledge_domain", [])
+    if domain_tags:
+        # 清除旧标签关联
+        db.query(CardTag).filter(CardTag.card_id == card_id).delete()
+        _create_card_tags(db, card, domain_tags, existing_tags)
+
+    db.commit()
+
+    return {
+        "card_id": card_id,
+        "title": card.title,
+        "summary": card.summary,
+        "knowledge_domain": summary_data.get("knowledge_domain", []),
     }
 
 
