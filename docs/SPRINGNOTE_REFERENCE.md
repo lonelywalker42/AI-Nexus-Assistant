@@ -1,101 +1,309 @@
-# SpringNote 参考分析与改进方案
+# SpringNote 开源项目深度研究报告
 
-> 基于 [SpringNote](https://github.com/Radiant303/SpringNote) v1.0.0 的功能分析，提取对 AI Nexus Assistant 任务管理和日报功能的参考价值。
->
-> 分析日期：2026-06-23
+> **研究日期**: 2026-06-23
+> **项目地址**: https://github.com/Radiant303/SpringNote
+> **技术栈**: Flutter 3.x + Rust (flutter_rust_bridge) + SQLite
+> **目标平台**: Windows (主要), Android/iOS (计划中)
+> **当前版本**: v1.0.0 (2026-06-21 正式发布)
 
 ---
 
 ## 一、项目概述
 
-**定位**: SpringNote 是一款面向实习生/职场新人的"懒人实习记录工具"，核心理念是将笔记视为随时间生长的活系统（capture -> organize -> reflect -> grow），而非静态文本存储。
+SpringNote 是一款 **AI 驱动的智能便签与日报生成工具**，面向实习生/初入职场的开发者。其设计文档明确引用了 Apple Dashboard、Vercel Analytics、Linear Design 和 OpenAI Design Language 作为视觉标杆。
 
-**目标用户**: 实习生、职场新人，需要快速记录工作内容并自动生成日报/周报/月报的用户。
+> "市面上的便签软件大多只能帮你保存内容，却很难帮你利用这些内容。SpringNote 因此而生。它不仅能够记录，更能够帮助你整理、沉淀和回顾。"
 
-**技术栈**:
+**产品定位边界**（明确排除）：
+- ❌ 不是任务管理器（不做 TODO/甘特图）
+- ❌ 不是聊天应用（不做通用 AI Chat）
+- ❌ 不是传统笔记应用（不做富文本/双向链接）
+
+**核心差异化**：通过 AI 自动生成日报→周报→月报的层级汇报体系，结合"回忆书"对话式检索，让过去的记录变成可检索、可对话的个人知识资产。
+
+### 技术架构
+
 | 层级 | 技术 | 说明 |
 |------|------|------|
 | 前端 | Flutter 3.x (Dart) | 跨平台桌面 UI，Material 3 设计系统 |
-| 后端 | Rust (flutter_rust_bridge) | 高性能数据处理（统计、文件操作） |
-| AI | OpenAI 兼容协议 | 支持 DeepSeek 等国产模型 |
-| 存储 | 文件系统（Markdown + JSON） | 无数据库，纯文件存储 |
-
-**核心差异**: SpringNote 是**文件驱动**设计（Markdown 日报 + JSON 概览），AI Nexus Assistant 是**数据库驱动**设计（SQLAlchemy ORM）。SpringNote 的轻量文件方案适合单人使用，AI Nexus Assistant 的数据库方案更适合结构化查询和多工具协作。
+| 后端 | Rust (flutter_rust_bridge) | 高性能数据处理（统计、文件操作、AI 调用） |
+| AI | OpenAI/Gemini/Claude 三协议 | Rust 层实现协议适配，Flutter 不直接调用 AI |
+| 存储 | Markdown 文件 + SQLite(统计) + JSON(配置) | 内容存储为人类可读的 Markdown |
+| 数据目录 | `%APPDATA%/SpringNote` | 集中管理所有用户数据 |
 
 ---
 
-## 二、设计语言分析
+## 二、设计语言与设计规范（深度提取）
 
-### 2.1 色彩体系
+### 2.1 设计哲学
 
-SpringNote 采用极简的灰度色彩体系，几乎不使用彩色，通过灰度层次传达信息：
+SpringNote 的设计文档反复强调以下关键词：
 
-```dart
-// app_theme.dart
-static const Color background = Color(0xFFFCFCFC);   // 近白色背景
-static const Color sidebar = Color(0xFFFCFCFC);       // 侧边栏同色
-static const Color surface = Color(0xFFFFFFFF);        // 纯白卡片
-static const Color surfaceMuted = Color(0xFFEDEDED);   // 浅灰辅助面
-static const Color border = Color(0xFFE5E5E5);         // 边框色
-static const Color text = Color(0xFF171717);            // 主文字（近黑）
-static const Color textMuted = Color(0xFF4F4F4F);       // 次要文字
-static const Color textSubtle = Color(0xFF666666);      // 辅助文字
+> **Minimal, Calm, Premium, Productivity, Focus, Silent Luxury, AI Workspace**
+
+**七条核心设计原则**：
+
+1. **内容至上，元素退让**
+   > "Content always remains the sole focus; all other elements proactively recede."
+
+2. **无情感装饰**
+   > "Quiet, focused, lightweight. No emotional embellishments."
+
+3. **禁止渐变、毛玻璃、彩色大面积背景**
+   - ❌ 不使用渐变色
+   - ❌ 不使用 glassmorphism
+   - ❌ 不使用高饱和度颜色
+   - ❌ 不使用 Material 默认紫色
+
+4. **克制优于表达**
+   - Hover 状态"极其克制"，仅显示微妙的背景变化
+   - 无突出边框出现，无夸张动画，无色彩偏移
+
+5. **即时保存**
+   > "All modifications save immediately; no global Save button needed."
+
+6. **错误不打断**
+   - AI 供应商不可用时显示低干扰错误，永不崩溃 UI
+
+7. **MVP 优先**
+   > "Implement a runnable MVP first, then gradually refine AI, statistics, widgets, and complex interactions."
+
+### 2.2 色彩系统
+
+SpringNote 采用**极窄色域**的灰度体系——几乎不使用彩色，仅用灰度层次传达信息：
+
+#### 核心色板
+
+| 角色 | 色值 | 用途 |
+|------|------|------|
+| 页面背景 | `#FCFCFC` / `#F8FAFC` | 页面脚手架背景 |
+| 侧边栏背景 | `#FCFCFD` | 左侧导航区（80px） |
+| 卡片表面 | `#FFFFFF` | 卡片/面板/弹窗 |
+| 柔和表面 | `#EDEDED` / `#F5F5F5` | 次级背景、输入框填充、hover 底色 |
+| 选中背景 | `#E2E2E2` | 侧边栏/列表选中项 |
+| 分割线 | `#E5E5E5` / `#EEEEEE` | 边框、分割线 |
+| 主文本 | `#171717` / `#0F172A` | 标题、关键数字 |
+| 次文本 | `#4F4F4F` / `#64748B` | 说明文字、辅助信息 |
+| 弱文本 | `#666666` / `#94A3B8` | 占位符、提示文字 |
+
+#### 语义色（极少使用）
+
+| 语义 | 色值 | 使用场景 |
+|------|------|----------|
+| 成功/活跃 | `#10B981` / `#059669` | 收益增长、运行状态指示 |
+| 成功背景 | `#ECFDF5` | 成功状态标签背景 |
+| 问题/错误 | `#F87171` | 问题记录标题强调 |
+| 警告 | `#D97706` | 警告状态 |
+| 热力图 5 级 | `#F1F5F9` → `#DCFCE7` → `#BBF7D0` → `#86EFAC` → `#4ADE80` | 活跃度渐进 |
+
+#### 侧边栏专用色
+
+| 状态 | 背景色 | 图标色 |
+|------|--------|--------|
+| 默认 | `#F5F5F5` | `#666666` (textSubtle) |
+| 悬停 | `#F5F5F5` (同默认) | 不变 |
+| 选中 | `#E2E2E2` | `#171717` (text) |
+
+#### 禁用色彩
+- ❌ 高饱和度颜色
+- ❌ Material 默认紫色
+- ❌ 彩虹渐变
+- ❌ 蓝色主色调（整体保持中性灰调）
+
+### 2.3 排版系统
+
+**字体栈**：
+```
+主字体: Inter, SF Pro Display, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, PingFang SC
+等宽字体: JetBrains Mono（编辑器/代码/数字展示）
 ```
 
-**语义色使用极少**，仅在以下场景出现：
-- 绿色（`#10B981` / `#059669` / `#ECFDF5`）：收益增长、活跃状态指示
-- 红色（`#F87171`）：问题记录标题强调
-- 无蓝色主色调——整体保持中性灰调
+#### 排版阶梯
 
-**对 AI Nexus Assistant 的启示**:
-- 当前 Nexus 使用 CSS 变量驱动三套主题（light/warm/dark），色彩较丰富
-- SpringNote 的灰度体系证明：极简色彩同样能建立清晰的视觉层次
-- 建议：TaskPage 和 TodayPage 的按钮/卡片可参考减少色相种类，用灰度深浅区分优先级
+| 角色 | 大小 | 字重 | 行高 | 字间距 |
+|------|------|------|------|--------|
+| 页面标题 | 16-18px | w600 (semi-bold) | 1.2-1.35 | -0.2 |
+| 组标题 | 13-15px | w600 | 1.4 | -- |
+| 正文/设置文本 | 13-14px | w400-w500 | 1.55-1.7 | -- |
+| 描述文本 | 12-13px | w400 | -- | -- |
+| 大号英雄数字 | 56px | bold | -- | -3.2px |
+| 组件数字 | 44px | bold | -- | -1.5px |
+| 小标签 | 10-12px | w500-w600 | -- | 0.8-1 |
+| 代码块 | 13px | w400 | 1.4 | -- |
 
-### 2.2 排版系统
-
-```dart
-// TextTheme 定义
-headlineLarge:  32px / w600 / height 1.2     // 大数字展示（收益）
-headlineMedium: 24px / w600 / height 1.25    // 页面大标题
-titleLarge:     18px / w600 / height 1.35    // 区块标题
-titleMedium:    15px / w600 / height 1.4     // 卡片标题
-bodyLarge:      15px / w400 / height 1.7     // 正文
-bodyMedium:     13px / w400 / height 1.55    // 辅助文字
-labelLarge:     13px / w600                  // 标签/按钮文字
-```
-
-**关键特征**:
-- 字号梯度：32 -> 24 -> 18 -> 15 -> 13，5 级层次
+**关键特征**：
 - 标题统一 `w600`（SemiBold），正文 `w400`（Regular）
-- `letterSpacing` 仅在标题使用负值（-0.2），正文不设字间距
+- 所有数字展示使用 `FontFeature.tabularFigures()`（等宽数字）
+- 负字间距仅用于大号数字（-1.5px 到 -3.2px），增强视觉冲击
 - 支持用户自定义系统字体（`appFont` 配置）和字号缩放（80%-140%）
 
-### 2.3 间距与圆角
+#### Markdown 预览排版
 
+| 元素 | 规格 |
+|------|------|
+| H1 | 32-36px |
+| H2 | 24-28px |
+| H3 | 20-22px |
+| 正文 | 16px, line-height 1.8 |
+| 代码块 | `#F5F7FA` 背景, 20px 圆角 |
+| 引用 | 左边框 `#DCE3EB` |
+| 最大阅读宽度 | ~720px |
+
+### 2.4 间距与圆角
+
+#### 圆角体系
+
+| 元素 | 圆角 | 说明 |
+|------|------|------|
+| 主容器 | 24-28px | SoftCard、对话框 |
+| 次级容器 | 18-22px | 设置卡片、统计卡片 |
+| 输入框 | 10-16px | 搜索栏、文本输入 |
+| 图标按钮 | 12-14px | 侧边栏按钮、操作按钮 |
+| 胶囊按钮 | 999px | 完全圆角（"pill" 形） |
+| 代码块 | 12px | 代码区域 |
+| 列表项 | 14px | 笔记列表项 |
+| 搜索栏 | 14-16px | 搜索输入框 |
+
+#### 间距体系
+
+| 场景 | 间距 |
+|------|------|
+| 页面内边距 | 48px 左右, 30-32px 上下 |
+| 卡片内边距 | 24px（默认）/ 32px（大卡片） |
+| 区块间距 | 32px |
+| 元素间距 | 16-18px |
+| 紧凑间距 | 8-12px |
+| 内容最大宽度 | 1184px（居中约束） |
+| 侧边栏宽度 | 80px（全局图标栏） |
+| 设置子导航 | 220px |
+
+### 2.5 阴影系统
+
+**核心规则**: **持久内容块不使用阴影**；仅弹窗、工具提示和浮动层可使用阴影
+
+| 场景 | 阴影值 |
+|------|--------|
+| SoftCard（持久） | `0 4px 30px rgba(0,0,0,0.015), 0 1px 3px rgba(0,0,0,0.02)` — 仅 2% 黑 |
+| 卡片悬停 | `0 10px 40px rgba(0,0,0,0.03), 0 1px 3px rgba(0,0,0,0.02)` — 仅 3% 黑 |
+| 弹窗阴影 | 同 SoftCard |
+| 弹窗遮罩 | `rgba(15, 23, 42, 0.12)` — 12% 深蓝黑 |
+| 工具提示 | `0 4px 12px rgba(0,0,0,0.08)` |
+
+**特征**: 双层阴影 + 极低透明度（1.5%-4%），营造"浮起"而非"投影"的效果。
+
+### 2.6 动画规范
+
+| 场景 | 时长 | 缓动曲线 | 说明 |
+|------|------|----------|------|
+| 微交互 | 120ms | ease-out-cubic | 悬停、选中态变化 |
+| 小过渡 | 140-160ms | ease-out-cubic | 聚焦、展开 |
+| 大过渡 | 240-280ms | ease-out-cubic | 页面切换、列表重排 |
+| 热力图入场 | 300ms | cubic-bezier(0.16, 1, 0.3, 1) | 单元格从 0.4x 缩放入场 |
+| 计数器动画 | 1600ms | easeOutQuart | 数字滚动 |
+| 展开/折叠 | 280ms | ease-in-out-cubic | 可折叠区域 |
+
+**动画原则**：
+- 无夸张动画，无浮动效果
+- 无 FAB 脉冲
+- Apple 风格缓动曲线（ease-out-cubic 为主）
+- 热力图单元格交错入场（300ms + index * 4ms 延迟）
+
+### 2.7 交互模式
+
+#### Hover 模式
+- **极其克制**: 仅背景色微妙变化（`#F5F5F5` → `#E2E2E2`）
+- 无突出边框出现
+- 无颜色偏移
+- 无缩放变换（热力图单元格除外，缩放至 1.1x）
+- 动画 120ms ease-out-cubic
+
+#### 点击/按压模式
+- `GestureDetector` 的 `onTapDown`/`onTapUp`/`onTapCancel`
+- 按下时 `scale(0.95)` + spring 缓动
+- 释放时恢复 `scale(1.0)`
+
+#### 滚动模式
+- 滚动条隐藏或极低可见度
+- 便签编辑器：编辑器与预览同步滚动（百分比映射，150-200ms Apple 缓动）
+- 统计趋势图：仅在内容水平溢出时拦截鼠标滚轮
+
+#### 输入框模式
+- 无边框 + 浅色背景（`bg-slate-50/60`）
+- 聚焦时显示边框 + 背景变深
+- 占位符使用 `#94A3B8`
+- 圆角 10-16px
+
+#### 弹窗/对话框模式
+- 白色背景，border-radius 24px
+- 背景遮罩 `rgba(15, 23, 42, 0.12)`
+- 左上标题，右上关闭按钮
+- 底部固定操作按钮
+- 可滚动内容区域
+
+#### Toggle/Switch 模式
+- iOS/Apple Settings 风格小圆角滑块
+- 开：`#0F172A` 或低饱和深色
+- 关：`#E5E7EB`
+- 状态变更即时保存
+
+### 2.8 核心组件库
+
+#### SoftCard（柔和卡片）
 ```
-页面内边距:  48px 左右, 30-32px 上下
-卡片内边距:  24px（默认）/ 32px（大卡片）
-卡片圆角:    24px（大卡片）/ 16px（输入框）/ 14px（按钮/输入框）/ 12px（小按钮/侧边栏按钮）
-元素间距:    32px（区块间）/ 16-18px（元素间）/ 8-12px（紧凑间距）
-内容最大宽度: 1184px（居中约束）
+padding: 24px
+borderRadius: 24px
+background: #FFFFFF
+border: 1px solid rgba(229, 229, 229, 0.6)
+shadow: 0 4px 30px rgba(0,0,0,0.015), 0 1px 3px rgba(0,0,0,0.02)
 ```
 
-### 2.4 阴影系统
-
-SpringNote 使用极其克制的阴影，几乎不可见：
-
-```dart
-// SoftCard 阴影
-BoxShadow(color: Color(0x05000000), blurRadius: 30, offset: Offset(0, 4)),  // 2% 黑
-BoxShadow(color: Color(0x05000000), blurRadius: 3, offset: Offset(0, 1)),   // 2% 黑
-
-// 桌面组件阴影
-BoxShadow(color: Color(0x0A000000), blurRadius: 24, offset: Offset(0, 4)),  // 4% 黑
-BoxShadow(color: Color(0x05000000), blurRadius: 2, offset: Offset(0, 1)),   // 2% 黑
+#### SpringNotePageScaffold（页面脚手架）
+```
+maxWidth: 1184px（居中）
+标题行: padding 48,30,48,22
+标题 + Spacer + actions
+内容区: Expanded
 ```
 
-**特征**: 双层阴影 + 极低透明度（2%-4%），营造"浮起"而非"投影"的效果。
+#### SpringNoteIconButton（图标按钮）
+```
+size: 34x34px
+icon: 18px, color: #666666
+hover: #EDEDED 背景
+borderRadius: 10px
+```
+
+#### 胶囊按钮（Smart Generate）
+```
+height: 28px
+padding: 16px horizontal, 6px vertical
+borderRadius: 14px（高度/2）
+background: #171717（近黑）
+hover: #262626
+color: white
+fontSize: 12, fontWeight: w500
+icon: sparkles (绿色 #34D399)
+```
+
+#### AppWindowFrame（自定义标题栏）
+```
+height: 40px
+左侧: 17px logo + "SpringNote" 文字 (12.5px, w500)
+右侧: 最小化/最大化/关闭按钮（原生 WindowCaptionButton）
+背景: #FCFCFC
+支持 DragToMoveArea 拖拽
+```
+
+#### 侧边栏导航
+```
+width: 80px
+图标: 16px Lucide 风格（CustomPainter 手绘）
+点击目标: 40x40px
+选中态: #E2E2E2 背景, 圆角 12px
+悬停态: #F5F5F5 背景, 圆角 12px
+过渡: 120ms easeOutCubic
+底部: 设置图标单独对齐
+```
 
 ---
 
@@ -103,7 +311,7 @@ BoxShadow(color: Color(0x05000000), blurRadius: 2, offset: Offset(0, 1)),   // 2
 
 ### 3.1 首页工作台（HomePage）
 
-SpringNote 的首页是整个应用的信息中枢，包含 4 个核心区块：
+首页是整个应用的信息中枢，包含 4 个核心区块：
 
 #### 3.1.1 今日英雄卡片（_TodayHeroCard）
 
@@ -111,21 +319,21 @@ SpringNote 的首页是整个应用的信息中枢，包含 4 个核心区块：
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  LEVEL 03        │  ACTIVITY INPUT        │
+│  LEVEL 01        │  ACTIVITY INPUT        │
 │  ┌──────┐        │  ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪  │
-│  │ 67%  │        │  ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪  │
+│  │ 14%  │        │  ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪  │
 │  └──────┘        │  ▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪▪  │
 │                   │                         │
-│  EARNINGS TODAY   │  本周新增: 12 篇        │
-│  1,234            │  连续记录: 5 天         │
-│  +0.045 c/s       │  上次同步: 刚刚         │
-│  累计总收益 8,901  │                         │
+│  EARNINGS TODAY   │  本周新增: 580 篇       │
+│  194              │  连续记录: 0 天         │
+│  +0.01 c/s        │  上次同步: 刚刚         │
+│  累计总收益 19,107 │                         │
 └─────────────────────────────────────────────────────┘
 ```
 
-**设计亮点**:
-- 等级环形进度条（`_LevelRingPainter`）：64px 圆环，4.5px 线宽，灰色背景 + 深灰进度
-- 收益数字使用 56px 超大字号 + `-3.2px` 字间距压缩，视觉冲击力强
+**设计亮点**：
+- 等级环形进度条（`_LevelRingPainter`）：64px 圆环，4.5px 线宽
+- 收益数字使用 56px 超大字号 + `-3.2px` 字间距压缩
 - 增益标签使用绿色背景（`#ECFDF5`）+ 绿色文字（`#059669`），圆角 6px
 - 响应式布局：窄屏（<860px）自动切换为纵向排列
 
@@ -144,15 +352,11 @@ static const _colors = [
 ];
 ```
 
-**交互细节**:
+**交互细节**：
 - 单元格 13x13px，间距 3px
 - 悬停时单元格放大 1.1x（`AnimatedScale`）
 - 入场动画：每个单元格延迟 300 + index*4ms，从 0.4x 缩放 + 0 透明度渐入
-- 悬停 tooltip 显示日期和贡献数，白色卡片 + 阴影浮于热力图上方
-
-**对 AI Nexus Assistant 的启示**:
-- TodayPage 可引入类似的活跃热力图，展示每日任务完成情况
-- 热力图能直观呈现"连续工作"的成就感，激励用户保持记录习惯
+- 悬停 tooltip 显示日期和贡献数，白色卡片浮于热力图上方
 
 #### 3.1.3 快速输入框（_QuickCaptureCard）
 
@@ -168,16 +372,12 @@ static const _colors = [
 └─────────────────────────────────────────────────────┘
 ```
 
-**设计细节**:
-- 输入框聚焦时背景从 `0x99F5F5F5`（60% 不透明度）变为 `0xE6F5F5F5`（90%）
+**设计细节**：
+- 输入框聚焦时背景从 `0x99F5F5F5`（60%）变为 `0xE6F5F5F5`（90%）
 - 边框从 `0x99E0E0E0` 变为 `0xCCCFCFCF`，动画 160ms
 - 工具栏按钮：32x32px，悬停时白色背景 + 圆角 12px
-- 生成按钮：28px 高，`#171717` 背景，圆角 14px（胶囊形），悬停变 `#262626`
+- 生成按钮：28px 高，`#171717` 背景，圆角 14px（胶囊形）
 - 按钮内含 sparkles 图标（绿色 `#34D399`），提交中变为加载动画
-
-**对 AI Nexus Assistant 的启示**:
-- TodayPage 的"快速记录"功能可参考此模式：用户输入碎片化想法，AI 整理为结构化日报
-- 按钮的胶囊形设计（高度 28px，圆角 = 高度/2）比当前 Nexus 的按钮更精致
 
 #### 3.1.4 概览网格（_OverviewGrid）
 
@@ -189,7 +389,7 @@ AI 整理后的结构化内容分三列展示：
 │ · 完成事项       │ │ · 问题记录       │ │ · 明日计划       │
 │                  │ │                  │ │                  │
 │ · 完成了 XX 功能 │ │ · 遇到 YY 问题   │ │ · 明天计划做 ZZ  │
-│ · 修复了 YY bug  │ │                  │ │ · 继续推进 WW    │
+│ · 修复了 YY bug  │ │ · 需要协调 ZZ    │ │ · 继续推进 WW    │
 └──────────────────┘ └──────────────────┘ └──────────────────┘
 ```
 
@@ -208,255 +408,267 @@ enum NoteKind {
 }
 ```
 
-- 日报按日期命名：`2026-06-23.md`
+- 日报按日期命名：`2026-06-21.md`
 - 启动时自动补齐缺失的周报/月报（`StartupReportGenerationService`）
 - 基于已有日报/周报用 LLM 生成周报/月报摘要
 
-#### 3.2.2 编辑器功能
+#### 3.2.2 三栏布局
 
-- Markdown 编辑 + 实时预览
-- 代码块语法高亮（`syntax_highlight` 包）
-- AI 补全预测（FIM - Fill In the Middle）：用户输入时 debounce 触发，灰色显示预测文本，Tab 接受
-- 左侧文件列表 + 右侧编辑器的双栏布局
+```
+| 笔记列表 (278px) | Markdown 源码编辑器 (flex:32) | Markdown 预览 (flex:32) |
+```
 
-**对 AI Nexus Assistant 的启示**:
-- TodayPage 的工作日志可引入日报/周报/月报的层级结构
-- AI FIM 补全功能可提升记录效率——用户写半句话，AI 补全后续内容
+- **笔记列表**: 搜索栏 + 卡片式列表项（选中 `#E2E2E2`，悬停 `#F5F5F5`）
+- **源码编辑器**: JetBrains Mono 等宽字体，13px，行高 1.55
+- **实时预览**: GptMarkdown 渲染，支持 LaTeX，H1 32px，正文 16px 行高 1.8
+- 编辑器与预览**同步滚动**（百分比映射，150-200ms Apple 缓动）
+
+#### 3.2.3 AI FIM 补全
+
+- 300ms 防抖触发
+- Ghost Text 显示预测（`#9AA0A6` 灰色）
+- `Tab`: 接受全部预测
+- `Ctrl+L`: 接受一行
+- `Ctrl+K`: 接受一个字符
+- 任何新输入、光标变化、内容变化都会使预测失效
+
+#### 3.2.4 数据模型
+
+```
+日报: daily/2026-06-21.md
+周报: weekly/2026-W25.md
+月报: monthly/2026-06.md
+概览: overview/daily/2026-06-21.json（结构化 JSON）
+配置: config.json
+回忆书: remember.json
+```
 
 ### 3.3 回忆书对话（MemoryPage）
 
-以对话方式检索历史记录：
+#### 双状态设计
 
+**入口状态**：
 ```
 ┌─────────────────────────────────────────────────────┐
-│  回忆书                                             │
+│                                                     │
+│              继续追问你的回忆...                      │
 │                                                     │
 │  ┌─────────────────────────────────────────────┐   │
-│  │ 用户: 上个月我做了哪些和 XX 相关的工作？     │   │
+│  │ +  继续追问你的回忆...              [发送]   │   │
 │  └─────────────────────────────────────────────┘   │
 │                                                     │
-│  ┌─────────────────────────────────────────────┐   │
-│  │ AI: 根据你的记录，上个月你...                │   │
-│  │     📎 检索到 3 条相关记录                   │   │
-│  │     [思考过程展开/折叠]                      │   │
-│  └─────────────────────────────────────────────┘   │
+│  [回顾昨天]  [总结近期]  [查看过往回忆]             │
+└─────────────────────────────────────────────────────┘
+```
+
+**对话状态**：
+```
+┌─────────────────────────────────────────────────────┐
+│  回忆书                    [Disable] [High] [Max]  │
+│─────────────────────────────────────────────────────│
+│                                         ┌─────────┐│
+│                                         │ 用户消息 ││
+│                                         └─────────┘│
+│  ✨ 深度思考 (1.7s)                              │
+│  好的，我来查一下你的记录中关于 XX 的信息。        │
+│  ✅ 关键词搜索 2 条结果                           │
+│                                                     │
+│  ✨ 深度思考 (1.1s)                              │
+│  找到了两条相关记录，我来看看详细内容。            │
+│  ✅ 读取日报 1 条结果    ✅ 读取日报 1 条结果     │
 │                                                     │
 │  ┌─────────────────────────────────────────────┐   │
-│  │ 输入你的问题...                    [发送]    │   │
+│  │ +  继续追问你的回忆...              [发送]   │   │
 │  └─────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
 ```
 
-- 支持思考过程（reasoning）展示和折叠
-- 工具调用结果展示（检索到 N 条记录）
-- Markdown 渲染（使用 `gpt_markdown` 包）
+#### AI 工具调用
 
-### 3.4 牛马时钟（Desktop Widget）
+| 工具 | 功能 | 说明 |
+|------|------|------|
+| `get_current_date` | 获取当前日期 | 用于时间推理 |
+| `keyword_search` | 关键词搜索 | 跨所有笔记搜索，TF 评分 |
+| `read_daily_note` | 读取日报 | 指定日期的完整日报 |
+| `read_week_daily_notes` | 读取一周日报 | 汇总一周日报 |
+| `read_month_report` | 读取月报 | 指定月份月报 |
 
-特色功能——桌面浮窗显示工作时间和虚拟收入：
+#### ReAct 模式实现
 
+1. **Reason**: 解析用户问题中的日期线索（"今天"、"昨天"、"上周"、"本月"）
+2. **Act**: 执行工具调用（搜索/读取）
+3. **Observe**: 记录工具返回结果
+4. **Think**: 综合回答（可折叠展示思考过程，带耗时统计）
+
+#### 中文 NLP
+
+纯正则实现，无外部库依赖：
+- 日期提取：`"今天"` → 当天，`"昨天"` → 前一天，`"上周"` → 上一周
+- 中文数字：`"第N周"`、`"第N月"` 解析
+
+### 3.4 自动报告生成（StartupReportGenerationService）
+
+**层级汇总管线**：
 ```
-┌────────────────────────┐
-│ Lv.03 实习生 (67%)     │
-│ ████████████░░░░       │
-│                        │
-│ 1,234                  │
-│                        │
-│ +0.045 c/s  🟢 08:30:15│
-└────────────────────────┘
+日报 (YYYY-MM-DD.md) → 周报 (YYYY-WNN.md) → 月报 (YYYY-MM.md)
 ```
 
-- 260x140px 浮窗，圆角 12px
-- 点击切换计时状态，右键返回主页
-- 绿色圆点（6px）指示运行状态
-- 数字使用 `tabularFigures` 字体特性，保证对齐
-
-**对 AI Nexus Assistant 的启示**:
-- Nexus 已有类似的时钟窗口（Nixie Tube Clock），但功能偏向时钟/音乐
-- 可考虑在 TodayPage 添加"今日工作时长"和"任务完成收益"的轻量级展示
+- 启动时自动检测缺失的周报/月报
+- 基于已有日报聚合，通过 AI 生成周报
+- 基于已有周报聚合，通过 AI 生成月报
+- **幂等生成**: 已有有意义内容的报告不会被覆盖
+- **有意义内容检测**: 至少有一个非空、非标题行
 
 ### 3.5 统计面板（SettingsStatsPanel）
 
-设置页内的统计功能：
+- **年度热力图**: GitHub 贡献风格，12px 单元格，5px 间距，自动滚动到最新周
+- **总览指标**: 总结数、编辑补全次数、总记录数、日报数、周报数、月报数、输入/输出/缓存 Tokens、应用启动次数
+- **用量趋势**: 按供应商分色的堆叠柱状图（8 色调色板）
+- **日期范围筛选**: 全部 / 最近 30 天 / 上个月 / 上个季度 / 自定义日历
+- **紧凑数字格式**: 1234 → "1.2k"，1234567 → "1.2M"
 
-- 时间范围选择：最近 7 天 / 30 天 / 全部 / 自定义
-- 活跃度热力图（与首页相同风格）
-- 记录数量、模型调用次数等指标
+### 3.6 游戏化系统（LevelProgressController）
+
+- **等级公式**: level = totalSubmissions / 100, progress = totalSubmissions % 100
+- **每日上限**: 10 次有效提交
+- **金币收益**: 每秒递增（+0.01 c/s），模拟工作收入
+- **乐观更新**: 提交后立即更新本地状态，再从持久化源校正
+- **竞态保护**: 基于 generation 计数器的加载取消机制
+
+### 3.7 桌面组件（DesktopStatusWidget）
+
+```
+┌────────────────────────┐
+│ Lv.1 实习生 (12%)      │
+│                        │
+│ 114.83                 │
+│                        │
+│ +0.007 coin/s  🟢 04:35:36 │
+└────────────────────────┘
+```
+
+- 260x140px，圆角 12px
+- 点击切换计时状态，右键返回主页
+- 绿色圆点（6px）指示运行状态
+- 数字使用 `tabularFigures` 字体特性
 
 ---
 
-## 四、UI/UX 模式详解
+## 四、与 AI Nexus Assistant 的对比分析
 
-### 4.1 侧边栏导航
+### 4.1 设计风格对比
 
-```dart
-class GlobalSidebar extends StatelessWidget {
-  // 80px 宽，4 个图标按钮
-  // 首页 / 便签 / 回忆书 / 设置
-  // 底部对齐设置按钮
-}
-```
+| 维度 | SpringNote | AI Nexus Assistant |
+|------|-----------|-------------------|
+| **设计语言** | 极简/静奢/反装饰 | 毛玻璃/iOS 风格/渐变 |
+| **背景** | 纯白 `#FCFCFC` | 半透明 `rgba(255,255,255,0.75)` + blur |
+| **卡片** | 纯白无阴影，仅边框 | 毛玻璃 + 双层阴影 |
+| **主强调色** | 黑色 `#0F172A`（按钮） | 蓝绿渐变 `#3b82f6 → #10b981` |
+| **次强调色** | 低饱和绿 `#10B981` | 同 `#10b981` |
+| **边框** | `#E5E5E5` / `#EEEEEE` | `rgba(255,255,255,0.18)` |
+| **字体** | Inter + Segoe UI | Open Sans + system-ui |
+| **基础字号** | 13-14px | 13px |
+| **图标** | 自定义 CustomPainter Lucide | 手绘 SVG (stroke-based) |
+| **阴影** | 极淡 2% 黑 | 双层 blur，更明显 |
+| **动画** | 极克制，120-280ms | 适中，0.25s 带 spring |
+| **侧边栏** | 80px 纯图标 | 208px 图标+文字分组 |
+| **主题** | 仅浅色 | 浅色/暖色/深色 + 自定义 |
 
-**按钮规格**:
-- 容器：40x40px
-- 图标：16px（Lucide 风格手绘图标，非 Material Icons）
-- 选中态：`#E2E2E2` 背景 + 圆角 12px
-- 悬停态：`#F5F5F5` 背景 + 圆角 12px
-- 过渡动画：120ms `easeOutCubic`
+### 4.2 日程/日报功能对比
 
-**对 AI Nexus Assistant 的启示**:
-- Nexus 侧边栏使用分组导航（Overview/Research/Personal Assistant/Settings），比 SpringNote 更复杂
-- SpringNote 的单列图标导航更简洁，适合功能较少的应用
-- Nexus 可参考 SpringNote 的悬停/选中动画细节（120ms easeOutCubic）
+| 维度 | SpringNote | AI Nexus Assistant |
+|------|-----------|-------------------|
+| **日报结构** | AI 结构化解析（完成/问题/计划） | 手动分类（优先级/类别） |
+| **数据存储** | Markdown 文件（每日一文件） | SQLite 数据库 |
+| **AI 集成** | 首页快速输入 + 智能整理 | AI Chat 页面独立 |
+| **周报/月报** | 自动从日报汇总生成 | 无 |
+| **热力图** | GitHub 贡献风格活跃度 | 无 |
+| **游戏化** | 等级/金币/收益系统 | 无 |
+| **快速输入** | 首页无边框输入 + AI 整理 | TodayPage 快速添加任务 |
+| **Markdown 编辑** | 三栏式源码+预览 | 无 Markdown 编辑器 |
+| **FIM 补全** | AI Ghost Text 预测 | 无 |
+| **搜索** | ReAct 模式自然语言检索 | 简单关键词搜索 |
+| **记忆检索** | 回忆书对话式检索 | ChatPage 通用 AI 对话 |
+| **报告导出** | Markdown 文件直接可用 | 无专门导出功能 |
 
-### 4.2 卡片组件（SoftCard）
+### 4.3 架构对比
 
-```dart
-class SoftCard extends StatelessWidget {
-  // 默认参数
-  padding: EdgeInsets.all(24)
-  borderRadius: 24
-  backgroundColor: AppTheme.surface  // 纯白
-  withShadow: true
-}
-```
-
-**边框**: `Color(0x99E0E0E0)` — 60% 不透明度的浅灰边框
-**阴影**: 双层极淡阴影（2% 黑）
-
-### 4.3 图标按钮（SpringNoteIconButton）
-
-```dart
-class SpringNoteIconButton extends StatelessWidget {
-  // 固定尺寸 34x34px
-  // 图标 18px
-  // 颜色 textSubtle (#666666)
-  // 悬停 #EDEDED
-  // 圆角 10px
-}
-```
-
-**对 AI Nexus Assistant 的启示**:
-- Nexus 的按钮尺寸不统一（有的 32px，有的 36px），建议统一为 34px
-- 悬停色使用 surfaceMuted（`#EDEDED`）而非彩色，保持灰度一致性
-
-### 4.4 智能生成按钮
-
-```dart
-// 胶囊形按钮规格
-height: 28px
-padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6)
-borderRadius: 14  // 高度的一半 = 完美胶囊
-backgroundColor: #171717  // 近黑
-hoverColor: #262626       // 稍亮
-textColor: Colors.white
-fontSize: 12
-fontWeight: w500
-```
-
-**对 AI Nexus Assistant 的启示**:
-- Nexus 的 AI 相关按钮可统一为胶囊形设计
-- 当前 Nexus 按钮高度不一致（有的 32px，有的 36px，有的 40px），建议统一为 28-32px 范围
-
-### 4.5 自定义窗口标题栏
-
-```dart
-class AppWindowTitleBar extends StatelessWidget {
-  // 高度 40px
-  // 左侧：17px logo + "SpringNote" 文字（12.5px, w500）
-  // 右侧：最小化/最大化/关闭按钮（Material WindowCaptionButton）
-  // 背景色：AppTheme.background
-  // 支持拖拽移动（DragToMoveArea）
-}
-```
-
-### 4.6 页面布局容器
-
-```dart
-class SpringNotePageScaffold extends StatelessWidget {
-  // 最大宽度约束：1184px（居中）
-  // 标题行：paddingLTRB(48, 30, 48, 22)
-  // 标题 + Spacer + actions
-  // 内容区 Expanded
-}
-```
+| 维度 | SpringNote | AI Nexus Assistant |
+|------|-----------|-------------------|
+| **前端框架** | Flutter 3.x | React 19 + TypeScript |
+| **后端** | Rust (FFI) | Python (FastAPI) |
+| **桌面框架** | flutter_rust_bridge | Tauri 2 |
+| **数据存储** | Markdown 文件 + SQLite(统计) | SQLite (全功能) |
+| **AI 调用** | Rust 层处理协议 | Python 层处理协议 |
+| **状态管理** | setState + ValueNotifier | React Hooks |
+| **路由** | IndexedStack（无路由库） | React Router |
+| **备份** | 文件复制 | ZIP 导出（.db + .db-wal + .db-shm） |
 
 ---
 
-## 五、改进方案：适配 AI Nexus Assistant
+## 五、可借鉴的改进方案
 
-### 5.1 TaskPage.tsx 改进
+### 5.1 日程/日报功能改进
 
-#### 5.1.1 活跃热力图
+#### 5.1.1 🔴 AI 结构化日报生成（P0）
 
-**现状**: TaskPage 仅有简单的任务列表，缺乏时间维度的可视化。
-**方案**: 在 TaskPage 顶部添加任务完成热力图，展示最近 140 天的任务完成情况。
+**当前问题**: TodayPage 的日报功能依赖手动输入任务，缺乏 AI 自动整理能力。
 
-```tsx
-// 概念实现
-const TaskHeatmap = () => {
-  const colors = ['#EDEDED', '#DCFCE7', '#BBF7D0', '#86EFAC', '#4ADE80'];
-  // 从 API 获取每日任务完成数
-  // 渲染 20x7 网格
-  // 悬停显示日期和完成数
-};
+**改进方案**:
+- 在 TodayPage 顶部添加"快速想法输入"区域
+- 用户输入自然语言描述，AI 自动解析为结构化内容：
+  - 完成事项（completed）
+  - 问题记录（issues）
+  - 明日计划（plans）
+- 使用类似 `StructuredWorkNote` 的数据模型
+- 支持 Markdown 格式存储，便于导出
+
+**数据模型参考**:
+```typescript
+interface StructuredWorkNote {
+  rawInput: string;        // 用户原始输入
+  completed: string[];     // 完成事项列表
+  issues: string[];        // 问题记录列表
+  plans: string[];         // 明日计划列表
+}
 ```
 
-**优先级**: P1（提升 TaskPage 的可视化吸引力）
+#### 5.1.2 🔴 自动周报/月报生成（P1）
 
-#### 5.1.2 任务收益系统
+**当前问题**: 无自动汇总功能，用户需手动整理周报。
 
-**现状**: 任务仅有完成/未完成状态，缺乏激励机制。
-**方案**: 参考 SpringNote 的 coin 系统，为每个任务设置虚拟积分：
+**改进方案**:
+- 实现层级汇总管线：日报 → 周报 → 月报
+- 启动时检测缺失的周报/月报
+- 基于已有日报，通过 AI 生成周报摘要
+- 存储为 Markdown 文件，支持导出
+- 在 TodayPage 显示"本周周报状态"提示
 
-- 普通任务：10 积分
-- 高优先级任务：20 积分
-- 紧急任务：30 积分
-- 连续完成加成：+5 积分/天
+#### 5.1.3 🟡 活跃度热力图（P1）
 
-**优先级**: P2（游戏化激励，非核心功能）
+**当前问题**: 无可视化活跃度展示。
 
-#### 5.1.3 按钮样式统一
+**改进方案**:
+- 在 Dashboard 或 TodayPage 添加 GitHub 贡献风格热力图
+- 数据来源：任务完成记录、日报记录
+- 5 级绿色渐变（参考 SpringNote 色阶）
+- 支持悬停查看日期和数量
+- 入场动画：交错延迟入场
 
-**现状**: TaskPage 的按钮高度、圆角、视觉权重不一致。
-**方案**: 参考 SpringNote 的按钮规范统一：
-
-| 按钮类型 | 高度 | 圆角 | 背景色 | 文字色 |
-|---------|------|------|--------|--------|
-| 主操作按钮 | 28-32px | 14-16px | `#171717` | 白色 |
-| 次要按钮 | 28-32px | 14-16px | 透明 + 边框 | 主文字色 |
-| 图标按钮 | 34x34px | 10px | 透明 | `#666666` |
-| 危险按钮 | 28-32px | 14-16px | `#FEE2E2` | `#DC2626` |
-
-**优先级**: P0（UI 一致性问题）
-
-### 5.2 TodayPage.tsx 改进
-
-#### 5.2.1 快速记录输入框
-
-**现状**: TodayPage 的工作日志需要手动编辑 Markdown。
-**方案**: 参考 SpringNote 的 `_QuickCaptureCard`，在 TodayPage 顶部添加快速输入区：
-
-```
-┌─────────────────────────────────────────────────────┐
-│  写下今天的工作内容，AI 将自动整理...                │
-│                                                     │
-│─────────────────────────────────────────────────────│
-│              42 字           [✨ 智能整理]           │
-└─────────────────────────────────────────────────────┘
+**色阶参考**:
+```css
+.heatmap-level-0 { background: #EDEDED; }
+.heatmap-level-1 { background: #DCFCE7; }
+.heatmap-level-2 { background: #BBF7D0; }
+.heatmap-level-3 { background: #86EFAC; }
+.heatmap-level-4 { background: #4ADE80; }
 ```
 
-- 用户输入碎片化想法
-- AI 自动整理为结构化内容（完成事项 / 问题 / 明日计划）
-- 自动追加到当日工作日志
+#### 5.1.4 🟡 结构化概览卡片（P1）
 
-**优先级**: P0（核心体验提升）
+**当前问题**: TodayPage 的进度展示为简单的百分比和任务列表。
 
-#### 5.2.2 结构化概览卡片
-
-**现状**: TodayPage 的进度展示为简单的百分比。
-**方案**: 参考 SpringNote 的 `_OverviewGrid`，将今日工作总结分为三栏：
-
+**改进方案**: 将今日工作总结分为三栏：
 ```
 ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
 │ ✅ 完成事项       │ │ ⚠️ 问题记录       │ │ 📋 明日计划       │
@@ -465,143 +677,171 @@ const TaskHeatmap = () => {
 └──────────────────┘ └──────────────────┘ └──────────────────┘
 ```
 
-**优先级**: P1（提升日报可读性）
+### 5.2 UI 设计风格改进
 
-#### 5.2.3 工作时长追踪
+#### 5.2.1 🟡 卡片样式简化（P1）
 
-**现状**: TodayPage 无工作时长统计。
-**方案**: 参考 SpringNote 的牛马时钟，在 TodayPage 添加轻量级工作时长显示：
+**当前问题**: 毛玻璃风格虽现代，但视觉噪音较多。
 
-```tsx
-const WorkTimer = () => {
-  // 显示今日工作时长 HH:MM:SS
-  // 开始/暂停按钮
-  // 与任务关联（自动记录某任务的耗时）
-};
-```
+**改进方案**（渐进式迁移）：
+1. **卡片样式**: 从毛玻璃过渡到纯白卡片 + 极淡边框
+   - 移除 `backdrop-filter: blur()`
+   - 使用 `background: #FFFFFF` + `border: 1px solid #E5E5E5`
+   - 保留但减淡阴影
+2. **按钮样式**: 引入黑色胶囊按钮作为主操作
+   - 主按钮: `background: #0F172A`，`color: white`，`borderRadius: 999px`
+   - 保留渐变按钮用于 AI Chat 等强调场景
+3. **色彩克制**: 减少蓝色强调色的使用
+   - 仅在链接、焦点状态使用 `#3b82f6`
+   - 主要交互使用黑色/深灰色
 
-**优先级**: P2（锦上添花功能）
+#### 5.2.2 🟡 排版优化（P1）
 
-#### 5.2.4 AI FIM 补全
+**改进方案**:
+1. 引入 `FontFeature.tabularFigures()` 用于所有数字展示
+2. 增大标题与正文的字号对比（参考 56px 大数字 vs 10px 标签）
+3. 考虑 Inter 字体作为主字体（更现代的几何无衬线）
+4. 统一行高：正文 1.55-1.7，标题 1.2-1.35
 
-**现状**: 工作日志编辑为纯文本输入。
-**方案**: 参考 SpringNote 的 FIM 补全，用户输入时 AI 预测后续内容：
+#### 5.2.3 🟡 动画精炼（P2）
 
-- 用户输入"完成了"，AI 预测"完成了 XX 功能的开发和测试"
-- 灰色显示预测文本，Tab 接受
-- debounce 500ms 避免频繁请求
+**改进方案**:
+1. 统一动画缓动曲线为 `ease-out-cubic`
+2. 缩短动画时长：微交互 120ms，过渡 140-160ms
+3. 移除浮动效果（如 FAB 脉冲）
+4. 热力图入场使用交错动画（stagger）
 
-**优先级**: P2（AI 增强功能）
+#### 5.2.4 🟡 阴影规范（P2）
+
+**改进方案**:
+1. 持久内容块不使用阴影（卡片、面板）
+2. 仅弹窗、工具提示、浮动层使用阴影
+3. 阴影值统一为极淡：`0 4px 30px rgba(0,0,0,0.015)`
 
 ### 5.3 跨页面 UI 统一
 
-#### 5.3.1 卡片组件规范
+#### 5.3.1 🟡 按钮尺寸统一（P0）
 
-参考 SpringNote 的 `SoftCard`，统一 Nexus 的卡片样式：
+**当前问题**: TaskPage 的按钮高度、圆角、视觉权重不一致。
 
-```tsx
-// 建议的 SoftCard 规范
-const SoftCard = {
-  padding: '24px',           // 默认内边距
-  borderRadius: '24px',      // 大卡片圆角
-  backgroundColor: 'var(--glass-bg)',
-  border: '1px solid rgba(229, 229, 229, 0.6)',
-  boxShadow: '0 4px 30px rgba(0,0,0,0.02), 0 1px 3px rgba(0,0,0,0.02)',
-};
+**改进方案**:
+
+| 按钮类型 | 高度 | 圆角 | 背景色 | 文字色 |
+|---------|------|------|--------|--------|
+| 主操作按钮 | 28-32px | 14-16px | `#171717` | 白色 |
+| 次要按钮 | 28-32px | 14-16px | 透明 + 边框 | 主文字色 |
+| 图标按钮 | 34x34px | 10px | 透明 | `#666666` |
+| 危险按钮 | 28-32px | 14-16px | `#FEE2E2` | `#DC2626` |
+
+#### 5.3.2 🟢 间距系统规范
+
+```css
+:root {
+  --spacing-page-x: 48px;
+  --spacing-page-y: 32px;
+  --spacing-section: 32px;
+  --spacing-card: 24px;
+  --spacing-element: 16px;
+  --spacing-compact: 8px;
+  --max-content-width: 1184px;
+}
 ```
 
-#### 5.3.2 间距系统规范
+### 5.4 其他可选改进
 
-```tsx
-// 建议的间距规范
-const spacing = {
-  page: { x: 48, y: 32 },      // 页面内边距
-  section: 32,                   // 区块间距
-  card: 24,                      // 卡片内边距
-  element: 16,                   // 元素间距
-  compact: 8,                    // 紧凑间距
-  maxWidth: 1184,                // 内容最大宽度
-};
-```
-
-#### 5.3.3 动画规范
-
-```tsx
-// 建议的动画规范
-const animation = {
-  fast: '120ms ease-out',       // 悬停/选中态
-  normal: '160ms ease-out',     // 聚焦/展开
-  slow: '300ms ease-out-cubic', // 页面切换
-};
-```
+| 优先级 | 改进项 | 说明 | 难度 |
+|--------|--------|------|------|
+| 🟢 低 | Markdown 编辑器 | 三栏式源码+预览，增强编辑能力 | 高 |
+| 🟢 低 | 游戏化等级系统 | 等级/金币/收益，提升用户粘性 | 中 |
+| 🟢 低 | 80px 纯图标侧边栏 | 简化导航（可选，当前分组导航也合理） | 低 |
+| 🟢 低 | 牛马时钟/工作时长 | 桌面组件显示工作时间和收益 | 中 |
 
 ---
 
-## 六、技术实现参考
+## 六、优先级总结
 
-### 6.1 文件存储 vs 数据库存储
+| 优先级 | 改进项 | 预期效果 | 实现难度 |
+|--------|--------|----------|----------|
+| 🔴 P0 | AI 结构化日报生成 | 显著提升日报体验 | 中 |
+| 🔴 P0 | 按钮尺寸统一 | UI 一致性 | 低 |
+| 🟡 P1 | 自动周报/月报生成 | 解决汇报痛点 | 中 |
+| 🟡 P1 | 活跃度热力图 | 增强数据可视化 | 低 |
+| 🟡 P1 | 结构化概览卡片 | 提升日报可读性 | 低 |
+| 🟡 P1 | 卡片样式简化 | 提升视觉品质 | 低 |
+| 🟡 P1 | 排版优化 | 提升阅读体验 | 低 |
+| 🟡 P2 | 动画精炼 | 提升交互品质 | 低 |
+| 🟡 P2 | 阴影规范 | 提升视觉品质 | 低 |
+| 🟢 低 | Markdown 编辑器 | 增强编辑能力 | 高 |
+| 🟢 低 | 游戏化等级系统 | 提升用户粘性 | 中 |
 
-| 维度 | SpringNote（文件） | AI Nexus Assistant（数据库） |
-|------|-------------------|---------------------------|
-| 查询效率 | 低（需遍历文件） | 高（SQL 索引） |
-| 数据关联 | 弱（文件名关联） | 强（外键关联） |
-| 备份恢复 | 简单（复制文件） | 需要 WAL checkpoint |
-| 用户可编辑 | 是（直接编辑 .md） | 否（需通过 UI） |
-| 适合场景 | 单人轻量使用 | 多工具协作平台 |
+---
 
-**建议**: Nexus 保持数据库方案，但可参考 SpringNote 的 Markdown 导出功能，让用户能将任务/日报导出为 Markdown 文件。
+## 七、设计规范速查表
 
-### 6.2 AI 调用模式
-
-SpringNote 的 AI 调用模式值得参考：
-
-1. **结构化生成**：用户输入自由文本 -> AI 返回 `StructuredWorkNote`（completed/issues/plans）
-2. **Markdown 合并**：AI 将新内容智能合并到已有日报中（而非简单追加）
-3. **启动时补齐**：启动时检测缺失的周报/月报，自动生成
-
-**对 Nexus 的启示**:
-- `StructuredWorkNote` 模型可直接复用到 TodayPage
-- AI 合并日报的功能可避免重复内容
-
-### 6.3 Rust + Flutter 混合架构
-
-SpringNote 使用 `flutter_rust_bridge` 将性能敏感操作（统计计算、文件 I/O）交给 Rust：
-
-```rust
-// rust/src/stats.rs
-// 活跃度统计、收益计算等
+### 色彩
+```
+页面背景: #FCFCFC / #F8FAFC
+卡片表面: #FFFFFF
+柔和背景: #F5F5F5 / #EDEDED
+选中背景: #E2E2E2
+边框: #E5E5E5 / #EEEEEE
+主文本: #171717 / #0F172A
+次文本: #4F4F4F / #64748B
+弱文本: #666666 / #94A3B8
+强调绿: #10B981
+问题红: #F87171
+警告橙: #D97706
+热力图: #F1F5F9 → #DCFCE7 → #BBF7D0 → #86EFAC → #4ADE80
 ```
 
-**对 Nexus 的启示**:
-- Nexus 使用 Tauri（Rust shell + React），已有类似的 Rust 能力
-- 可考虑将 stats 计算、文件搜索等操作移到 Rust 侧提升性能
+### 排版
+```
+主字体: Inter, SF Pro Display, -apple-system, Segoe UI, PingFang SC
+等宽字体: JetBrains Mono
+页面标题: 16-18px / w600 / 行高 1.2-1.35
+正文: 13-14px / w400-w500 / 行高 1.55-1.7
+小标签: 10-12px / w500-w600 / 字间距 0.8-1
+数字: tabularFigures()
+```
+
+### 间距与圆角
+```
+主容器: borderRadius 24-28px
+次级容器: borderRadius 18-22px
+输入框: borderRadius 10-16px
+图标按钮: borderRadius 12-14px / 34x34px
+胶囊按钮: borderRadius 999px / height 28px
+侧边栏: 80px 宽 / 40x40px 点击目标
+内容 max-width: 1184px
+页面 padding: 48px 左右, 30-32px 上下
+卡片间距: 16-24px
+```
+
+### 阴影
+```
+持久内容: 无阴影（或极淡 2% 黑）
+弹窗阴影: 0 4px 30px rgba(0,0,0,0.015), 0 1px 3px rgba(0,0,0,0.02)
+卡片悬停: 0 10px 40px rgba(0,0,0,0.03), 0 1px 3px rgba(0,0,0,0.02)
+弹窗遮罩: rgba(15, 23, 42, 0.12)
+```
+
+### 动画
+```
+微交互: 120ms ease-out-cubic
+小过渡: 140-160ms ease-out-cubic
+大过渡: 240-280ms ease-out-cubic
+热力图入场: 300ms cubic-bezier(0.16, 1, 0.3, 1) + stagger
+计数器: 1600ms easeOutQuart
+```
+
+### 设计原则
+1. 内容至上，元素退让
+2. 无情感装饰
+3. 克制优于表达
+4. 即时保存
+5. 错误不打断
+6. 排版驱动层级
 
 ---
 
-## 七、总结
-
-### 可直接借鉴的功能
-
-| 功能 | 来源 | 适配页面 | 优先级 |
-|------|------|---------|--------|
-| 快速记录 + AI 整理 | _QuickCaptureCard | TodayPage | P0 |
-| 结构化概览（完成/问题/计划） | _OverviewGrid | TodayPage | P1 |
-| 活跃热力图 | _ActivityHeatmap | TaskPage | P1 |
-| 按钮样式统一 | _SmartGenerateButton | 全局 | P0 |
-| 卡片组件规范 | SoftCard | 全局 | P0 |
-| 工作时长追踪 | DesktopStatusWidget | TodayPage | P2 |
-| AI FIM 补全 | NotesPage | TodayPage | P2 |
-| 日报/周报/月报层级 | NoteKind | TodayPage | P1 |
-
-### 设计语言要点
-
-1. **灰度优先**：减少色相种类，用灰度深浅建立层次
-2. **极淡阴影**：2%-4% 透明度的双层阴影，营造"浮起"感
-3. **胶囊按钮**：主操作按钮使用 height/2 的圆角
-4. **统一尺寸**：图标按钮 34x34px，操作按钮 28-32px 高
-5. **克制动画**：120-160ms 的微动画，不喧宾夺主
-6. **内容约束**：1184px 最大宽度，48px 页面边距
-
----
-
-*参考来源：[SpringNote GitHub](https://github.com/Radiant303/SpringNote) v1.0.0，分析基于源码 `spring_note/lib/` 目录。*
+*参考来源：[SpringNote GitHub](https://github.com/Radiant303/SpringNote) v1.0.0，分析基于源码 `spring_note/lib/` 目录 + `AI开发手册/` 设计文档 + 截图。*
