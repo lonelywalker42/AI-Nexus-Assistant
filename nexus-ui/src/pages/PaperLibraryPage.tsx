@@ -766,7 +766,7 @@ export default function PaperLibraryPage() {
                       className="text-[11px] truncate flex-1" style={{ color: "var(--accent-blue)" }}>
                       {selected.doi}
                     </a>
-                    <button className="btn-ghost text-[10px] py-1 px-2 min-w-[52px] shrink-0" onClick={handleCopyDoi}>
+                    <button className="btn-ghost text-[10px] py-1 px-2 min-w-[52px] h-[28px] leading-none shrink-0" onClick={handleCopyDoi}>
                       {copiedDoi ? "已复制 ✓" : "复制"}
                     </button>
                   </div>

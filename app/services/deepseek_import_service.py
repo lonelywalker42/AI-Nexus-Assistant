@@ -379,14 +379,17 @@ def _compute_content_hash(messages: list[dict]) -> str:
 def _is_duplicate_session(
     db: Session, title: str, messages: list[dict], source_url: str | None = None
 ) -> bool:
-    """检查是否已存在相同或高度相似的导入会话（三重去重）
+    """检查是否已存在相同或高度相似的导入会话（五重去重）
 
-    1. 标题模糊匹配（相似度 > 0.85）
-    2. 内容哈希匹配（MD5 of first 3 user messages）
-    3. source_url 匹配
+    1. 标题精确匹配
+    2. 标题模糊匹配（相似度 > 0.70，降低阈值以捕获更多重复）
+    3. 内容哈希匹配（MD5 of first 3 user messages）
+    4. source_url 匹配
+    5. 消息数量 + 标题相似度 > 0.50 组合匹配
     """
     normalized = title.strip().lower()
     content_hash = _compute_content_hash(messages)
+    msg_count = len(messages)
 
     # 加载所有已有导入会话（含消息，用于内容哈希比对）
     existing = db.query(ChatSession).filter(
@@ -398,14 +401,18 @@ def _is_duplicate_session(
         # 1. 标题精确匹配
         if existing_title == normalized:
             return True
-        # 2. 标题模糊匹配：相似度 > 0.85
-        if SequenceMatcher(None, normalized, existing_title).ratio() > 0.85:
+        # 2. 标题模糊匹配：相似度 > 0.70（降低阈值）
+        title_sim = SequenceMatcher(None, normalized, existing_title).ratio()
+        if title_sim > 0.70:
             return True
         # 3. 内容哈希匹配：通过已存消息计算哈希比对
         if content_hash:
             existing_msgs = [{"role": m.role, "content": m.content} for m in s.messages] if s.messages else []
             if _compute_content_hash(existing_msgs) == content_hash:
                 return True
+        # 5. 消息数量 + 标题相似度组合匹配（相同消息数量 + 中等标题相似度 = 重复）
+        if title_sim > 0.50 and s.messages and len(s.messages) == msg_count:
+            return True
 
     # 4. 通过 source_url 匹配（如果有）
     if source_url:

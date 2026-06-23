@@ -374,6 +374,36 @@ export default function WritingPage() {
     setSelectedText(content.slice(start, end));
   };
 
+  const handleExportMarkdown = async () => {
+    if (!activeDoc) return;
+    try {
+      const res = await writingApi.exportDoc(activeDoc.id, "markdown") as any;
+      if (res.error) { alert("导出失败: " + res.error); return; }
+      const blob = new Blob([res.content], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = res.filename || `${title}.md`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { alert("导出失败: " + err); }
+  };
+
+  const handleExportDocx = async () => {
+    if (!activeDoc) return;
+    try {
+      const res = await writingApi.exportDoc(activeDoc.id, "docx") as any;
+      if (res.error) { alert("导出失败: " + res.error); return; }
+      // base64 解码
+      const binary = atob(res.content);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = res.filename || `${title}.docx`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { alert("导出失败: " + err); }
+  };
+
   return (
     <div className="flex h-full gap-3">
       {/* Left Panel — Document List + Sources */}
@@ -499,6 +529,25 @@ export default function WritingPage() {
                   onClick={() => setShowPreview(!showPreview)}>
                   {showPreview ? "编辑" : "预览"}
                 </button>
+                <div className="relative group">
+                  <button className="btn-ghost text-[10px] py-1 px-2"
+                    style={{ color: "var(--accent-green)" }}>
+                    导出 ▾
+                  </button>
+                  <div className="absolute right-0 top-full mt-1 glass-card p-1 min-w-[100px] z-50 hidden group-hover:block"
+                    style={{ border: "1px solid var(--border-color)" }}>
+                    <button className="block w-full text-left px-2 py-1 text-[10px] rounded cursor-pointer transition-colors"
+                      style={{ color: "var(--text-secondary)" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      onClick={handleExportMarkdown}>Markdown</button>
+                    <button className="block w-full text-left px-2 py-1 text-[10px] rounded cursor-pointer transition-colors"
+                      style={{ color: "var(--text-secondary)" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      onClick={handleExportDocx}>DOCX</button>
+                  </div>
+                </div>
               </div>
             </div>
 

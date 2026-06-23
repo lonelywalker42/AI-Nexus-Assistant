@@ -2761,8 +2761,8 @@ class GameFlappy {
     this.birdY = H / 2; this.birdV = 0; this.birdX = 80;
     this.gravity = 0.4; this.jumpForce = -7;
     this.pipes = []; this.score = 0; this.over = false;
-    this.pipeTimer = 0; this.pipeInterval = 200;
-    this.gap = 150; this.pipeW = 50;
+    this.pipeTimer = 0; this.pipeInterval = 250;
+    this.gap = 160; this.pipeW = 50;
     this.showHelp = true;
     this.stars = Array.from({ length: 40 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.5 + 0.5 }));
   }
@@ -2834,7 +2834,7 @@ class GameFlappy {
     this.pipeTimer++;
     if (this.pipeTimer >= this.pipeInterval) {
       this.pipeTimer = 0;
-      const gapY = 100 + Math.random() * (H - 280);
+      const gapY = 80 + Math.random() * (H - 260 - this.gap);
       this.pipes.push({ x: W, gapY, scored: false });
     }
     this.pipes.forEach(p => p.x -= 100 * dt);
@@ -3025,14 +3025,13 @@ class GamePacman {
   destroy() { document.removeEventListener('keydown', this._keyD); if (this._raf) cancelAnimationFrame(this._raf); if (this._helpRaf) cancelAnimationFrame(this._helpRaf); }
 
   key(e) {
-    if (this.showHelp) { if (e.key === 'Escape') { backToMenu(); return; } this.showHelp = false; this.lastTime = performance.now(); this.loop(); return; }
+    if (e.key === 'Escape') { backToMenu(); return; }
+    if (this.showHelp) { this.showHelp = false; this.lastTime = performance.now(); this.loop(); return; }
     if (this.over) {
       if (e.key === 'r') { this.destroy(); gameInstance = new GamePacman(); gameInstance.init(); return; }
       if (e.key === 'h' || e.key === 'H') { showHighScores('pacman'); return; }
-      if (e.key === 'Escape') { backToMenu(); return; }
       return;
     }
-    if (e.key === 'Escape') { backToMenu(); return; }
     const map = { ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 }, ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 } };
     if (map[e.key]) { e.preventDefault(); this.pacman.nextDir = map[e.key]; }
   }
@@ -3217,7 +3216,7 @@ class GamePong {
     this.levelThresholds = [2, 4, 6, 8, 10, 12, 14];
     this.ballColors = [C.white, C.red, C.cyan, C.amber, C.magenta, C.green, C.blue];
     this.balls = [];
-    this._respawnTimers = []; // {ballIdx, timeLeft}
+    this._respawnTimers = []; // {dir, timeLeft}
   }
 
   get aiSpeed() { return 3 + this.level * 0.8; }
@@ -3296,9 +3295,9 @@ class GamePong {
     if (this.keys['w'] || this.keys['W']) this.p1Y = Math.max(0, this.p1Y - spd);
     if (this.keys['s'] || this.keys['S']) this.p1Y = Math.min(H - this.paddleH, this.p1Y + spd);
     // Player 2 (AI): tracks the ball closest to its side (right)
-    let aiTargetBall = this.balls[0];
+    let aiTargetBall = this.balls.find(b => !!b) || { y: H / 2 };
     let aiMaxX = -Infinity;
-    this.balls.forEach(b => { if (b.x > aiMaxX) { aiMaxX = b.x; aiTargetBall = b; } });
+    this.balls.forEach(b => { if (b && b.x > aiMaxX) { aiMaxX = b.x; aiTargetBall = b; } });
     const aiTarget = aiTargetBall.y - this.paddleH / 2;
     if (this.p2Y < aiTarget) this.p2Y = Math.min(aiTarget, this.p2Y + this.aiSpeed);
     else if (this.p2Y > aiTarget) this.p2Y = Math.max(aiTarget, this.p2Y - this.aiSpeed);
@@ -3307,17 +3306,17 @@ class GamePong {
     this._respawnTimers = this._respawnTimers.filter(t => {
       t.timeLeft -= dt;
       if (t.timeLeft <= 0) {
-        const dir = t.dir;
-        this.balls[t.idx] = this._createBall(dir);
+        this.balls.push(this._createBall(t.dir));
         return false;
       }
       return true;
     });
     // Update each ball
     const p1x = 20, p2x = W - 30;
+    const scoredBalls = [];
     for (let i = this.balls.length - 1; i >= 0; i--) {
       const b = this.balls[i];
-      if (!b) continue; // ball is in respawn queue
+      if (!b) { this.balls.splice(i, 1); continue; }
       b.x += b.vx * dt * 60;
       b.y += b.vy * dt * 60;
       // Top/bottom bounce
@@ -3333,19 +3332,18 @@ class GamePong {
         b.vx = -Math.abs(b.vx) * 1.05;
         b.vy += (b.y - (this.p2Y + this.paddleH/2)) * 0.1;
       }
-      // Score
-      if (b.x < 0) {
-        this.score2++;
-        this.balls.splice(i, 1);
-        this._respawnTimers.push({ idx: this.balls.length, dir: 1, timeLeft: 1.0 });
-        this._checkLevelUp();
-      } else if (b.x > W) {
-        this.score1++;
-        this.balls.splice(i, 1);
-        this._respawnTimers.push({ idx: this.balls.length, dir: -1, timeLeft: 1.0 });
-        this._checkLevelUp();
-      }
+      // Score detection (mark for removal, don't splice mid-loop)
+      if (b.x < 0) { scoredBalls.push({ idx: i, scorer: 2 }); }
+      else if (b.x > W) { scoredBalls.push({ idx: i, scorer: 1 }); }
     }
+    // Process scored balls (remove + schedule respawn)
+    scoredBalls.sort((a, b) => b.idx - a.idx); // remove from end first
+    scoredBalls.forEach(s => {
+      this.balls.splice(s.idx, 1);
+      if (s.scorer === 2) { this.score2++; this._respawnTimers.push({ dir: 1, timeLeft: 1.0 }); }
+      else { this.score1++; this._respawnTimers.push({ dir: -1, timeLeft: 1.0 }); }
+      this._checkLevelUp();
+    });
     // Win
     if (this.score1 >= this.maxScore || this.score2 >= this.maxScore) {
       this.over = true;
@@ -3380,6 +3378,7 @@ class GamePong {
     ctx.fillStyle = C.amber; ctx.fillRect(W-30, this.p2Y, this.paddleW, this.paddleH);
     // Balls
     this.balls.forEach(b => {
+      if (!b) return;
       ctx.fillStyle = b.color;
       ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI*2); ctx.fill();
     });
@@ -3393,7 +3392,7 @@ class GamePong {
     // Level display
     ctx.fillStyle = this.level > 1 ? C.red : C.dim;
     ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'center';
-    ctx.fillText('LV' + this.level + '  BALLS:' + this.balls.length, W/2, H - 10);
+    ctx.fillText('LV' + this.level + '  BALLS:' + this.balls.filter(b => !!b).length, W/2, H - 10);
     // Paused
     if (this.paused) { ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = C.amber; ctx.font = '28px Consolas, monospace'; ctx.fillText('PAUSED', W/2, H/2); }
     // Game over
@@ -4308,7 +4307,7 @@ class GameRacer {
     // Obstacles (oncoming traffic)
     this.obstacles = [];
     this.obstacleTimer = 0;
-    this.obstacleInterval = 80; // frames between spawns
+    this.obstacleInterval = 50; // frames between spawns
     // Generate road curves
     for (let i = 0; i < this.segments; i++) {
       this.road.push({ curve: Math.sin(i * 0.02) * 3, y: 0 });
@@ -4344,7 +4343,7 @@ class GameRacer {
     const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
     this.score += Math.floor(this.speed * dt / 1000);
     // Spawn obstacles
-    if (this.speed > 10) {
+    if (this.speed > 3) {
       this.obstacleTimer++;
       if (this.obstacleTimer >= this.obstacleInterval) {
         this.obstacleTimer = 0;
@@ -4412,14 +4411,23 @@ class GameRacer {
         const roadW = this.roadWidth * (1 - t);
         const roadX = W / 2 + this.playerX * roadW * 0.5;
         const carX = roadX + o.x * roadW * 0.4;
-        const carW = 45 * scale, carH = 30 * scale;
+        const carW = 50 * scale, carH = 35 * scale;
+        // Car body
         ctx.fillStyle = o.color;
         ctx.fillRect(carX - carW/2, y - carH, carW, carH);
-        ctx.fillRect(carX - carW*0.35, y - carH - 8*scale, carW*0.7, 8*scale);
+        // Car roof
+        ctx.fillRect(carX - carW*0.35, y - carH - 10*scale, carW*0.7, 10*scale);
+        // Windshield
+        ctx.fillStyle = '#88ccff';
+        ctx.fillRect(carX - carW*0.3, y - carH - 8*scale, carW*0.6, 6*scale);
         // Headlights
-        ctx.fillStyle = '#ff8';
-        ctx.fillRect(carX - carW/2 + 2, y - carH + 2, 3*scale, 3*scale);
-        ctx.fillRect(carX + carW/2 - 5*scale, y - carH + 2, 3*scale, 3*scale);
+        ctx.fillStyle = '#ffff44';
+        ctx.fillRect(carX - carW/2 + 2, y - carH + 2, 4*scale, 4*scale);
+        ctx.fillRect(carX + carW/2 - 6*scale, y - carH + 2, 4*scale, 4*scale);
+        // Tail lights
+        ctx.fillStyle = '#ff2222';
+        ctx.fillRect(carX - carW/2 + 2, y - 4*scale, 4*scale, 3*scale);
+        ctx.fillRect(carX + carW/2 - 6*scale, y - 4*scale, 4*scale, 3*scale);
       }
     });
     // Player car

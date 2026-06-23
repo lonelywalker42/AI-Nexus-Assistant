@@ -21,6 +21,8 @@ export default function KnowledgePage() {
   const [importing, setImporting] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importStatus, setImportStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // 视图状态
   const [view, setView] = useState<"categories" | "list" | "detail" | "importGroups" | "importGroupDetail">("categories");
@@ -136,11 +138,20 @@ export default function KnowledgePage() {
   }, [search]);
 
   const loadCards = () => {
+    setLoading(true);
+    setLoadError(null);
     // 加载过滤后的卡片
     knowledgeApi.listCards({
       search: debouncedSearch, sort_by: sortBy, sort_order: sortOrder,
       star_min: starMin || undefined, tag: tagFilter || undefined,
-    }).then(setCards).catch(console.error);
+    }).then(data => {
+      setCards(data);
+      setLoading(false);
+    }).catch(err => {
+      console.error("加载卡片失败:", err);
+      setLoadError("加载卡片失败，请刷新重试");
+      setLoading(false);
+    });
     // 同时加载全部卡片用于分类计数（忽略搜索/筛选条件）
     knowledgeApi.listCards({}).then(setAllCards).catch(console.error);
   };
@@ -746,9 +757,21 @@ export default function KnowledgePage() {
       {/* 卡片列表 / 网格 */}
       {view === "list" && viewMode === "list" && (
         <div className="space-y-2">
-          {filteredCards.length === 0 ? (
+          {loading && (
+            <div className="glass-card p-4 text-center">
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>加载中...</p>
+            </div>
+          )}
+          {loadError && (
+            <div className="glass-card p-4 text-center">
+              <p className="text-sm" style={{ color: "#ef4444" }}>{loadError}</p>
+              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={loadCards}>重试</button>
+            </div>
+          )}
+          {!loading && !loadError && filteredCards.length === 0 ? (
             <div className="glass-card p-8 text-center">
               <p style={{ color: "var(--text-muted)" }}>该分类下暂无卡片</p>
+              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={loadCards}>刷新</button>
             </div>
           ) : filteredCards.map(card => (
             <div key={card.id}
@@ -812,9 +835,21 @@ export default function KnowledgePage() {
       {/* 网格视图 */}
       {view === "list" && viewMode === "grid" && (
         <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filteredCards.length === 0 ? (
+          {loading && (
+            <div className="col-span-full glass-card p-4 text-center">
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>加载中...</p>
+            </div>
+          )}
+          {loadError && (
+            <div className="col-span-full glass-card p-4 text-center">
+              <p className="text-sm" style={{ color: "#ef4444" }}>{loadError}</p>
+              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={loadCards}>重试</button>
+            </div>
+          )}
+          {!loading && !loadError && filteredCards.length === 0 ? (
             <div className="col-span-full glass-card p-8 text-center">
               <p style={{ color: "var(--text-muted)" }}>该分类下暂无卡片</p>
+              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={loadCards}>刷新</button>
             </div>
           ) : filteredCards.map(card => (
             <div key={card.id} className="glass-card p-3 cursor-pointer glass-card-hover group flex flex-col gap-2"

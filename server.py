@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.3.5")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.3.6")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -3814,6 +3814,67 @@ def writing_ai_operation(doc_id: str, data: dict):
         return {"result": content, "operation": operation}
     except Exception as e:
         return {"error": f"AI 操作失败: {str(e)}", "operation": data.get("operation", "polish")}
+    finally:
+        db.close()
+
+
+@app.get("/api/writing/documents/{doc_id}/export")
+def export_writing_document(doc_id: str, fmt: str = "markdown"):
+    """导出写作文档（含关联文献引用）"""
+    from app.services.writing_service import get_document
+    from app.models.paper import Paper
+    from app.search.citation import format_gb
+    db = get_session()
+    try:
+        doc = get_document(db, doc_id)
+        if not doc:
+            return {"error": "Document not found"}
+
+        content = doc.content or ""
+        title = doc.title or "文档"
+
+        # 获取关联文献引用
+        linked_ids = json.loads(doc.linked_paper_ids or "[]")
+        refs_section = ""
+        if linked_ids:
+            papers = db.query(Paper).filter(Paper.id.in_(linked_ids)).all()
+            if papers:
+                refs = []
+                for i, p in enumerate(papers, 1):
+                    paper_dict = {
+                        "title": p.title,
+                        "authors": json.loads(p.authors) if p.authors else [],
+                        "year": p.year,
+                        "doi": p.doi,
+                        "journal": p.journal,
+                        "paper_type": p.paper_type,
+                    }
+                    ref = format_gb(paper_dict, i)
+                    refs.append(f"[{i}] {ref}")
+                refs_section = "\n\n## 参考文献\n\n" + "\n\n".join(refs)
+
+        # 替换内容中的 [n] 引用标记为实际引用
+        full_content = content + refs_section
+
+        if fmt == "docx":
+            from app.services.export_service import export_docx
+            import tempfile
+            tmp_path = os.path.join(tempfile.gettempdir(), f"{title}.docx")
+            result = export_docx(full_content, tmp_path, title)
+            if result.get("status") == "ok":
+                import base64
+                with open(tmp_path, "rb") as f:
+                    docx_bytes = f.read()
+                os.unlink(tmp_path)
+                return {
+                    "content": base64.b64encode(docx_bytes).decode(),
+                    "filename": f"{title}.docx",
+                    "format": "docx"
+                }
+            return {"error": result.get("message", "导出失败")}
+
+        # 默认 Markdown 导出
+        return {"content": full_content, "filename": f"{title}.md", "format": "markdown"}
     finally:
         db.close()
 

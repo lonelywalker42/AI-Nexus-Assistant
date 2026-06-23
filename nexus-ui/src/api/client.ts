@@ -5,7 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
-export const APP_VERSION = "4.3.5";
+export const APP_VERSION = "4.3.6";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
@@ -832,6 +832,8 @@ export const writingApi = {
     request<{ id: string; linked_paper_ids: string[] }>(`/api/writing/documents/${docId}/link-paper`, { method: "POST", body: JSON.stringify({ paper_id: paperId }) }),
   aiOperation: (docId: string, operation: string, text?: string) =>
     request<{ result: string; operation: string }>(`/api/writing/documents/${docId}/ai`, { method: "POST", body: JSON.stringify({ operation, text }) }),
+  exportDoc: (docId: string, fmt: string = "markdown") =>
+    request<{ content: string; filename: string }>(`/api/writing/documents/${docId}/export?fmt=${fmt}`),
 };
 
 // ── Enhanced Search (布尔检索) ────────────────────────────────

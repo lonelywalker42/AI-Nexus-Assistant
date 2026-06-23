@@ -1,5 +1,32 @@
 # Changelog
 
+## v4.3.6 (2026-06-23) — 游戏机修复 + 写作导出 + 去重增强 + UI统一
+
+### 修复
+- **Pong首次失分卡死**: 修复球出界后 respawn 逻辑使用索引赋值导致数组错位 — 改用 push 方式 respawn，AI 追踪增加空值保护
+- **Flappy Bird障碍间距**: 管道生成间隔从200帧增至250帧，垂直间隙从150px增至160px，间隙生成范围优化
+- **Pac-Man ESC退出**: 将 ESC 键处理提升至方法顶部，确保在所有游戏状态下（帮助/游戏中/结束）均可退出
+- **Racer无行驶车辆**: 障碍生成间隔从80帧降至50帧，速度阈值从10降至3，车辆尺寸增大（50x35），新增挡风玻璃/尾灯细节
+- **IDEA卡片显示**: 增加 loading/error 状态管理，API 失败时显示错误信息和重试按钮
+- **引用按钮UI统一**: DOI 复制按钮补全 h-[28px] leading-none，三个控件样式完全一致
+- **PDF拉取错误信息**: 优化 422 错误提示，提供 4 种具体操作建议（校园网/手动下载/Sci-Hub/作者主页）
+
+### 新功能
+- **写作导出功能**: 写作工作台新增"导出"按钮，支持 Markdown 和 DOCX 两种格式
+- **导出含文献引用**: 导出时自动附加关联文献的 GB/T 7714 引用格式参考文献列表
+- **DeepSeek去重增强**: 五重去重机制（标题精确/标题模糊0.70/内容哈希/source_url/消息数+标题相似度），显著降低重复导入概率
+
+### 文件变更
+- `nexus-ui/public/games.html`: Pong respawn + Flappy间距 + Pac-Man ESC + Racer障碍
+- `nexus-ui/src/pages/KnowledgePage.tsx`: loading/error 状态管理
+- `nexus-ui/src/pages/PaperLibraryPage.tsx`: DOI 按钮样式统一
+- `nexus-ui/src/pages/WritingPage.tsx`: 导出按钮 + Markdown/DOCX 下载
+- `nexus-ui/src/api/client.ts`: writingApi.exportDoc API
+- `app/services/deepseek_import_service.py`: 五重去重逻辑
+- `app/services/pdf_fetch.py`: 错误信息优化
+- `server.py`: /api/writing/documents/{id}/export 端点
+- 版本号同步: tauri.conf.json, Cargo.toml, client.ts, server.py, CLAUDE.md
+
 ## v4.3.5 (2026-06-23) — PDF多源拉取 + IDEA修复 + 游戏机增强 + 字体主题
 
 ### 新功能
