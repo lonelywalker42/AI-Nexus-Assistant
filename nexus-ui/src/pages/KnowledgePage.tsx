@@ -16,6 +16,7 @@ const CATEGORY_ICONS: Record<string, React.FC<{ size?: number }>> = {
 
 export default function KnowledgePage() {
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
+  const [allCards, setAllCards] = useState<KnowledgeCard[]>([]);
   const [search, setSearch] = useState("");
   const [importing, setImporting] = useState(false);
   const [importUrl, setImportUrl] = useState("");
@@ -134,10 +135,15 @@ export default function KnowledgePage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const loadCards = () => knowledgeApi.listCards({
-    search: debouncedSearch, sort_by: sortBy, sort_order: sortOrder,
-    star_min: starMin || undefined, tag: tagFilter || undefined,
-  }).then(setCards).catch(console.error);
+  const loadCards = () => {
+    // 加载过滤后的卡片
+    knowledgeApi.listCards({
+      search: debouncedSearch, sort_by: sortBy, sort_order: sortOrder,
+      star_min: starMin || undefined, tag: tagFilter || undefined,
+    }).then(setCards).catch(console.error);
+    // 同时加载全部卡片用于分类计数（忽略搜索/筛选条件）
+    knowledgeApi.listCards({}).then(setAllCards).catch(console.error);
+  };
   useEffect(() => { loadCards(); }, [debouncedSearch, sortBy, sortOrder, starMin, tagFilter]);
 
   // 加载标签
@@ -148,7 +154,7 @@ export default function KnowledgePage() {
 
   const categoryCounts = CATEGORIES.map(cat => ({
     ...cat,
-    count: cards.filter(c => c.source_type === cat.key).length,
+    count: allCards.filter(c => c.source_type === cat.key).length,
   }));
 
   const filteredCards = activeCategory ? cards.filter(c => c.source_type === activeCategory) : cards;
@@ -251,9 +257,9 @@ export default function KnowledgePage() {
           setImporting(false);
           if (progress.status === "completed") {
             setImportStatus(`✅ ${progress.progress}`);
-            // 重置筛选条件并加载全部卡片，确保分类计数正确
-            setSearch(""); setStarMin(0); setTagFilter("");
-            knowledgeApi.listCards({}).then(setCards).catch(console.error);
+            // 重置所有筛选条件（包括分类），确保导入后能看到所有卡片
+            setSearch(""); setStarMin(0); setTagFilter(""); setActiveCategory("");
+            knowledgeApi.listCards({}).then(data => { setCards(data); setAllCards(data); }).catch(console.error);
             loadImportGroups();
           } else {
             setImportStatus(`❌ 导入失败: ${progress.error}`);

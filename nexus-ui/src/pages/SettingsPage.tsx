@@ -18,6 +18,7 @@ export default function SettingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", base_url: "", api_key: "", model_name: "", protocol: "openai", purpose: "all" });
   const [theme, setTheme] = useState(() => localStorage.getItem("nexus-theme") || "light");
+  const [fontSize, setFontSize] = useState(() => localStorage.getItem("nexus-font-size") || "13px");
   const [backups, setBackups] = useState<BackupItem[]>([]);
   const [searchRunning, setSearchRunning] = useState<boolean | null>(null);
   const { name: appName, isDefault } = useAppName();
@@ -248,6 +249,12 @@ export default function SettingsPage() {
     document.documentElement.setAttribute("data-theme", t);
   };
 
+  const handleFontSizeChange = (size: string) => {
+    setFontSize(size);
+    localStorage.setItem("nexus-font-size", size);
+    document.documentElement.style.setProperty("--font-size-base", size);
+  };
+
   const handleRestore = async (path: string) => {
     if (!confirm("确定要恢复到此备份？当前数据将被覆盖（恢复前会自动备份当前数据）。")) return;
     try {
@@ -419,6 +426,27 @@ export default function SettingsPage() {
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "dark" ? "bg-primary-500 text-white" : ""}`}
             style={theme !== "dark" ? { background: "var(--hover-bg)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" } : {}}
           >深色</button>
+        </div>
+
+        {/* 字体大小 */}
+        <div className="pt-3" style={{ borderTop: "1px solid var(--border-color)" }}>
+          <p className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>字体大小</p>
+          <div className="flex gap-3">
+            {[
+              { label: "小", value: "11px" },
+              { label: "中", value: "13px" },
+              { label: "大", value: "15px" },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => handleFontSizeChange(opt.value)}
+                className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                style={fontSize === opt.value
+                  ? { background: "var(--accent-blue)", color: "#fff" }
+                  : { background: "var(--hover-bg)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" }}
+              >{opt.label}</button>
+            ))}
+          </div>
         </div>
 
         {/* 自定义配色方案 */}

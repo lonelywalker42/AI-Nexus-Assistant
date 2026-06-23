@@ -5,7 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
-export const APP_VERSION = "4.3.4";
+export const APP_VERSION = "4.3.5";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
@@ -498,6 +498,11 @@ export const chatApi = {
     request<{ deleted: number }>("/api/chat/sessions/delete-by-category", {
       method: "POST",
       body: JSON.stringify({ category }),
+    }),
+  deduplicateSessions: (category?: string) =>
+    request<{ removed: number; details: { id: string; title: string }[] }>("/api/chat/sessions/deduplicate", {
+      method: "POST",
+      body: JSON.stringify({ category: category || "" }),
     }),
   getMessages: (sessionId: string) => request<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`),
   exportSession: (sessionId: string) =>

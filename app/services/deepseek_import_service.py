@@ -10,6 +10,7 @@ LLM 调用使用信号量限制并发数（默认最大 5）。
 import json
 import re
 import uuid
+import hashlib
 import logging
 from datetime import datetime
 from difflib import SequenceMatcher
@@ -365,21 +366,48 @@ def _update_group(db: Session, group_id: str, **kwargs):
 
 # ── 阶段 1: 解析 & 保存完整会话（无 LLM 调用）──────────────────
 
-def _is_duplicate_session(db: Session, title: str, source_url: str | None = None) -> bool:
-    """检查是否已存在相同或高度相似的导入会话（去重）"""
+def _compute_content_hash(messages: list[dict]) -> str:
+    """计算消息内容的 MD5 哈希（取前 3 条用户消息），用于内容级去重"""
+    user_contents = [m["content"].strip() for m in messages if m.get("role") == "user" and m.get("content", "").strip()]
+    if not user_contents:
+        return ""
+    # 取前 3 条用户消息，截断每条避免过长
+    parts = [c[:500] for c in user_contents[:3]]
+    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _is_duplicate_session(
+    db: Session, title: str, messages: list[dict], source_url: str | None = None
+) -> bool:
+    """检查是否已存在相同或高度相似的导入会话（三重去重）
+
+    1. 标题模糊匹配（相似度 > 0.85）
+    2. 内容哈希匹配（MD5 of first 3 user messages）
+    3. source_url 匹配
+    """
     normalized = title.strip().lower()
-    # 1. 精确匹配已有导入会话标题
+    content_hash = _compute_content_hash(messages)
+
+    # 加载所有已有导入会话（含消息，用于内容哈希比对）
     existing = db.query(ChatSession).filter(
         ChatSession.category == "import",
     ).all()
+
     for s in existing:
         existing_title = (s.title or "").replace("[导入] ", "").strip().lower()
+        # 1. 标题精确匹配
         if existing_title == normalized:
             return True
-        # 模糊匹配：相似度 > 0.85
+        # 2. 标题模糊匹配：相似度 > 0.85
         if SequenceMatcher(None, normalized, existing_title).ratio() > 0.85:
             return True
-    # 2. 通过 source_url 匹配（如果有）
+        # 3. 内容哈希匹配：通过已存消息计算哈希比对
+        if content_hash:
+            existing_msgs = [{"role": m.role, "content": m.content} for m in s.messages] if s.messages else []
+            if _compute_content_hash(existing_msgs) == content_hash:
+                return True
+
+    # 4. 通过 source_url 匹配（如果有）
     if source_url:
         from app.models.knowledge import KnowledgeCard
         card = db.query(KnowledgeCard).filter(
@@ -390,15 +418,15 @@ def _is_duplicate_session(db: Session, title: str, source_url: str | None = None
     return False
 
 
-def save_conversations(db: Session, group_id: str, conversations: list[dict]) -> list[dict]:
+def save_conversations(db: Session, group_id: str, conversations: list[dict]) -> tuple[list[dict], int]:
     """阶段 1: 解析 & 预处理 & 批量保存会话到数据库
 
     不调用任何 LLM API，仅做 JSON 解析、消息清洗、写入 ChatSession + ChatMessage。
     含去重逻辑：跳过已存在的相似会话。
 
     返回:
-        session_infos: 每个会话的元数据列表
-        [{"session_id": str, "title": str, "source_url": str|None,
+        (session_infos, skipped): 每个会话的元数据列表 + 去重跳过的会话数
+        session_infos: [{"session_id": str, "title": str, "source_url": str|None,
           "cleaned_msgs": list[dict], "conversation_text": str}, ...]
     """
     total = len(conversations)
@@ -413,7 +441,7 @@ def save_conversations(db: Session, group_id: str, conversations: list[dict]) ->
         _update_group(db, group_id, progress=f"[阶段1] 保存会话 [{i + 1}/{total}]: {title}")
 
         # 去重检查
-        if _is_duplicate_session(db, title, source_url):
+        if _is_duplicate_session(db, title, messages, source_url):
             logger.info("跳过重复会话: %s", title)
             skipped += 1
             continue
@@ -455,7 +483,7 @@ def save_conversations(db: Session, group_id: str, conversations: list[dict]) ->
     db.commit()
     if skipped > 0:
         logger.info("去重跳过 %d 个重复会话", skipped)
-    return session_infos
+    return session_infos, skipped
 
 
 # ── 阶段 2: 逐会话 LLM 生成总结概要 ──────────────────────────
@@ -617,11 +645,16 @@ def process_import(db: Session, group_id: str, conversations: list[dict]) -> dic
     _update_group(db, group_id, progress=f"开始处理 {total} 个对话...")
 
     # ═══ 阶段 1: 保存完整会话 ═══
-    session_infos = save_conversations(db, group_id, conversations)
+    session_infos, skipped_count = save_conversations(db, group_id, conversations)
 
     if not session_infos:
-        _update_group(db, group_id, status="failed", error="所有会话预处理后无有效消息")
-        return {"group_id": group_id, "conversations": 0, "total_cards": 0, "errors": ["无有效消息"]}
+        # 区分全部去重 vs 预处理后无有效消息
+        if skipped_count >= total:
+            error_msg = "所有对话已存在，无需重复导入"
+        else:
+            error_msg = "所有会话预处理后无有效消息"
+        _update_group(db, group_id, status="failed", error=error_msg)
+        return {"group_id": group_id, "conversations": 0, "total_cards": 0, "errors": [error_msg]}
 
     _update_group(db, group_id,
                   progress=f"[阶段1] 完成！已保存 {len(session_infos)} 个会话，开始生成概要...")

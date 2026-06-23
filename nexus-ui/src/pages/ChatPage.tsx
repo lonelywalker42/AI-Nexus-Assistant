@@ -345,6 +345,28 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
     }
   };
 
+  const handleDeduplicate = async () => {
+    try {
+      const cat = activeCategory === "all" ? "" : activeCategory;
+      const res = await chatApi.deduplicateSessions(cat);
+      if (res.removed === 0) {
+        alert("没有发现重复会话");
+      } else {
+        // 刷新会话列表
+        const updated = await chatApi.listSessions();
+        setSessions(updated);
+        // 如果当前选中的会话被删除了，清空选中
+        if (activeSession && res.details.some(d => d.id === activeSession)) {
+          setActiveSession(null);
+          setMessages([]);
+        }
+        alert(`已去除 ${res.removed} 个重复会话`);
+      }
+    } catch (err) {
+      alert("去重失败: " + err);
+    }
+  };
+
   // 切换选中状态
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -643,6 +665,18 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
               title={`删除${CHAT_CATEGORIES.find(c => c.key === activeCategory)?.label || ""}分类下所有对话`}
             >
               清空分类
+            </button>
+          )}
+          {!batchMode && (
+            <button
+              className="px-2 py-1 rounded-lg text-[11px] cursor-pointer transition-all"
+              style={{ background: "rgba(59,130,246,0.08)", color: "var(--text-muted)" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(59,130,246,0.15)"; e.currentTarget.style.color = "var(--accent-blue)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(59,130,246,0.08)"; e.currentTarget.style.color = "var(--text-muted)"; }}
+              onClick={handleDeduplicate}
+              title={`去除${activeCategory === "all" ? "所有" : CHAT_CATEGORIES.find(c => c.key === activeCategory)?.label || ""}分类下标题重复的会话`}
+            >
+              去重
             </button>
           )}
         </div>

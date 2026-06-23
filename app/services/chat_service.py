@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
+from collections import defaultdict
 from sqlalchemy.orm import Session
 from app.models.chat import ChatSession, ChatMessage
 
@@ -107,3 +108,43 @@ def build_messages_for_ai(db: Session, session_id: str,
         messages.append({"role": msg.role, "content": msg.content})
 
     return messages
+
+
+def deduplicate_sessions(db: Session, category: str = "") -> dict:
+    """去重对话会话：同一分类下标题相同（不区分大小写）的会话只保留最新的一条
+
+    Args:
+        db: 数据库会话
+        category: 指定分类去重，为空则对所有分类去重
+
+    Returns:
+        {"removed": int, "details": list[dict]}  details 包含被删除会话的 id 和 title
+    """
+    query = db.query(ChatSession)
+    if category:
+        query = query.filter(ChatSession.category == category)
+    all_sessions = query.order_by(ChatSession.created_at.desc()).all()
+
+    # 按 (category, normalized_title) 分组，保留每组第一条（最新）
+    groups: dict[tuple[str, str], list[ChatSession]] = defaultdict(list)
+    for s in all_sessions:
+        normalized = (s.title or "").strip().lower()
+        key = (s.category, normalized)
+        groups[key].append(s)
+
+    removed = 0
+    details = []
+    for key, session_list in groups.items():
+        if len(session_list) <= 1:
+            continue
+        # 保留第一条（最新），删除其余
+        to_keep = session_list[0]
+        for dup in session_list[1:]:
+            details.append({"id": dup.id, "title": dup.title})
+            db.delete(dup)
+            removed += 1
+
+    if removed > 0:
+        db.commit()
+
+    return {"removed": removed, "details": details}

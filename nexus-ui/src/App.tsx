@@ -95,7 +95,7 @@ function App() {
   const { isMobile } = usePlatform();
   const [initialChatSessionId, setInitialChatSessionId] = useState<string | null>(null);
 
-  // 初始化主题（跟随 OS 暗色模式）
+  // 初始化主题（跟随 OS 暗色模式）+ 字体大小
   useEffect(() => {
     const saved = localStorage.getItem("nexus-theme");
     if (saved) {
@@ -103,6 +103,10 @@ function App() {
     } else {
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       document.documentElement.setAttribute("data-theme", prefersDark ? "dark" : "light");
+    }
+    const savedFontSize = localStorage.getItem("nexus-font-size");
+    if (savedFontSize) {
+      document.documentElement.style.setProperty("--font-size-base", savedFontSize);
     }
   }, []);
 

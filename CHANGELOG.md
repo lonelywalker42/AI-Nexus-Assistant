@@ -1,5 +1,41 @@
 # Changelog
 
+## v4.3.5 (2026-06-23) — PDF多源拉取 + IDEA修复 + 游戏机增强 + 字体主题
+
+### 新功能
+- **PDF多源拉取**: 新增Semantic Scholar API、Crossref全文链接、Sci-Hub镜像三个fallback源，显著提升PDF下载成功率
+- **DeepSeek导入内容哈希去重**: 新增MD5内容哈希比对（前3条用户消息），即使标题不同也能检测重复对话
+- **对话历史去重**: AI对话页新增"去重"按钮，自动检测并删除标题重复的历史会话（保留最新）
+- **字体大小调整**: 设置页自定义主题新增"字体大小"选项（小11px/中13px/大15px），全局联动
+- **Pong 7关卡多球**: 新增7级难度系统，每级增加一个球，AI速度递增，球速递增，多球独立运动
+- **SpringNote参考文档**: 新增SpringNote开源项目分析文档，提取日程/日报UI改进方案
+
+### 修复
+- **IDEA卡片显示**: 修复DeepSeek导入后其他分类卡片无法显示的问题 — 导入完成后重置activeCategory过滤器，分类计数使用未过滤的全量卡片数据
+- **Minesweeper数字对齐**: 修复hard模式下数字与方块位置偏移 — 添加textBaseline='middle'，居中绘制坐标
+- **Flappy障碍间距**: 管道生成间隔从150帧增至200帧，垂直间隙从140px增至150px
+- **Racer障碍增强**: 障碍生成间隔从120帧降至80帧，速度阈值从20降至10，车辆尺寸增大1.5x，颜色扩展至10种
+- **引用按钮UI统一**: 修正引用按钮添加min-w-[52px]，三个控件统一h-[28px] leading-none
+
+### 改进
+- **DeepSeek去重误导信息**: 全部对话被去重时显示"所有对话已存在，无需重复导入"而非"无有效消息"
+- **Minesweeper textBaseline**: 所有数字和地雷符号显式设置textBaseline='middle'确保跨平台一致性
+
+### 文件变更
+- `app/services/pdf_fetch.py`: 新增_try_semantic_scholar/_try_crossref_fulltext/_try_scihub三个fallback函数
+- `app/services/deepseek_import_service.py`: 内容哈希去重 + 去重计数返回 + 错误信息改进
+- `app/services/chat_service.py`: 新增deduplicate_sessions函数
+- `server.py`: 新增POST /api/chat/sessions/deduplicate端点
+- `nexus-ui/src/api/client.ts`: 新增deduplicateSessions API
+- `nexus-ui/src/pages/KnowledgePage.tsx`: allCards状态 + activeCategory重置
+- `nexus-ui/src/pages/ChatPage.tsx`: 去重按钮
+- `nexus-ui/src/pages/PaperLibraryPage.tsx`: 引用按钮尺寸统一
+- `nexus-ui/src/pages/SettingsPage.tsx`: 字体大小设置UI
+- `nexus-ui/src/styles.css`: --font-size-base CSS变量 + 7处硬编码替换
+- `nexus-ui/src/App.tsx`: 字体大小初始化
+- `nexus-ui/public/games.html`: Minesweeper对齐 + Flappy间距 + Pong多球 + Racer障碍增强
+- `docs/SPRINGNOTE_REFERENCE.md`: SpringNote开源项目分析文档
+
 ## v4.3.4 (2026-06-23) — PDF拉取增强 + DeepSeek导入优化 + 游戏机修复
 
 ### 新功能

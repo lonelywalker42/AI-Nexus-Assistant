@@ -2717,12 +2717,12 @@ class GameMinesweeper {
         ctx.fillStyle = '#1a1a2a'; ctx.fillRect(x, y, cs, cs);
         const v = this.grid[r][c];
         if (v === -1) {
-          ctx.fillStyle = C.red; ctx.font = (cs - 4) + 'px Consolas'; ctx.textAlign = 'center';
-          ctx.fillText('✦', x + cs/2, y + cs - 4);
+          ctx.fillStyle = C.red; ctx.font = (cs - 4) + 'px Consolas'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('✦', x + cs/2, y + cs/2);
         } else if (v > 0) {
           ctx.fillStyle = numColors[v] || C.white;
-          ctx.font = 'bold ' + (cs - 6) + 'px Consolas'; ctx.textAlign = 'center';
-          ctx.fillText(v, x + cs/2, y + cs - 4);
+          ctx.font = 'bold ' + (cs - 6) + 'px Consolas'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(v, x + cs/2, y + cs/2);
         }
       } else {
         ctx.fillStyle = '#2a2a3a'; ctx.fillRect(x, y, cs, cs);
@@ -2761,8 +2761,8 @@ class GameFlappy {
     this.birdY = H / 2; this.birdV = 0; this.birdX = 80;
     this.gravity = 0.4; this.jumpForce = -7;
     this.pipes = []; this.score = 0; this.over = false;
-    this.pipeTimer = 0; this.pipeInterval = 150;
-    this.gap = 140; this.pipeW = 50;
+    this.pipeTimer = 0; this.pipeInterval = 200;
+    this.gap = 150; this.pipeW = 50;
     this.showHelp = true;
     this.stars = Array.from({ length: 40 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.5 + 0.5 }));
   }
@@ -3209,11 +3209,29 @@ class GamePong {
   constructor() {
     this.paddleH = 70; this.paddleW = 10;
     this.p1Y = H/2 - this.paddleH/2; this.p2Y = H/2 - this.paddleH/2;
-    this.ballX = W/2; this.ballY = H/2; this.ballDX = 4; this.ballDY = 2;
     this.score1 = 0; this.score2 = 0; this.maxScore = 11;
     this.over = false; this.paused = false; this.showHelp = true;
-    this.keys = {}; this.aiSpeed = 3;
-    this.gameTime = 0; this.difficultyLevel = 1; this.nextDiffTime = 120;
+    this.keys = {};
+    // 7-level difficulty system
+    this.level = 1;
+    this.levelThresholds = [2, 4, 6, 8, 10, 12, 14];
+    this.ballColors = [C.white, C.red, C.cyan, C.amber, C.magenta, C.green, C.blue];
+    this.balls = [];
+    this._respawnTimers = []; // {ballIdx, timeLeft}
+  }
+
+  get aiSpeed() { return 3 + this.level * 0.8; }
+  get ballSpeedMult() { return 1 + (this.level - 1) * 0.12; }
+
+  _createBall(dir, centerX, centerY) {
+    const baseSpeed = 4 * this.ballSpeedMult;
+    return {
+      x: centerX !== undefined ? centerX : W/2,
+      y: centerY !== undefined ? centerY : H/2,
+      vx: baseSpeed * dir * (Math.random() > 0.5 ? 1 : -1),
+      vy: baseSpeed * 0.5 * (Math.random() > 0.5 ? 1 : -1),
+      color: this.ballColors[Math.floor(Math.random() * this.ballColors.length)]
+    };
   }
 
   init(savedState) {
@@ -3222,8 +3240,9 @@ class GamePong {
       this.over = savedState.over || false; this.showHelp = false;
       this.p1Y = savedState.p1Y; this.p2Y = savedState.p2Y;
     } else { this.score1 = 0; this.score2 = 0; this.over = false; this.showHelp = true; }
-    this.ballX = W/2; this.ballY = H/2;
-    this.ballDX = 4 * (Math.random() > 0.5 ? 1 : -1); this.ballDY = 2 * (Math.random() > 0.5 ? 1 : -1);
+    this.level = 1;
+    this.balls = [this._createBall(1)];
+    this._respawnTimers = [];
     this._keyD = (e) => { this.keys[e.key] = true; this.keyDown(e); };
     this._keyU = (e) => { this.keys[e.key] = false; };
     document.addEventListener('keydown', this._keyD);
@@ -3239,7 +3258,7 @@ class GamePong {
     if (this.showHelp) { if (e.key === 'Escape') { backToMenu(); return; } this.showHelp = false; this.lastTime = performance.now(); this.loop(); return; }
     if (this.over) {
       if (e.key === 'r') { this.destroy(); gameInstance = new GamePong(); gameInstance.init(); return; }
-      if (e.key === 'h' || e.key === 'H') { showHighScore('pong'); return; }
+      if (e.key === 'h' || e.key === 'H') { showHighScores('pong'); return; }
       if (e.key === 'Escape') { backToMenu(); return; }
       return;
     }
@@ -3256,57 +3275,83 @@ class GamePong {
     this._raf = requestAnimationFrame(() => this.loop());
   }
 
-  update(dt) {
-    // Difficulty timer — every 2 minutes, increase speed
-    this.gameTime += dt;
-    if (this.gameTime >= this.nextDiffTime) {
-      this.difficultyLevel++;
-      this.nextDiffTime += 120;
-      this.aiSpeed = 3 + this.difficultyLevel * 0.5;
-      // Speed up ball slightly
-      const factor = 1 + (this.difficultyLevel - 1) * 0.08;
-      this.ballDX *= factor;
-      this.ballDY *= factor;
+  _checkLevelUp() {
+    const totalScore = this.score1 + this.score2;
+    while (this.level <= this.levelThresholds.length && totalScore >= this.levelThresholds[this.level - 1]) {
+      this.level++;
+      // Add a new ball
+      if (this.balls.length < 7) {
+        const dir = Math.random() > 0.5 ? 1 : -1;
+        this.balls.push(this._createBall(dir));
+      }
+      // Apply speed multiplier to all existing balls
+      const mult = 1.12; // each level adds 12%
+      this.balls.forEach(b => { b.vx *= mult; b.vy *= mult; });
     }
+  }
+
+  update(dt) {
     const spd = 350 * dt;
     // Player 1: W/S
     if (this.keys['w'] || this.keys['W']) this.p1Y = Math.max(0, this.p1Y - spd);
     if (this.keys['s'] || this.keys['S']) this.p1Y = Math.min(H - this.paddleH, this.p1Y + spd);
-    // Player 2 (AI): follows ball
-    const aiTarget = this.ballY - this.paddleH / 2;
+    // Player 2 (AI): tracks the ball closest to its side (right)
+    let aiTargetBall = this.balls[0];
+    let aiMaxX = -Infinity;
+    this.balls.forEach(b => { if (b.x > aiMaxX) { aiMaxX = b.x; aiTargetBall = b; } });
+    const aiTarget = aiTargetBall.y - this.paddleH / 2;
     if (this.p2Y < aiTarget) this.p2Y = Math.min(aiTarget, this.p2Y + this.aiSpeed);
     else if (this.p2Y > aiTarget) this.p2Y = Math.max(aiTarget, this.p2Y - this.aiSpeed);
     this.p2Y = Math.max(0, Math.min(H - this.paddleH, this.p2Y));
-    // Ball
-    this.ballX += this.ballDX * dt * 60;
-    this.ballY += this.ballDY * dt * 60;
-    // Top/bottom bounce
-    if (this.ballY <= 0) { this.ballDY = Math.abs(this.ballDY); this.ballY = 0; }
-    if (this.ballY >= H) { this.ballDY = -Math.abs(this.ballDY); this.ballY = H; }
-    // Paddle collision
+    // Process respawn timers
+    this._respawnTimers = this._respawnTimers.filter(t => {
+      t.timeLeft -= dt;
+      if (t.timeLeft <= 0) {
+        const dir = t.dir;
+        this.balls[t.idx] = this._createBall(dir);
+        return false;
+      }
+      return true;
+    });
+    // Update each ball
     const p1x = 20, p2x = W - 30;
-    if (this.ballDX < 0 && this.ballX <= p1x + this.paddleW && this.ballX >= p1x && this.ballY >= this.p1Y && this.ballY <= this.p1Y + this.paddleH) {
-      this.ballDX = Math.abs(this.ballDX) * 1.05;
-      this.ballDY += (this.ballY - (this.p1Y + this.paddleH/2)) * 0.1;
+    for (let i = this.balls.length - 1; i >= 0; i--) {
+      const b = this.balls[i];
+      if (!b) continue; // ball is in respawn queue
+      b.x += b.vx * dt * 60;
+      b.y += b.vy * dt * 60;
+      // Top/bottom bounce
+      if (b.y <= 0) { b.vy = Math.abs(b.vy); b.y = 0; }
+      if (b.y >= H) { b.vy = -Math.abs(b.vy); b.y = H; }
+      // Paddle collision — left paddle
+      if (b.vx < 0 && b.x <= p1x + this.paddleW && b.x >= p1x && b.y >= this.p1Y && b.y <= this.p1Y + this.paddleH) {
+        b.vx = Math.abs(b.vx) * 1.05;
+        b.vy += (b.y - (this.p1Y + this.paddleH/2)) * 0.1;
+      }
+      // Paddle collision — right paddle (AI)
+      if (b.vx > 0 && b.x >= p2x && b.x <= p2x + this.paddleW && b.y >= this.p2Y && b.y <= this.p2Y + this.paddleH) {
+        b.vx = -Math.abs(b.vx) * 1.05;
+        b.vy += (b.y - (this.p2Y + this.paddleH/2)) * 0.1;
+      }
+      // Score
+      if (b.x < 0) {
+        this.score2++;
+        this.balls.splice(i, 1);
+        this._respawnTimers.push({ idx: this.balls.length, dir: 1, timeLeft: 1.0 });
+        this._checkLevelUp();
+      } else if (b.x > W) {
+        this.score1++;
+        this.balls.splice(i, 1);
+        this._respawnTimers.push({ idx: this.balls.length, dir: -1, timeLeft: 1.0 });
+        this._checkLevelUp();
+      }
     }
-    if (this.ballDX > 0 && this.ballX >= p2x && this.ballX <= p2x + this.paddleW && this.ballY >= this.p2Y && this.ballY <= this.p2Y + this.paddleH) {
-      this.ballDX = -Math.abs(this.ballDX) * 1.05;
-      this.ballDY += (this.ballY - (this.p2Y + this.paddleH/2)) * 0.1;
-    }
-    // Score
-    if (this.ballX < 0) { this.score2++; this.resetBall(1); }
-    if (this.ballX > W) { this.score1++; this.resetBall(-1); }
     // Win
     if (this.score1 >= this.maxScore || this.score2 >= this.maxScore) {
       this.over = true;
       saveHighScore('pong', this.score1, {});
       clearGameProgress('pong');
     }
-  }
-
-  resetBall(dir) {
-    this.ballX = W/2; this.ballY = H/2;
-    this.ballDX = 4 * dir; this.ballDY = 2 * (Math.random() > 0.5 ? 1 : -1);
   }
 
   drawHelp() {
@@ -3316,8 +3361,8 @@ class GamePong {
     ctx.shadowColor = C.green; ctx.shadowBlur = 12;
     ctx.fillText('P O N G', W/2, 100); ctx.shadowBlur = 0;
     ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
-    ctx.fillText('FIRST TO 11 WINS', W/2, 140);
-    const lines = [['W / S', 'Left paddle up/down'],['',''],['Ball bounces off','paddles and walls'],['Miss = opponent','scores a point'],['',''],['vs AI opponent','']];
+    ctx.fillText('7-LEVEL MULTI-BALL MODE', W/2, 140);
+    const lines = [['W / S', 'Left paddle up/down'],['',''],['Level up','every 2 total points'],['More balls','each level!'],['',''],['vs AI opponent','']];
     ctx.textAlign = 'left'; let ly = 180;
     lines.forEach(l => { if (l[0]&&l[1]) { ctx.fillStyle=C.cyan;ctx.font='13px Consolas,monospace';ctx.fillText(l[0],W/2-100,ly);ctx.fillStyle=C.white;ctx.fillText(l[1],W/2+20,ly); } ly+=28; });
     ctx.textAlign='center';ctx.fillStyle=C.amber;ctx.font='14px Consolas,monospace';
@@ -3333,9 +3378,11 @@ class GamePong {
     // Paddles
     ctx.fillStyle = C.green; ctx.fillRect(20, this.p1Y, this.paddleW, this.paddleH);
     ctx.fillStyle = C.amber; ctx.fillRect(W-30, this.p2Y, this.paddleW, this.paddleH);
-    // Ball
-    ctx.fillStyle = C.white;
-    ctx.beginPath(); ctx.arc(this.ballX, this.ballY, 6, 0, Math.PI*2); ctx.fill();
+    // Balls
+    this.balls.forEach(b => {
+      ctx.fillStyle = b.color;
+      ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI*2); ctx.fill();
+    });
     // Score
     ctx.font = '32px Consolas, monospace'; ctx.textAlign = 'center';
     ctx.fillStyle = C.green; ctx.fillText(this.score1, W/4, 50);
@@ -3343,11 +3390,10 @@ class GamePong {
     // Labels
     ctx.font = '10px Consolas, monospace'; ctx.fillStyle = C.dim;
     ctx.fillText('YOU (W/S)', W/4, 70); ctx.fillText('AI', W*3/4, 70);
-    // Difficulty level
-    if (this.difficultyLevel > 1) {
-      ctx.fillStyle = C.red; ctx.font = '10px Consolas, monospace'; ctx.textAlign = 'right';
-      ctx.fillText('LV' + this.difficultyLevel, W - 10, H - 10);
-    }
+    // Level display
+    ctx.fillStyle = this.level > 1 ? C.red : C.dim;
+    ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.fillText('LV' + this.level + '  BALLS:' + this.balls.length, W/2, H - 10);
     // Paused
     if (this.paused) { ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = C.amber; ctx.font = '28px Consolas, monospace'; ctx.fillText('PAUSED', W/2, H/2); }
     // Game over
@@ -3357,7 +3403,7 @@ class GamePong {
       ctx.fillStyle = this.score1 >= this.maxScore ? C.green : C.red;
       ctx.font = '28px Consolas, monospace'; ctx.fillText(this.score1 >= this.maxScore ? 'YOU WIN!' : 'YOU LOSE', W/2, H/2-40);
       ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace'; ctx.fillText(this.score1 + ' - ' + this.score2, W/2, H/2-10);
-      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace'; ctx.fillText('R restart · ESC menu', W/2, H/2+20);
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace'; ctx.fillText('R restart · ESC menu · H scores', W/2, H/2+20);
     }
   }
 }
@@ -4262,7 +4308,7 @@ class GameRacer {
     // Obstacles (oncoming traffic)
     this.obstacles = [];
     this.obstacleTimer = 0;
-    this.obstacleInterval = 120; // frames between spawns
+    this.obstacleInterval = 80; // frames between spawns
     // Generate road curves
     for (let i = 0; i < this.segments; i++) {
       this.road.push({ curve: Math.sin(i * 0.02) * 3, y: 0 });
@@ -4298,13 +4344,13 @@ class GameRacer {
     const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
     this.score += Math.floor(this.speed * dt / 1000);
     // Spawn obstacles
-    if (this.speed > 20) {
+    if (this.speed > 10) {
       this.obstacleTimer++;
       if (this.obstacleTimer >= this.obstacleInterval) {
         this.obstacleTimer = 0;
         // Random lane position: -0.6 to 0.6 (avoid edges)
         const lane = (Math.random() - 0.5) * 1.2;
-        const colors = [C.red, C.amber, C.cyan, C.magenta, C.blue];
+        const colors = [C.red, C.amber, C.cyan, C.magenta, C.blue, '#ff6600', '#cc33ff', '#33ccff', '#ffcc00', '#66ff33'];
         this.obstacles.push({ x: lane, dist: 0, color: colors[Math.floor(Math.random() * colors.length)] });
       }
     }
@@ -4320,7 +4366,7 @@ class GameRacer {
         // Check horizontal overlap
         const oScreenX = W / 2 + o.x * 60;
         const pScreenX = W / 2 + this.playerX * 60;
-        if (Math.abs(oScreenX - pScreenX) < 28) {
+        if (Math.abs(oScreenX - pScreenX) < 42) {
           this.over = true;
           saveHighScore('racer', this.score, {});
         }
@@ -4366,7 +4412,7 @@ class GameRacer {
         const roadW = this.roadWidth * (1 - t);
         const roadX = W / 2 + this.playerX * roadW * 0.5;
         const carX = roadX + o.x * roadW * 0.4;
-        const carW = 30 * scale, carH = 20 * scale;
+        const carW = 45 * scale, carH = 30 * scale;
         ctx.fillStyle = o.color;
         ctx.fillRect(carX - carW/2, y - carH, carW, carH);
         ctx.fillRect(carX - carW*0.35, y - carH - 8*scale, carW*0.7, 8*scale);

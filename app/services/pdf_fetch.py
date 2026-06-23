@@ -6,7 +6,7 @@
 增强特性:
   - Crossref API 标题→DOI 解析
   - 多模式 PDF 链接提取（meta标签/锚点/正则/JavaScript重定向）
-  - Unpaywall 开放获取 API 兜底
+  - Unpaywall / Semantic Scholar / Crossref Fulltext / Sci-Hub 多源兜底
   - 校园网直连模式支持
 """
 
@@ -357,6 +357,222 @@ def _try_unpaywall(doi: str) -> Optional[str]:
     return None
 
 
+def _try_semantic_scholar(doi: str) -> Optional[str]:
+    """尝试从 Semantic Scholar API 获取开放获取 PDF 链接。
+
+    Args:
+        doi: 纯 DOI（不含 URL 前缀）
+
+    Returns:
+        PDF URL 或 None
+    """
+    import urllib.request
+    import json as _json
+
+    clean_doi = doi.strip()
+    if clean_doi.startswith("https://doi.org/"):
+        clean_doi = clean_doi[len("https://doi.org/"):]
+    elif clean_doi.startswith("http://doi.org/"):
+        clean_doi = clean_doi[len("http://doi.org/"):]
+
+    try:
+        url = f"https://api.semanticscholar.org/graph/v1/paper/DOI:{clean_doi}?fields=openAccessPdf,externalIds"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "AI-Nexus-Assistant/1.0",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read())
+
+        # 直接从 openAccessPdf 字段获取
+        oapdf = data.get("openAccessPdf")
+        if oapdf and oapdf.get("url"):
+            return oapdf["url"]
+
+    except Exception as e:
+        _log.debug(f"Semantic Scholar 查询失败 ({clean_doi}): {e}")
+
+    return None
+
+
+def _try_crossref_fulltext(doi: str) -> Optional[str]:
+    """尝试从 Crossref API 的 link 字段获取全文 PDF 链接。
+
+    查询 Crossref works 端点，检查 link 数组中是否有
+    content-type 为 application/pdf 或 text/xml 的全文链接。
+
+    Args:
+        doi: 纯 DOI（不含 URL 前缀）
+
+    Returns:
+        PDF URL 或 None
+    """
+    import urllib.request
+    import json as _json
+
+    clean_doi = doi.strip()
+    if clean_doi.startswith("https://doi.org/"):
+        clean_doi = clean_doi[len("https://doi.org/"):]
+    elif clean_doi.startswith("http://doi.org/"):
+        clean_doi = clean_doi[len("http://doi.org/"):]
+
+    try:
+        url = f"https://api.crossref.org/works/{clean_doi}"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "AI-Nexus-Assistant/1.0 (mailto:support@example.com)",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read())
+
+        message = data.get("message", {})
+        links = message.get("link", [])
+
+        # 优先取 application/pdf 类型的链接
+        for link in links:
+            ct = link.get("content-type", "").lower()
+            if "application/pdf" in ct and link.get("URL"):
+                return link["URL"]
+
+        # 次选 text/xml 或其他全文类型
+        for link in links:
+            ct = link.get("content-type", "").lower()
+            if ("text/xml" in ct or "application/xml" in ct) and link.get("URL"):
+                return link["URL"]
+
+        # 检查 resource.primary 是否有 PDF 链接
+        resource = message.get("resource", {})
+        primary = resource.get("primary", {})
+        if primary.get("URL"):
+            purl = primary["URL"]
+            if ".pdf" in purl.lower():
+                return purl
+
+    except Exception as e:
+        _log.debug(f"Crossref fulltext 查询失败 ({clean_doi}): {e}")
+
+    return None
+
+
+_SCIHUB_MIRRORS = [
+    "https://sci-hub.se",
+    "https://sci-hub.st",
+    "https://sci-hub.ru",
+]
+
+
+def _try_scihub(doi: str, timeout: int = 30) -> Optional[str]:
+    """尝试从 Sci-Hub 镜像获取 PDF 下载链接。
+
+    依次尝试多个 Sci-Hub 镜像站点，从返回的 HTML 中提取
+    iframe 或 embed 标签中的 PDF 下载链接。
+
+    Args:
+        doi: 纯 DOI（不含 URL 前缀）
+        timeout: 超时秒数
+
+    Returns:
+        PDF URL 或 None
+    """
+    import httpx
+
+    clean_doi = doi.strip()
+    if clean_doi.startswith("https://doi.org/"):
+        clean_doi = clean_doi[len("https://doi.org/"):]
+    elif clean_doi.startswith("http://doi.org/"):
+        clean_doi = clean_doi[len("http://doi.org/"):]
+
+    for mirror in _SCIHUB_MIRRORS:
+        try:
+            scihub_url = f"{mirror}/{clean_doi}"
+            _log.info(f"尝试 Sci-Hub 镜像: {scihub_url[:80]}")
+            with httpx.Client(
+                proxy=None,
+                follow_redirects=True,
+                timeout=timeout,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                  "Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,*/*",
+                },
+            ) as client:
+                resp = client.get(scihub_url)
+                if resp.status_code != 200:
+                    _log.debug(f"Sci-Hub 镜像 {mirror} 返回 {resp.status_code}")
+                    continue
+
+                html = resp.text
+
+                # 提取 iframe src（最常见的 Sci-Hub PDF 嵌入方式）
+                iframe_match = re.search(
+                    r'<iframe\s+[^>]*src=["\']([^"\']+)["\']',
+                    html, re.IGNORECASE,
+                )
+                if iframe_match:
+                    pdf_url = iframe_match.group(1).strip()
+                    # 处理协议相对 URL
+                    if pdf_url.startswith("//"):
+                        pdf_url = "https:" + pdf_url
+                    # 确保是有效的 PDF URL
+                    if pdf_url.startswith("http") and (
+                        ".pdf" in pdf_url.lower()
+                        or "pdf" in pdf_url.lower()
+                    ):
+                        _log.info(f"Sci-Hub iframe 找到 PDF: {pdf_url[:100]}")
+                        return pdf_url
+
+                # 提取 embed src
+                embed_match = re.search(
+                    r'<embed\s+[^>]*src=["\']([^"\']+)["\']',
+                    html, re.IGNORECASE,
+                )
+                if embed_match:
+                    pdf_url = embed_match.group(1).strip()
+                    if pdf_url.startswith("//"):
+                        pdf_url = "https:" + pdf_url
+                    if pdf_url.startswith("http") and (
+                        ".pdf" in pdf_url.lower()
+                        or "pdf" in pdf_url.lower()
+                    ):
+                        _log.info(f"Sci-Hub embed 找到 PDF: {pdf_url[:100]}")
+                        return pdf_url
+
+                # 提取 <a> 标签中的 .pdf 链接
+                a_match = re.search(
+                    r'<a\s+[^>]*href=["\']([^"\']*\.pdf[^"\']*)["\']',
+                    html, re.IGNORECASE,
+                )
+                if a_match:
+                    pdf_url = a_match.group(1).strip()
+                    if pdf_url.startswith("//"):
+                        pdf_url = "https:" + pdf_url
+                    if pdf_url.startswith("http"):
+                        _log.info(f"Sci-Hub anchor 找到 PDF: {pdf_url[:100]}")
+                        return pdf_url
+
+                # 提取 location.href 或 window.location 重定向
+                loc_match = re.search(
+                    r'(?:location\.href|window\.location)\s*=\s*["\']([^"\']*\.pdf[^"\']*)["\']',
+                    html, re.IGNORECASE,
+                )
+                if loc_match:
+                    pdf_url = loc_match.group(1).strip()
+                    if pdf_url.startswith("//"):
+                        pdf_url = "https:" + pdf_url
+                    if pdf_url.startswith("http"):
+                        _log.info(f"Sci-Hub redirect 找到 PDF: {pdf_url[:100]}")
+                        return pdf_url
+
+                _log.debug(f"Sci-Hub 镜像 {mirror} 未找到 PDF 链接")
+
+        except Exception as e:
+            _log.debug(f"Sci-Hub 镜像 {mirror} 失败: {e}")
+            continue
+
+    return None
+
+
 def _extract_doi_from_url(url_or_doi: str) -> str:
     """从 URL 或 DOI 字符串中提取纯 DOI"""
     s = url_or_doi.strip()
@@ -387,11 +603,15 @@ def fetch_pdf(
       3. HTML 解析 PDF 链接（七种模式，含出版社专用 URL 模式）
       4. 逐候选 URL 下载 + 验证
       5. 兜底: Unpaywall API 获取开放获取链接
+      6. 兜底: Semantic Scholar API 开放获取 PDF
+      7. 兜底: Crossref API 全文链接
+      8. 兜底: Sci-Hub 镜像站点
 
     增强特性:
       - 多 User-Agent 重试（某些出版商会阻断非浏览器 UA）
       - 常见出版社 URL 模式匹配（ScienceDirect/Springer/Wiley/IEEE/ACM/Nature 等）
       - 更完善的 URL 验证（过滤导航/图片/资源等误报）
+      - 多源兜底: Unpaywall / Semantic Scholar / Crossref / Sci-Hub
 
     Args:
         doi_or_url: DOI 字符串、完整 URL 或纯论文标题
@@ -606,6 +826,115 @@ def fetch_pdf(
             except Exception as e:
                 _log.debug(f"Unpaywall 下载失败: {e}")
                 last_error += f"；Unpaywall OA 链接也下载失败"
+
+    # 阶段 6: Semantic Scholar API 兜底
+    if doi:
+        _log.info("尝试 Semantic Scholar API 兜底...")
+        try:
+            ss_url = _try_semantic_scholar(doi)
+            if ss_url:
+                _log.info(f"Semantic Scholar 找到 OA 链接: {ss_url[:100]}")
+                try:
+                    with httpx.Client(
+                        proxy=None,
+                        follow_redirects=True,
+                        timeout=timeout,
+                        headers=headers,
+                    ) as client:
+                        pdf_resp = client.get(ss_url)
+                        pdf_resp.raise_for_status()
+                        raw = pdf_resp.content
+                        if validate_pdf(raw):
+                            raw = normalize_pdf_header(raw)
+                            with open(pdf_path, "wb") as f:
+                                f.write(raw)
+                            _log.info(f"Semantic Scholar PDF 下载成功: {pdf_path}")
+                            return {
+                                "success": True,
+                                "pdf_path": pdf_path,
+                                "source_url": ss_url,
+                                "method": "semantic_scholar",
+                            }
+                except Exception as e:
+                    _log.debug(f"Semantic Scholar 下载失败: {e}")
+                    last_error += "；Semantic Scholar OA 链接也下载失败"
+        except Exception as e:
+            _log.debug(f"Semantic Scholar 查询异常: {e}")
+
+    # 阶段 7: Crossref API 全文链接兜底
+    if doi:
+        _log.info("尝试 Crossref API 全文链接兜底...")
+        try:
+            crossref_url = _try_crossref_fulltext(doi)
+            if crossref_url:
+                _log.info(f"Crossref 找到全文链接: {crossref_url[:100]}")
+                try:
+                    with httpx.Client(
+                        proxy=None,
+                        follow_redirects=True,
+                        timeout=timeout,
+                        headers=headers,
+                    ) as client:
+                        pdf_resp = client.get(crossref_url)
+                        pdf_resp.raise_for_status()
+                        raw = pdf_resp.content
+                        if validate_pdf(raw):
+                            raw = normalize_pdf_header(raw)
+                            with open(pdf_path, "wb") as f:
+                                f.write(raw)
+                            _log.info(f"Crossref fulltext PDF 下载成功: {pdf_path}")
+                            return {
+                                "success": True,
+                                "pdf_path": pdf_path,
+                                "source_url": crossref_url,
+                                "method": "crossref_fulltext",
+                            }
+                except Exception as e:
+                    _log.debug(f"Crossref fulltext 下载失败: {e}")
+                    last_error += "；Crossref 全文链接也下载失败"
+        except Exception as e:
+            _log.debug(f"Crossref fulltext 查询异常: {e}")
+
+    # 阶段 8: Sci-Hub 镜像兜底
+    if doi:
+        _log.info("尝试 Sci-Hub 镜像兜底...")
+        try:
+            scihub_url = _try_scihub(doi, timeout=timeout)
+            if scihub_url:
+                _log.info(f"Sci-Hub 找到 PDF 链接: {scihub_url[:100]}")
+                try:
+                    with httpx.Client(
+                        proxy=None,
+                        follow_redirects=True,
+                        timeout=timeout,
+                        headers=headers,
+                    ) as client:
+                        pdf_resp = client.get(scihub_url)
+                        pdf_resp.raise_for_status()
+                        raw = pdf_resp.content
+                        if validate_pdf(raw):
+                            raw = normalize_pdf_header(raw)
+                            with open(pdf_path, "wb") as f:
+                                f.write(raw)
+                            _log.info(f"Sci-Hub PDF 下载成功: {pdf_path}")
+                            return {
+                                "success": True,
+                                "pdf_path": pdf_path,
+                                "source_url": scihub_url,
+                                "method": "scihub",
+                            }
+                except Exception as e:
+                    _log.debug(f"Sci-Hub 下载失败: {e}")
+                    last_error += "；Sci-Hub PDF 链接也下载失败"
+        except Exception as e:
+            _log.debug(f"Sci-Hub 查询异常: {e}")
+
+    # 更新最终错误消息，提示已尝试所有来源
+    sources_tried = "出版社页面、Unpaywall、Semantic Scholar、Crossref、Sci-Hub"
+    if not last_error:
+        last_error = f"所有 PDF 来源均未成功。已尝试: {sources_tried}"
+    elif "已尝试" not in last_error:
+        last_error += f"\n已尝试的来源: {sources_tried}"
 
     return {
         "success": False,

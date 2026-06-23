@@ -737,14 +737,14 @@ export default function PaperLibraryPage() {
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>引用格式</h3>
                   <div className="flex gap-1.5 items-center">
-                    <select className="input-glass text-[10px] py-1 px-2" value={citationFormat}
+                    <select className="input-glass text-[10px] py-1 px-2 h-[28px] leading-none" value={citationFormat}
                       onChange={e => setCitationFormat(e.target.value)}>
                       {CITATION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                     </select>
-                    <button className="btn-ghost text-[10px] py-1 px-2 min-w-[52px]" onClick={handleCopyCitation}>
+                    <button className="btn-ghost text-[10px] py-1 px-2 min-w-[52px] h-[28px] leading-none" onClick={handleCopyCitation}>
                       {copied ? "已复制 ✓" : "复制"}
                     </button>
-                    <button className="btn-ghost text-[10px] py-1 px-2" onClick={() => {
+                    <button className="btn-ghost text-[10px] py-1 px-2 min-w-[52px] h-[28px] leading-none" onClick={() => {
                       setShowCorrectDialog(true);
                       setCorrectOldCitation("");
                       setCorrectNewCitation("");

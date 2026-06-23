@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.3.4")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.3.5")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -2811,6 +2811,18 @@ def delete_sessions_by_category(body: dict):
             if ok:
                 deleted += 1
         return {"deleted": deleted}
+    finally:
+        db.close()
+
+
+@app.post("/api/chat/sessions/deduplicate")
+def deduplicate_sessions(body: dict = None):
+    """去重对话会话：同分类下标题相同的会话只保留最新一条"""
+    category = (body or {}).get("category", "")
+    db = get_session()
+    try:
+        result = chat_service.deduplicate_sessions(db, category)
+        return result
     finally:
         db.close()
 
