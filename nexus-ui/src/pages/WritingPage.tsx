@@ -144,6 +144,7 @@ export default function WritingPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [linkedPapers, setLinkedPapers] = useState<PaperDetail[]>([]);
   const [showPaperSearch, setShowPaperSearch] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [paperQuery, setPaperQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Pick<PaperDetail, "id" | "title" | "authors" | "year">[]>([]);
 
@@ -158,6 +159,19 @@ export default function WritingPage() {
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
   const titleRef = useRef(title);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭导出菜单
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showExportMenu]);
   const activeDocRef = useRef(activeDoc);
 
   // Keep refs in sync
@@ -529,24 +543,27 @@ export default function WritingPage() {
                   onClick={() => setShowPreview(!showPreview)}>
                   {showPreview ? "编辑" : "预览"}
                 </button>
-                <div className="relative group">
+                <div className="relative" ref={exportMenuRef}>
                   <button className="btn-ghost text-[10px] py-1 px-2"
-                    style={{ color: "var(--accent-green)" }}>
+                    style={{ color: "var(--accent-green)" }}
+                    onClick={() => setShowExportMenu(!showExportMenu)}>
                     导出 ▾
                   </button>
-                  <div className="absolute right-0 top-full mt-1 glass-card p-1 min-w-[100px] z-50 hidden group-hover:block"
-                    style={{ border: "1px solid var(--border-color)" }}>
-                    <button className="block w-full text-left px-2 py-1 text-[10px] rounded cursor-pointer transition-colors"
-                      style={{ color: "var(--text-secondary)" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                      onClick={handleExportMarkdown}>Markdown</button>
-                    <button className="block w-full text-left px-2 py-1 text-[10px] rounded cursor-pointer transition-colors"
-                      style={{ color: "var(--text-secondary)" }}
-                      onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
-                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                      onClick={handleExportDocx}>DOCX</button>
-                  </div>
+                  {showExportMenu && (
+                    <div className="absolute right-0 top-full mt-1 glass-card p-1 min-w-[100px] z-50"
+                      style={{ border: "1px solid var(--border-color)" }}>
+                      <button className="block w-full text-left px-2 py-1 text-[10px] rounded cursor-pointer transition-colors"
+                        style={{ color: "var(--text-secondary)" }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                        onClick={() => { setShowExportMenu(false); handleExportMarkdown(); }}>Markdown</button>
+                      <button className="block w-full text-left px-2 py-1 text-[10px] rounded cursor-pointer transition-colors"
+                        style={{ color: "var(--text-secondary)" }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                        onClick={() => { setShowExportMenu(false); handleExportDocx(); }}>DOCX</button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

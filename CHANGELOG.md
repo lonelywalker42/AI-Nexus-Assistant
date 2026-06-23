@@ -8,8 +8,10 @@
 - **Pac-Man ESC退出（补丁）**: game over 状态缺少 Escape 键处理 — 补充 `if (e.key === 'Escape') { backToMenu(); return; }`
 - **Racer无行驶车辆（补丁）**: 障碍物从 dist=0 生成导致首帧不可见 — 改为 dist=-0.5；移速公式 `(speed+80)` 去掉 +80 基础值，使障碍物仅在玩家加速时逼近
 - **Mines hard模式无响应（补丁）**: help 界面 handleKey 仅处理 D/Escape，其余按键直接 return — 补充任意键 dismiss help 并启动游戏循环
-- **IDEA卡片显示**: 增加 loading/error 状态管理，API 失败时显示错误信息和重试按钮
-- **引用按钮UI统一**: DOI 复制按钮补全 h-[28px] leading-none，三个控件样式完全一致
+- **IDEA卡片显示（补丁）**: API 返回数据增加 Array.isArray 防御性检查；错误信息细化（区分后端未就绪 vs API 错误），方便定位问题
+- **引用按钮UI统一（补丁）**: "复制"/"修正引用" 按钮移除 min-w-[52px] 固定宽度，改用 whitespace-nowrap 自适应文字宽度
+- **写作导出无响应（补丁）**: 导出下拉菜单从 CSS group-hover 改为 click 状态切换 + 点击外部关闭，兼容 Tauri WebView2
+- **DeepSeek导入去重（补丁）**: 导入完成后自动调用 deduplicate_sessions("import") 清除历史对话中的标题重复项
 - **PDF拉取错误信息**: 优化 422 错误提示，提供 4 种具体操作建议（校园网/手动下载/Sci-Hub/作者主页）
 
 ### 新功能

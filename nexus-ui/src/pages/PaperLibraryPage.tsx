@@ -741,10 +741,10 @@ export default function PaperLibraryPage() {
                       onChange={e => setCitationFormat(e.target.value)}>
                       {CITATION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                     </select>
-                    <button className="btn-ghost text-[10px] py-1 px-2 min-w-[52px] h-[28px] leading-none" onClick={handleCopyCitation}>
+                    <button className="btn-ghost text-[10px] py-1 px-2 h-[28px] leading-none whitespace-nowrap" onClick={handleCopyCitation}>
                       {copied ? "已复制 ✓" : "复制"}
                     </button>
-                    <button className="btn-ghost text-[10px] py-1 px-2 min-w-[52px] h-[28px] leading-none" onClick={() => {
+                    <button className="btn-ghost text-[10px] py-1 px-2 h-[28px] leading-none whitespace-nowrap" onClick={() => {
                       setShowCorrectDialog(true);
                       setCorrectOldCitation("");
                       setCorrectNewCitation("");
@@ -766,7 +766,7 @@ export default function PaperLibraryPage() {
                       className="text-[11px] truncate flex-1" style={{ color: "var(--accent-blue)" }}>
                       {selected.doi}
                     </a>
-                    <button className="btn-ghost text-[10px] py-1 px-2 min-w-[52px] h-[28px] leading-none shrink-0" onClick={handleCopyDoi}>
+                    <button className="btn-ghost text-[10px] py-1 px-2 h-[28px] leading-none whitespace-nowrap shrink-0" onClick={handleCopyDoi}>
                       {copiedDoi ? "已复制 ✓" : "复制"}
                     </button>
                   </div>

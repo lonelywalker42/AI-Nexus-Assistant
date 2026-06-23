@@ -145,15 +145,20 @@ export default function KnowledgePage() {
       search: debouncedSearch, sort_by: sortBy, sort_order: sortOrder,
       star_min: starMin || undefined, tag: tagFilter || undefined,
     }).then(data => {
-      setCards(data);
+      setCards(Array.isArray(data) ? data : []);
       setLoading(false);
     }).catch(err => {
       console.error("加载卡片失败:", err);
-      setLoadError("加载卡片失败，请刷新重试");
+      const msg = err?.message || "";
+      if (msg.includes("not ready") || msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+        setLoadError("后端服务未就绪，请确认 server.py 已启动 (python server.py)");
+      } else {
+        setLoadError("加载卡片失败: " + msg);
+      }
       setLoading(false);
     });
     // 同时加载全部卡片用于分类计数（忽略搜索/筛选条件）
-    knowledgeApi.listCards({}).then(setAllCards).catch(console.error);
+    knowledgeApi.listCards({}).then(d => setAllCards(Array.isArray(d) ? d : [])).catch(console.error);
   };
   useEffect(() => { loadCards(); }, [debouncedSearch, sortBy, sortOrder, starMin, tagFilter]);
 

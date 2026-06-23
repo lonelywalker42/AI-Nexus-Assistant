@@ -3274,6 +3274,13 @@ def _run_deepseek_import(group_id: str, data: dict | list, filename: str):
             deepseek_import_service._update_group(db, group_id, status="failed", error="未能解析出有效对话")
             return
         deepseek_import_service.process_import(db, group_id, conversations)
+        # 导入完成后去重：清除同分类下标题重复的历史对话
+        try:
+            dedup_result = chat_service.deduplicate_sessions(db, "import")
+            if dedup_result["removed"] > 0:
+                print(f"[deepseek-import] 去重完成: 移除 {dedup_result['removed']} 个重复会话", flush=True)
+        except Exception as de:
+            print(f"[deepseek-import] 去重失败（不影响导入）: {de}", flush=True)
     except Exception as e:
         print(f"[deepseek-import] pipeline 失败: {e}", flush=True)
         try:
