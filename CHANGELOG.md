@@ -1,5 +1,27 @@
 # Changelog
 
+## v4.3.8 (2026-06-24) — SpringNote改进方案 + 标签着色 + 春日主题
+
+### 新功能
+- **SpringNote 仿色主题（春日）**: 新增 `[data-theme="spring"]` 樱粉配色方案，灵感来自 SpringNote 的粉白设计风格 — 玫瑰粉强调色 `#ff6b9d`，樱粉渐变背景，配套滚动条/按钮/输入框样式
+- **标签着色系统**: 基于 djb2 哈希的 12 色调色板，同一标签在知识卡片、文献库、过滤栏全局一致着色，替代原有统一灰色
+- **标签点击过滤**: 知识卡片列表/网格视图中的标签现在可直接点击触发过滤，无需手动在过滤栏查找
+- **工具调用结果展开**: AI 对话中搜索工具的结果从固定 3 条改为可展开/收起全部结果
+
+### 修复
+- **主题切换闪烁**: 新增 `theme-transitioning` CSS 类，主题切换时通过 class 控制平滑过渡动画（0.3s），避免硬切换闪烁
+- **综述池数量提示**: 文献综述生成超过 20 篇时显示「最多取前 20 篇」提示，避免用户误以为全部参与生成
+- **API 错误提示增强**: AI 对话和文献综述的流式错误增加分类提示 — 429 频率限制、401 认证失败、超时、服务端错误各有针对性建议
+
+### 文件变更
+- `nexus-ui/src/styles.css`: spring 主题变量 + theme-transitioning 过渡类
+- `nexus-ui/src/utils/tagColors.ts`: 新建，标签哈希着色工具函数
+- `nexus-ui/src/pages/SettingsPage.tsx`: 春日主题按钮 + 过渡 class 应用
+- `nexus-ui/src/pages/KnowledgePage.tsx`: 标签着色 + 点击过滤
+- `nexus-ui/src/pages/PaperLibraryPage.tsx`: 标签着色
+- `nexus-ui/src/pages/ChatPage.tsx`: 工具结果展开 + 错误分类提示
+- `nexus-ui/src/pages/LiteraturePage.tsx`: 综述池提示 + 错误分类提示
+
 ## v4.3.6 (2026-06-23) — 游戏机修复 + 写作导出 + 去重增强 + UI统一
 
 ### 修复

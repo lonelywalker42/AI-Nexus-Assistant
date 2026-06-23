@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { papersApi, reviewsApi, type PaperDetail, type Review } from "../api/client";
 import { IconSearch, IconStar, IconFile, IconUpload, IconX } from "../components/Icons";
 import { renderSimpleMarkdown } from "../utils/markdown";
+import { getTagColor } from "../utils/tagColors";
 
 const SORT_OPTIONS = [
   { value: "created_at", label: "入库时间" },
@@ -645,12 +646,15 @@ export default function PaperLibraryPage() {
                   {/* 标签 */}
                   {p.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-auto">
-                      {p.tags.slice(0, 3).map(tag => (
-                        <span key={tag} className="px-1.5 py-0.5 rounded text-[9px]"
-                          style={{ background: "rgba(59,130,246,0.06)", color: "var(--accent-blue)" }}>
-                          {tag}
-                        </span>
-                      ))}
+                      {p.tags.slice(0, 3).map(tag => {
+                        const tc = getTagColor(tag);
+                        return (
+                          <span key={tag} className="px-1.5 py-0.5 rounded text-[9px]"
+                            style={{ background: tc.bg, color: tc.color }}>
+                            {tag}
+                          </span>
+                        );
+                      })}
                       {p.tags.length > 3 && (
                         <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>+{p.tags.length - 3}</span>
                       )}
@@ -725,10 +729,13 @@ export default function PaperLibraryPage() {
               {/* 标签 */}
               {selected.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  {selected.tags.map(tag => (
-                    <span key={tag} className="px-2 py-0.5 rounded-full text-[10px]"
-                      style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>{tag}</span>
-                  ))}
+                  {selected.tags.map(tag => {
+                    const tc = getTagColor(tag);
+                    return (
+                      <span key={tag} className="px-2 py-0.5 rounded-full text-[10px]"
+                        style={{ background: tc.bg, color: tc.color }}>{tag}</span>
+                    );
+                  })}
                 </div>
               )}
 

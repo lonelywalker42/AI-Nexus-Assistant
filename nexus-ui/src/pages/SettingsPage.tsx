@@ -246,7 +246,10 @@ export default function SettingsPage() {
   const handleThemeChange = (t: string) => {
     setTheme(t);
     localStorage.setItem("nexus-theme", t);
+    // 平滑过渡：先加 class，动画结束后移除
+    document.documentElement.classList.add("theme-transitioning");
     document.documentElement.setAttribute("data-theme", t);
+    setTimeout(() => document.documentElement.classList.remove("theme-transitioning"), 350);
   };
 
   const handleFontSizeChange = (size: string) => {
@@ -410,7 +413,7 @@ export default function SettingsPage() {
       {/* 主题 */}
       <div className="glass-card p-5 space-y-4">
         <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>主题</h3>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <button
             onClick={() => handleThemeChange("light")}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "light" ? "bg-primary-500 text-white" : ""}`}
@@ -421,6 +424,11 @@ export default function SettingsPage() {
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "warm" ? "text-white" : ""}`}
             style={theme === "warm" ? { background: "#E07A5F" } : { background: "var(--hover-bg)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" }}
           >暖色</button>
+          <button
+            onClick={() => handleThemeChange("spring")}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "spring" ? "text-white" : ""}`}
+            style={theme === "spring" ? { background: "#ff6b9d" } : { background: "var(--hover-bg)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" }}
+          >🌸 春日</button>
           <button
             onClick={() => handleThemeChange("dark")}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "dark" ? "bg-primary-500 text-white" : ""}`}

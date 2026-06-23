@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { knowledgeApi, importGroupApi, knowledgeImportApi, type KnowledgeCard, type ImportGroup } from "../api/client";
 import { IconFile, IconChat, IconArrowLeft, IconStar, IconLightbulb, IconX, IconGlobe } from "../components/Icons";
+import { getTagColor } from "../utils/tagColors";
 
 const CATEGORIES = [
   { key: "literature", label: "文献导入", iconKey: "file", color: "#3b82f6" },
@@ -550,13 +551,16 @@ export default function KnowledgePage() {
               <button className="px-2 py-0.5 rounded text-[10px] cursor-pointer transition-colors"
                 style={!tagFilter ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" } : { color: "var(--text-muted)" }}
                 onClick={() => setTagFilter("")}>全部</button>
-              {allTags.slice(0, 15).map(t => (
-                <button key={t.name} className="px-2 py-0.5 rounded text-[10px] cursor-pointer transition-colors"
-                  style={tagFilter === t.name ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" } : { color: "var(--text-muted)" }}
-                  onClick={() => setTagFilter(tagFilter === t.name ? "" : t.name)}>
-                  {t.name} ({t.usage_count})
-                </button>
-              ))}
+              {allTags.slice(0, 15).map(t => {
+                const tc = getTagColor(t.name);
+                return (
+                  <button key={t.name} className="px-2 py-0.5 rounded text-[10px] cursor-pointer transition-colors"
+                    style={tagFilter === t.name ? { background: tc.bg, color: tc.color } : { color: "var(--text-muted)" }}
+                    onClick={() => setTagFilter(tagFilter === t.name ? "" : t.name)}>
+                    {t.name} ({t.usage_count})
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -800,10 +804,14 @@ export default function KnowledgePage() {
                 <p className="text-xs line-clamp-2" style={{ color: "var(--text-secondary)" }}>{card.summary || "无摘要"}</p>
                 {card.tags && card.tags.length > 0 && (
                   <div className="flex gap-1 mt-1 flex-wrap">
-                    {card.tags.slice(0, 5).map(t => (
-                      <span key={t} className="text-[9px] px-1.5 py-0.5 rounded"
-                        style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>{t}</span>
-                    ))}
+                    {card.tags.slice(0, 5).map(t => {
+                      const tc = getTagColor(t);
+                      return (
+                        <span key={t} className="text-[9px] px-1.5 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                          style={{ background: tc.bg, color: tc.color }}
+                          onClick={(e) => { e.stopPropagation(); setTagFilter(tagFilter === t ? "" : t); }}>{t}</span>
+                      );
+                    })}
                   </div>
                 )}
                 <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{new Date(card.updated_at || card.created_at).toLocaleDateString()}</span>
@@ -863,10 +871,14 @@ export default function KnowledgePage() {
               <p className="text-xs line-clamp-3 flex-1" style={{ color: "var(--text-secondary)" }}>{card.summary || "无摘要"}</p>
               {card.tags && card.tags.length > 0 && (
                 <div className="flex gap-1 flex-wrap">
-                  {card.tags.slice(0, 3).map(t => (
-                    <span key={t} className="text-[9px] px-1 py-0.5 rounded"
-                      style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>{t}</span>
-                  ))}
+                  {card.tags.slice(0, 3).map(t => {
+                    const tc = getTagColor(t);
+                    return (
+                      <span key={t} className="text-[9px] px-1 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                        style={{ background: tc.bg, color: tc.color }}
+                        onClick={(e) => { e.stopPropagation(); setTagFilter(tagFilter === t ? "" : t); }}>{t}</span>
+                    );
+                  })}
                 </div>
               )}
               <div className="flex items-center justify-between">

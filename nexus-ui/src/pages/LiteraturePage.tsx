@@ -224,7 +224,16 @@ export default function LiteraturePage() {
         data: JSON.stringify({ content: fullContent }),
       }).catch(console.error);
     } catch (err) {
-      setReviewContent(`生成失败: ${err}`);
+      const errMsg = String(err);
+      let hint = "";
+      if (errMsg.includes("429") || errMsg.includes("rate")) {
+        hint = "\n\n💡 触发了 API 频率限制，请稍等片刻后重试。";
+      } else if (errMsg.includes("timeout") || errMsg.includes("超时")) {
+        hint = "\n\n💡 请求超时，综述生成耗时较长，请减少文献数量后重试。";
+      } else {
+        hint = "\n\n💡 请检查网络连接和 AI 模型配置。";
+      }
+      setReviewContent(`❌ 生成失败: ${errMsg}${hint}`);
     }
     setReviewing(false);
   };
@@ -842,8 +851,8 @@ export default function LiteraturePage() {
               <p className="text-xs" style={{ color: results.length > 0 ? "var(--text-secondary)" : "#ef4444" }}>
                 {results.length > 0
                   ? reviewPool.size > 0
-                    ? `将基于综述池中 ${reviewPool.size} 篇文献生成综述`
-                    : `将基于全部 ${results.length} 篇搜索结果生成综述`
+                    ? `将基于综述池中 ${reviewPool.size} 篇文献生成综述${reviewPool.size > 20 ? `（最多取前 20 篇）` : ""}`
+                    : `将基于全部 ${results.length} 篇搜索结果生成综述${results.length > 20 ? `（最多取前 20 篇）` : ""}`
                   : "请先在「关键词检索」tab 中搜索文献"}
               </p>
             )}

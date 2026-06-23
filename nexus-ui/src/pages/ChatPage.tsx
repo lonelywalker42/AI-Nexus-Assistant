@@ -181,6 +181,7 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
   const [streamContent, setStreamContent] = useState("");
   const [streamThinking, setStreamThinking] = useState("");
   const [streamToolCalls, setStreamToolCalls] = useState<{name: string; query: string; result?: string}[]>([]);
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<number>>(new Set());
   const [selectedModelId, setSelectedModelId] = useState<string>("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [sessionSearch, setSessionSearch] = useState("");
@@ -430,7 +431,20 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
       if (err instanceof DOMException && err.name === "AbortError") {
         // 用户主动停止
       } else {
-        setStreamContent(`错误: ${err}`);
+        const errMsg = String(err);
+        let hint = "";
+        if (errMsg.includes("429") || errMsg.includes("rate") || errMsg.includes("limit")) {
+          hint = "\n\n💡 触发了 API 频率限制，请稍等片刻后重试。";
+        } else if (errMsg.includes("401") || errMsg.includes("unauthorized") || errMsg.includes("auth")) {
+          hint = "\n\n💡 API Key 无效或已过期，请在设置中检查模型配置。";
+        } else if (errMsg.includes("timeout") || errMsg.includes("超时")) {
+          hint = "\n\n💡 请求超时，可能是网络不稳定或模型响应过慢，请重试。";
+        } else if (errMsg.includes("500") || errMsg.includes("502") || errMsg.includes("503")) {
+          hint = "\n\n💡 服务端错误，可能正在维护，请稍后重试。";
+        } else {
+          hint = "\n\n💡 请检查网络连接和模型配置，或尝试切换其他模型。";
+        }
+        setStreamContent(`❌ 请求失败: ${errMsg}${hint}`);
       }
     }
 
@@ -847,15 +861,30 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
                               try {
                                 const data = JSON.parse(tc.result);
                                 if (Array.isArray(data)) {
+                                  const isExpanded = expandedToolCalls.has(i);
+                                  const visibleItems = isExpanded ? data : data.slice(0, 3);
                                   return (
                                     <div className="space-y-1">
-                                      {data.slice(0, 3).map((item: any, j: number) => (
+                                      {visibleItems.map((item: any, j: number) => (
                                         <div key={j} className="flex items-start gap-2">
                                           <span style={{ color: "var(--accent-blue)" }}>•</span>
-                                          <span className="truncate">{item.title || item.name || JSON.stringify(item).slice(0, 60)}</span>
+                                          <span className="break-all">{item.title || item.name || JSON.stringify(item).slice(0, 80)}</span>
                                         </div>
                                       ))}
-                                      {data.length > 3 && <div style={{ color: "var(--text-muted)" }}>...共 {data.length} 条结果</div>}
+                                      {data.length > 3 && (
+                                        <button className="text-[10px] cursor-pointer hover:underline transition-colors"
+                                          style={{ color: "var(--accent-blue)" }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setExpandedToolCalls(prev => {
+                                              const next = new Set(prev);
+                                              if (next.has(i)) next.delete(i); else next.add(i);
+                                              return next;
+                                            });
+                                          }}>
+                                          {isExpanded ? "收起" : `展开全部 ${data.length} 条结果`}
+                                        </button>
+                                      )}
                                     </div>
                                   );
                                 }
