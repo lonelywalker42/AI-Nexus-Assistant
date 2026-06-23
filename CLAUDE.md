@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v4.3.1**.
+AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v4.3.4**.
 
 ## v4.0.0 Features (Multi-platform + Auto-update)
 
@@ -318,6 +318,30 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 | Major release | `vX.0.0` | v3.0.0 | Large feature set, architecture changes |
 | Minor update | `v*.x.0` | v2.3.0 | Feature enhancements, UI improvements |
 | Bug fix | `v*.*.x` | v2.2.2 | Bug fixes, debugging, performance |
+
+### ⚠️ 版本号同步清单
+
+**发版时必须同步更新以下 5 处版本号**，遗漏任何一处都会导致前端显示、自动更新、构建产物版本不一致：
+
+| # | 文件 | 字段 | 说明 |
+|---|------|------|------|
+| 1 | `nexus-ui/src-tauri/tauri.conf.json` | `"version"` | Tauri 安装包文件名、Windows 安装信息中的版本号 |
+| 2 | `nexus-ui/src-tauri/Cargo.toml` | `version` | Rust 编译产物版本元数据（影响 `Cargo.lock`） |
+| 3 | `nexus-ui/src/api/client.ts` | `APP_VERSION` | 前端显示版本号（侧边栏、设置页、更新检查） |
+| 4 | `server.py` | `FastAPI(version=...)` | API 文档中的版本号 |
+| 5 | `CLAUDE.md` | `Current version: **vX.Y.Z**` | 项目文档版本记录 |
+
+**自动化脚本**（推荐在发版前执行）：
+```bash
+# 一键检查版本号一致性（替换 X.Y.Z 为目标版本）
+grep -rn '"version"' nexus-ui/src-tauri/tauri.conf.json | grep -q 'X.Y.Z' && echo "✅ tauri.conf.json" || echo "❌ tauri.conf.json"
+grep -rn 'version' nexus-ui/src-tauri/Cargo.toml | head -1 | grep -q 'X.Y.Z' && echo "✅ Cargo.toml" || echo "❌ Cargo.toml"
+grep -rn 'APP_VERSION' nexus-ui/src/api/client.ts | grep -q 'X.Y.Z' && echo "✅ client.ts" || echo "❌ client.ts"
+grep -rn 'FastAPI.*version' server.py | grep -q 'X.Y.Z' && echo "✅ server.py" || echo "❌ server.py"
+grep -rn 'Current version' CLAUDE.md | grep -q 'X.Y.Z' && echo "✅ CLAUDE.md" || echo "❌ CLAUDE.md"
+```
+
+**⚠️ Cargo.lock 会自动同步**：修改 `Cargo.toml` 后，`npx tauri build` 会自动更新 `Cargo.lock` 中的版本号，无需手动编辑。
 
 ### Workflow
 

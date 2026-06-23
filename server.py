@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.0.1")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.3.4")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -1239,6 +1239,19 @@ def delete_card(card_id: str):
         if not ok:
             raise HTTPException(404)
         return {"ok": True}
+    finally:
+        db.close()
+
+
+@app.post("/api/knowledge/cards/{card_id}/regenerate-summary")
+def regenerate_card_summary(card_id: str):
+    """为单张 DeepSeek 导入卡片重新生成 LLM 摘要"""
+    db = get_session()
+    try:
+        result = deepseek_import_service.regenerate_card_summary(db, card_id)
+        if result.get("error"):
+            raise HTTPException(400, result["error"])
+        return result
     finally:
         db.close()
 

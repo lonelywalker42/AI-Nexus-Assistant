@@ -1,5 +1,41 @@
 # Changelog
 
+## v4.3.4 (2026-06-23) — PDF拉取增强 + DeepSeek导入优化 + 游戏机修复
+
+### 新功能
+- **DeepSeek导入去重**: 导入对话JSON时自动检测重复会话（标题相似度>0.85或source_url匹配），避免重复创建卡片和会话
+- **手动摘要生成**: DeepSeek导入失败的会话卡片显示"生成摘要"按钮，支持逐个手动重新生成AI摘要
+- **DeepSeek对话直接展示**: IDEA页面"AI 对话"分类改为直接展示卡片列表，不再嵌套导入分组；对话页导入会话直接显示在列表中
+- **Minesweeper难度选择**: 新增易/中/难三档（9×9/10雷、12×12/20雷、16×16/40雷），帮助界面按D键切换
+- **Pong难度递增**: 每2分钟AI速度+0.5、球速+8%，底部显示LV指示器
+- **Racer对向来车**: 新增随机车道来车障碍物，透视缩放绘制，碰撞检测触发游戏结束
+
+### 修复
+- **PDF拉取失败增强**: 新增iframe/embed标签解析、10+出版社专用URL模式（ScienceDirect/Springer/Wiley/IEEE/ACM/Nature等）、多User-Agent轮换重试
+- **引用按钮UI统一**: 引用格式选择器、复制按钮、修正引用按钮的宽高和内边距调整为与页面其他按钮一致（text-[10px] py-1 px-2）
+- **游戏菜单鼠标偏移**: 修复mousemove/click处理器使用旧常量导致点击位置与实际游戏槽位不一致的问题
+- **游戏存档显示错误**: 修复存档时间始终显示当前时间的bug（timestamp读取路径错误）
+- **游戏存档覆盖**: 修复在恢复存档界面按ESC时用未初始化数据覆盖真实存档的问题
+- **存档事件监听器泄漏**: 修复恢复存档界面的mousemove监听器未被正确移除的问题
+- **Breakout关卡速度**: 修复过关后球速递增被硬编码覆盖的bug，改用lvlSpd公式按关卡递增
+- **Minesweeper retry**: 游戏结束画面新增可点击的[RESTART]按钮，支持鼠标点击重试
+- **Flappy障碍间距**: 管道生成间隔从90帧增至150帧，管道速度从120降至100 px/s
+- **Pong墙壁反弹**: 改用Math.abs+位置钳制防止球卡在边界振荡
+
+### 改进
+- **DeepSeek导入并发降级**: LLM批处理并发数从5降至2，避免API过载
+- **Racer游戏性**: 从纯驾驶演示升级为有障碍物碰撞的完整游戏
+
+### 文件变更
+- `app/services/pdf_fetch.py`: PDF链接提取增强 + 多UA重试
+- `app/services/deepseek_import_service.py`: 去重机制 + 并发降级 + 手动摘要再生
+- `server.py`: 新增regenerate-summary端点
+- `nexus-ui/src/api/client.ts`: 新增regenerateSummary API
+- `nexus-ui/src/pages/PaperLibraryPage.tsx`: 引用按钮UI统一
+- `nexus-ui/src/pages/KnowledgePage.tsx`: 导入后重置过滤器 + 直接展示卡片 + 手动摘要按钮
+- `nexus-ui/src/pages/ChatPage.tsx`: 导入会话直接展示
+- `nexus-ui/public/games.html`: 10项游戏修复
+
 ## v4.3.3 (2026-06-23) — PDF拉取增强 + AI对话批量删除 + DeepSeek导入优化
 
 ### 新功能

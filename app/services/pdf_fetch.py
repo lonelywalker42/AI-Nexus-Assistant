@@ -60,12 +60,14 @@ def normalize_doi(doi_or_url: str) -> str:
 def extract_pdf_urls_from_html(html: str) -> list[str]:
     """从 HTML 中提取 PDF 候选 URL。
 
-    五种模式并行扫描（按优先级排序）:
-      1. <meta name="citation_pdf_url" content="...">  ← 最高优先级
+    七种模式并行扫描（按优先级排序）:
+      1. <meta name="citation_pdf_url" content="...">  ← 最高优先级（学术出版标准）
       2. <link rel="alternate" type="application/pdf">  ← 次优先
       3. <a href="...pdf"> / <a href=".../pdf/">        ← 中等优先
       4. JavaScript 重定向 / data 属性中的 PDF URL       ← 次低
-      5. 正则匹配 body 中的 https://...pdf URL           ← 兜底
+      5. <iframe>/<embed> 中的 PDF URL                   ← 新增
+      6. 常见出版社专用 URL 模式（ScienceDirect/Springer/Wiley/IEEE/ACM/Nature 等）← 新增
+      7. 正则匹配 body 中的 https://...pdf URL           ← 兜底
     """
     candidates = []
     seen = set()
@@ -152,7 +154,7 @@ def extract_pdf_urls_from_html(html: str) -> list[str]:
 
     # 模式 4b: data 属性中的 PDF URL
     for m in re.finditer(
-        r'data-(?:pdf-url|download-url|file-url)=["\']([^"\']*\.pdf[^"\']*)["\']',
+        r'data-(?:pdf-url|download-url|file-url|article-url)=["\']([^"\']*\.pdf[^"\']*)["\']',
         html, re.IGNORECASE
     ):
         url = m.group(1).strip()
@@ -160,7 +162,53 @@ def extract_pdf_urls_from_html(html: str) -> list[str]:
             candidates.append(url)
             seen.add(url)
 
-    # 模式 5: 正则匹配 body 中的 PDF URL
+    # 模式 4c: <iframe> 和 <embed> 中的 PDF URL
+    for m in re.finditer(
+        r'<(?:iframe|embed)\s+[^>]*src=["\']([^"\']*\.pdf[^"\']*)["\']',
+        html, re.IGNORECASE
+    ):
+        url = m.group(1).strip()
+        if url and url not in seen and _is_valid_pdf_url(url):
+            candidates.append(url)
+            seen.add(url)
+
+    # 模式 4d: 常见出版社专用 URL 模式
+    publisher_patterns = [
+        # ScienceDirect / Elsevier
+        r'(https?://[^"\']*sciencedirect\.com[^"\']*/pdf[^"\']*)',
+        r'(https?://[^"\']*sciencedirect\.com[^"\']*\.pdf[^"\']*)',
+        # Springer
+        r'(https?://[^"\']*springer\.com[^"\']*/content/pdf[^"\']*)',
+        r'(https?://[^"\']*springer\.com[^"\']*\.pdf[^"\']*)',
+        # Wiley
+        r'(https?://[^"\']*wiley\.com[^"\']*/pdf[^"\']*)',
+        r'(https?://[^"\']*onlinelibrary\.wiley\.com[^"\']*/pdf[^"\']*)',
+        # IEEE
+        r'(https?://[^"\']*ieee\.org[^"\']*/stamp\.jsp[^"\']*)',
+        r'(https?://[^"\']*ieeexplore\.ieee\.org[^"\']*/pdf[^"\']*)',
+        # ACM
+        r'(https?://[^"\']*acm\.org[^"\']*/doi/pdf[^"\']*)',
+        r'(https?://[^"\']*dl\.acm\.org[^"\']*/pdf[^"\']*)',
+        # Nature
+        r'(https?://[^"\']*nature\.com[^"\']*/\.pdf[^"\']*)',
+        r'(https?://[^"\']*nature\.com[^"\']*\.pdf[^"\']*)',
+        # Oxford Academic
+        r'(https?://[^"\']*academic\.oup\.com[^"\']*/pdf[^"\']*)',
+        # Cambridge
+        r'(https?://[^"\']*cambridge\.org[^"\']*/pdf[^"\']*)',
+        # SAGE
+        r'(https?://[^"\']*sagepub\.com[^"\']*/pdf[^"\']*)',
+        # Taylor & Francis
+        r'(https?://[^"\']*tandfonline\.com[^"\']*/pdf[^"\']*)',
+    ]
+    for pattern in publisher_patterns:
+        for m in re.finditer(pattern, html, re.IGNORECASE):
+            url = m.group(1).strip()
+            if url and url not in seen and _is_valid_pdf_url(url):
+                candidates.append(url)
+                seen.add(url)
+
+    # 模式 5: 正则匹配 body 中的 PDF URL（通用兜底）
     for m in re.finditer(
         r'(https?://[^\s"\'<>]+\.pdf(?:\?[^\s"\'<>]*)?)',
         html, re.IGNORECASE
@@ -207,15 +255,35 @@ def _try_crossref_title_to_doi(title: str) -> Optional[str]:
 
 
 def _is_valid_pdf_url(url: str) -> bool:
-    """检查 URL 是否看起来像有效的 PDF 链接"""
+    """检查 URL 是否看起来像有效的 PDF 链接。
+
+    过滤掉导航 URL、图片 URL、CSS/JS 资源等误报。
+    """
     if not url or len(url) > 2000:
         return False
-    # 排除明显的非 PDF 链接
     lower = url.lower()
-    skip_patterns = [".css", ".js", ".png", ".jpg", ".gif", ".svg", "#", "javascript:"]
+    # 排除明显的非 PDF 链接
+    skip_extensions = [
+        ".css", ".js", ".jsx", ".ts", ".tsx",
+        ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico",
+        ".mp3", ".mp4", ".wav", ".avi", ".mov",
+        ".zip", ".tar", ".gz", ".rar",
+        ".xml", ".json", ".woff", ".woff2", ".ttf", ".eot",
+    ]
+    for ext in skip_extensions:
+        if lower.endswith(ext):
+            return False
+    skip_patterns = [
+        "javascript:", "mailto:", "tel:", "#",
+        "/login", "/signup", "/register", "/cart", "/checkout",
+        "/cookie", "/privacy", "/terms", "/contact",
+    ]
     for pat in skip_patterns:
         if pat in lower:
             return False
+    # 排除明显的图片/资源路径
+    if re.search(r'/images?/', lower) or re.search(r'/icons?/', lower) or re.search(r'/assets?/', lower):
+        return False
     return True
 
 
@@ -316,9 +384,14 @@ def fetch_pdf(
       2. GET doi.org（跟随重定向）→ 落地页
          - Content-Type 是 PDF？→ 直接保存
          - 是 HTML？→ 进入步骤 3
-      3. HTML 解析 PDF 链接（五种模式）
+      3. HTML 解析 PDF 链接（七种模式，含出版社专用 URL 模式）
       4. 逐候选 URL 下载 + 验证
       5. 兜底: Unpaywall API 获取开放获取链接
+
+    增强特性:
+      - 多 User-Agent 重试（某些出版商会阻断非浏览器 UA）
+      - 常见出版社 URL 模式匹配（ScienceDirect/Springer/Wiley/IEEE/ACM/Nature 等）
+      - 更完善的 URL 验证（过滤导航/图片/资源等误报）
 
     Args:
         doi_or_url: DOI 字符串、完整 URL 或纯论文标题
@@ -352,16 +425,26 @@ def fetch_pdf(
         filename = clean_doi or "paper"
     pdf_path = os.path.join(output_dir, f"{filename}.pdf")
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/pdf,text/html,*/*",
-    }
+    # 多种 User-Agent，某些出版商会阻断非浏览器 UA
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    ]
 
-    max_retries = 2  # 总共尝试 2 次（1 次重试）
+    max_retries = 3  # 总共尝试 3 次（含不同 UA 重试）
     last_error = ""
 
     for attempt in range(max_retries):
+        # 每次重试使用不同的 User-Agent
+        ua = user_agents[attempt % len(user_agents)]
+        headers = {
+            "User-Agent": ua,
+            "Accept": "application/pdf,text/html,*/*",
+        }
+
         try:
             with httpx.Client(
                 proxy=None,  # 绕过本地代理（Clash 等）
@@ -455,13 +538,20 @@ def fetch_pdf(
                             _log.debug(f"候选 {i+1} 下载失败: {e}")
                             continue
 
-                    last_error = f"从出版社页面找到 {len(pdf_urls)} 个候选链接，但均下载失败（可能需要机构网络访问）"
+                    last_error = (
+                        f"从出版社页面找到 {len(pdf_urls)} 个候选链接，但均下载失败。\n"
+                        "建议：\n"
+                        "1. 确保在校园网或已配置机构 VPN 的环境下使用\n"
+                        "2. 尝试在浏览器中手动访问该 DOI 链接并下载 PDF\n"
+                        "3. 部分出版社（如 Elsevier、Springer）需要机构账号登录"
+                    )
                 else:
                     last_error = (
                         "出版社页面未包含 PDF 链接。可能原因：\n"
                         "1. 该文献需要付费订阅或机构网络访问\n"
                         "2. 请确保在校园网环境下使用，或配置正确的代理\n"
-                        "3. 部分出版社需要手动登录后才能下载"
+                        "3. 部分出版社需要手动登录后才能下载\n"
+                        "4. 可尝试在浏览器中打开 DOI 链接手动下载 PDF"
                     )
 
                 # 如果从 doi.org 落地页没找到，跳出重试循环，进入 Unpaywall 兜底

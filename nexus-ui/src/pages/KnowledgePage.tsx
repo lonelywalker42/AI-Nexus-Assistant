@@ -45,6 +45,9 @@ export default function KnowledgePage() {
   const [allTags, setAllTags] = useState<{ name: string; usage_count: number }[]>([]);
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
+  // 摘要重新生成
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+
   // 知识图谱
   const [showGraph, setShowGraph] = useState(false);
   const [graphNodes, setGraphNodes] = useState<{ id: string; label: string; x: number; y: number; size: number; color: string }[]>([]);
@@ -172,6 +175,24 @@ export default function KnowledgePage() {
     if (selectedCard?.id === id) { setSelectedCard(null); setView(activeCategory ? "list" : "categories"); }
   };
 
+  const handleRegenerateSummary = async (cardId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (regeneratingId) return;
+    setRegeneratingId(cardId);
+    try {
+      const result = await knowledgeApi.regenerateSummary(cardId);
+      // 更新卡片列表中的对应卡片
+      setCards(prev => prev.map(c => c.id === cardId ? { ...c, title: result.title, summary: result.summary } : c));
+      if (selectedCard?.id === cardId) {
+        setSelectedCard(prev => prev ? { ...prev, title: result.title, summary: result.summary } : prev);
+      }
+    } catch (err) {
+      alert("重新生成摘要失败: " + err);
+    } finally {
+      setRegeneratingId(null);
+    }
+  };
+
   const handleCardClick = async (card: KnowledgeCard) => {
     try { const full = await knowledgeApi.getCard(card.id); setSelectedCard(full); }
     catch { setSelectedCard(card); }
@@ -185,8 +206,7 @@ export default function KnowledgePage() {
   };
 
   const handleCategoryClick = (key: string) => {
-    if (key === "deepseek") { loadImportGroups(); setView("importGroups"); }
-    else { setActiveCategory(key); setView("list"); }
+    setActiveCategory(key); setView("list");
   };
 
   const handleBackFromList = () => { setActiveCategory(""); setView("categories"); };
@@ -231,7 +251,9 @@ export default function KnowledgePage() {
           setImporting(false);
           if (progress.status === "completed") {
             setImportStatus(`✅ ${progress.progress}`);
-            loadCards();
+            // 重置筛选条件并加载全部卡片，确保分类计数正确
+            setSearch(""); setStarMin(0); setTagFilter("");
+            knowledgeApi.listCards({}).then(setCards).catch(console.error);
             loadImportGroups();
           } else {
             setImportStatus(`❌ 导入失败: ${progress.error}`);
@@ -418,6 +440,10 @@ export default function KnowledgePage() {
               className="text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
               style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6", fontWeight: 600 }}>
               🧠 DeepSeek 智能导入
+            </button>
+            <button onClick={() => { loadImportGroups(); setView("importGroups"); }}
+              className="btn-ghost text-xs py-1.5 disabled:opacity-50">
+              导入记录
             </button>
             <button onClick={handleImportJSON} disabled={importing} className="btn-ghost text-xs py-1.5 disabled:opacity-50">JSON 文件</button>
             <button onClick={handleImportMD} disabled={importing} className="btn-ghost text-xs py-1.5 disabled:opacity-50">Markdown 文件</button>
@@ -757,6 +783,15 @@ export default function KnowledgePage() {
                     <IconChat size={14} />
                   </button>
                 )}
+                {card.source_type === "deepseek" && card.chat_session_id && (!card.summary || card.summary.includes("摘要生成失败")) && (
+                  <button onClick={(e) => handleRegenerateSummary(card.id, e)}
+                    className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
+                    style={{ color: regeneratingId === card.id ? "var(--text-muted)" : "#8b5cf6" }}
+                    disabled={regeneratingId === card.id}
+                    title="重新生成摘要">
+                    {regeneratingId === card.id ? "生成中..." : "生成摘要"}
+                  </button>
+                )}
                 <button onClick={(e) => handleDelete(card.id, e)}
                   className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
                   style={{ color: "var(--text-muted)" }}
@@ -803,6 +838,14 @@ export default function KnowledgePage() {
                     <IconChat size={12} />
                   </button>
                 )}
+                {card.source_type === "deepseek" && card.chat_session_id && (!card.summary || card.summary.includes("摘要生成失败")) && (
+                  <button onClick={(e) => { e.stopPropagation(); handleRegenerateSummary(card.id, e); }}
+                    className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer"
+                    style={{ color: regeneratingId === card.id ? "var(--text-muted)" : "#8b5cf6" }}
+                    disabled={regeneratingId === card.id}>
+                    {regeneratingId === card.id ? "..." : "生成摘要"}
+                  </button>
+                )}
                 <button onClick={(e) => handleDelete(card.id, e)}
                   className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer"
                   style={{ color: "var(--text-muted)" }}>删除</button>
@@ -841,6 +884,14 @@ export default function KnowledgePage() {
                   } catch (err) { alert("加载导入分组失败: " + err); }
                 }}>
                 查看导入对话
+              </button>
+            )}
+            {selectedCard.source_type === "deepseek" && (selectedCard as any).chat_session_id && (!selectedCard.summary || selectedCard.summary.includes("摘要生成失败")) && (
+              <button className="text-xs px-2 py-1.5 rounded-lg cursor-pointer"
+                style={{ background: "rgba(139,92,246,0.1)", color: "#8b5cf6" }}
+                disabled={regeneratingId === selectedCard.id}
+                onClick={() => handleRegenerateSummary(selectedCard.id)}>
+                {regeneratingId === selectedCard.id ? "生成中..." : "重新生成摘要"}
               </button>
             )}
             {(selectedCard as any).chat_session_id && !(selectedCard as any).import_group_id && (

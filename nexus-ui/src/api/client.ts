@@ -5,7 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
-export const APP_VERSION = "4.3.3";
+export const APP_VERSION = "4.3.4";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
@@ -415,6 +415,10 @@ export const knowledgeApi = {
   updateCard: (id: string, data: Partial<KnowledgeCard>) =>
     request<{ id: string }>(`/api/knowledge/cards/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteCard: (id: string) => request<{ ok: boolean }>(`/api/knowledge/cards/${id}`, { method: "DELETE" }),
+  regenerateSummary: (id: string) =>
+    request<{ card_id: string; title: string; summary: string; knowledge_domain: string[] }>(
+      `/api/knowledge/cards/${id}/regenerate-summary`, { method: "POST" }
+    ),
   listTags: () => request<{ name: string; usage_count: number; status: string }[]>("/api/knowledge/tags"),
 };
 
