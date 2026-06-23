@@ -4,7 +4,7 @@
   阶段 1: 解析 JSON → 预处理 → 批量保存完整会话（无 LLM 调用，快速持久化）
   阶段 2: 逐会话调用 LLM API 生成总结概要，每个会话生成一张知识卡片
 
-LLM 调用使用信号量限制并发数（默认最大 20）。
+LLM 调用使用信号量限制并发数（默认最大 5）。
 """
 
 import json
@@ -27,13 +27,20 @@ logger = logging.getLogger(__name__)
 
 # ── LLM 并发控制 ─────────────────────────────────────────────
 
-_MAX_CONCURRENT = 20
+_MAX_CONCURRENT = 5
 _llm_semaphore = Semaphore(_MAX_CONCURRENT)
 _llm_executor = ThreadPoolExecutor(max_workers=_MAX_CONCURRENT, thread_name_prefix="llm-import")
 
 
-def _call_llm(system_prompt: str, user_prompt: str, temperature: float = 0.2) -> str:
-    """调用 LLM，受信号量限制并发数。使用 AIRouter 的同步 chat 接口。"""
+def _call_llm(system_prompt: str, user_prompt: str, temperature: float = 0.2, max_tokens: int = 4096) -> str:
+    """调用 LLM，受信号量限制并发数。使用 AIRouter 的同步 chat 接口。
+
+    含重试逻辑：response_format 失败时自动去掉该参数重试。
+    """
+    # 截断过长的prompt，避免超出模型上下文窗口
+    if len(user_prompt) > 12000:
+        user_prompt = user_prompt[:12000] + "\n\n[内容过长已截断]"
+
     _llm_semaphore.acquire()
     try:
         from app.ai.router import AIRouter
@@ -45,16 +52,27 @@ def _call_llm(system_prompt: str, user_prompt: str, temperature: float = 0.2) ->
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        # 使用 response_format 强制 JSON 输出，提高解析成功率
-        result = router.chat(
-            messages, purpose="summary",
-            temperature=temperature, max_tokens=4096,
-            response_format={"type": "json_object"},
-        )
-        content = result.get("content", "")
-        if content.startswith("[ERROR]"):
-            raise RuntimeError(content)
-        return content
+
+        last_error = None
+        # 先尝试带 response_format，失败则去掉重试
+        for use_json_format in [True, False]:
+            try:
+                kwargs = {"temperature": temperature, "max_tokens": max_tokens}
+                if use_json_format:
+                    kwargs["response_format"] = {"type": "json_object"}
+                result = router.chat(messages, purpose="summary", **kwargs)
+                content = result.get("content", "")
+                if content.startswith("[ERROR]"):
+                    raise RuntimeError(content)
+                return content
+            except Exception as e:
+                last_error = e
+                if use_json_format:
+                    logger.warning("JSON格式调用失败，尝试普通格式: %s", e)
+                    continue
+                raise
+
+        raise last_error or RuntimeError("LLM调用失败")
     finally:
         _llm_semaphore.release()
 
@@ -252,7 +270,11 @@ def summarize_session(conversation_text: str) -> dict:
 
     返回: {"session_title": str, "overall_summary": str, "knowledge_domain": [str]}
     """
-    system = "你是一个专业的个人知识管理助手。请分析以下对话，返回 JSON 格式的会话摘要。"
+    # 截断过长的对话文本（保留前10000字符）
+    if len(conversation_text) > 10000:
+        conversation_text = conversation_text[:10000] + "\n\n[对话过长已截断，以上为前部分内容]"
+
+    system = "你是一个专业的个人知识管理助手。请分析以下对话，返回 JSON 格式的会话摘要。严格返回 JSON，不要包含其他文字。"
     user = f"""请分析这段对话并返回 JSON：
 
 {{
@@ -264,7 +286,15 @@ def summarize_session(conversation_text: str) -> dict:
 对话内容：
 {conversation_text}"""
     result = _call_llm(system, user)
-    return _extract_json(result)
+    try:
+        return _extract_json(result)
+    except ValueError as e:
+        logger.warning("会话摘要JSON解析失败，使用默认值: %s", e)
+        return {
+            "session_title": "",
+            "overall_summary": result[:500] if result else "摘要生成失败",
+            "knowledge_domain": [],
+        }
 
 
 # ══════════════════════════════════════════════════════════════
@@ -284,7 +314,7 @@ def _find_similar_tag(tag_name: str, existing_tags: list[str], threshold: float 
 
 
 def _create_card_tags(db: Session, card: KnowledgeCard, tag_names: list[str], existing_tags: list[str]):
-    """为卡片创建标签关联（归一化去重）"""
+    """为卡片创建标签关联（归一化去重，处理并发冲突）"""
     seen_tags = set()
     tag_count = 0
     for tag_name in tag_names:
@@ -301,11 +331,22 @@ def _create_card_tags(db: Session, card: KnowledgeCard, tag_names: list[str], ex
         if tag:
             tag.usage_count = (tag.usage_count or 0) + 1
         else:
-            tag = Tag(name=final_name, status="suggested", usage_count=1)
-            db.add(tag)
-            existing_tags.append(final_name)
+            try:
+                tag = Tag(name=final_name, status="suggested", usage_count=1)
+                db.add(tag)
+                db.flush()  # 先flush确保Tag存在，捕获UNIQUE冲突
+            except Exception:
+                db.rollback()
+                # 并发插入了相同Tag，重新获取
+                tag = db.get(Tag, final_name)
+                if tag:
+                    tag.usage_count = (tag.usage_count or 0) + 1
+                else:
+                    continue  # 极端情况跳过
         db.add(CardTag(card_id=card.id, tag_name=final_name))
         tag_count += 1
+        if final_name not in existing_tags:
+            existing_tags.append(final_name)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -409,11 +450,12 @@ def _process_single_session_llm(
 
     try:
         summary_data = summarize_session(conversation_text)
+        logger.info("会话摘要成功 [%d/%d]: %s", index + 1, total, title)
     except Exception as e:
-        logger.error("会话摘要失败: %s", e)
+        logger.error("会话摘要失败 [%d/%d] %s: %s", index + 1, total, title, e, exc_info=True)
         summary_data = {
             "session_title": title,
-            "overall_summary": "摘要生成失败",
+            "overall_summary": f"摘要生成失败: {str(e)[:200]}",
             "knowledge_domain": [],
         }
 
@@ -477,7 +519,7 @@ def _llm_batch_worker(args: tuple) -> dict:
 def process_llm_batch(db: Session, group_id: str, session_infos: list[dict]) -> list[dict]:
     """阶段 2: 批量 LLM 处理所有已保存的会话
 
-    使用线程池并发处理（受信号量限制最大 20 并发 LLM 调用）。
+    使用线程池并发处理（受信号量限制最大 5 并发 LLM 调用）。
     """
     total = len(session_infos)
     if total == 0:
@@ -547,14 +589,22 @@ def process_import(db: Session, group_id: str, conversations: list[dict]) -> dic
     group_summary = "；".join(summaries[:5]) if summaries else ""
     error_text = "; ".join(errors) if errors else ""
 
+    # 判断是否全部失败
+    if total_cards == 0 and errors:
+        status = "failed"
+        progress_msg = f"所有 {len(errors)} 个会话的摘要生成均失败"
+    else:
+        status = "completed"
+        progress_msg = (f"完成！共生成 {total_cards} 张知识卡片"
+                        + (f"，{len(errors)} 个会话出错" if errors else ""))
+
     _update_group(db, group_id,
                   card_count=total_cards,
                   summary=group_summary[:2000],
                   knowledge_domain=json.dumps(list(domain_set), ensure_ascii=False),
-                  status="completed",
-                  error=error_text,
-                  progress=f"完成！共生成 {total_cards} 张知识卡片"
-                           + (f"，{len(errors)} 个会话出错" if errors else ""))
+                  status=status,
+                  error=error_text[:2000] if error_text else "",
+                  progress=progress_msg)
 
     return {
         "group_id": group_id,

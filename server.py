@@ -663,7 +663,7 @@ def search_literature(body: SearchRequest):
                 "year": p.get("year"),
                 "journal": p.get("journal", ""),
                 "source": p.get("source", ""),
-                "abstract": (p.get("abstract", "") or "")[:200],
+                "abstract": p.get("abstract", "") or "",
                 "doi": p.get("doi", ""),
                 "url": p.get("url", ""),
             })
@@ -1522,6 +1522,128 @@ def get_paper_citation(paper_id: str, format: str = "gb7714", index: int = 1):
         if not citation:
             raise HTTPException(404, "Paper not found")
         return {"citation": citation, "format": format}
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/{paper_id}/correct-citation")
+def correct_paper_citation(paper_id: str, body: dict):
+    """通过 DOI 或标题重新检索元数据并生成新引用（不自动更新数据库）"""
+    method = body.get("method", "doi")
+    db = get_session()
+    try:
+        paper = paper_service.get_paper(db, paper_id)
+        if not paper:
+            raise HTTPException(404, "Paper not found")
+
+        # 旧引用
+        from app.search.citation import format_gb
+        old_citation = paper.citation or format_gb({
+            "title": paper.title, "authors": json.loads(paper.authors) if paper.authors else [],
+            "year": paper.year, "journal": paper.journal, "doi": paper.doi,
+            "paper_type": paper.paper_type,
+        }, 1)
+
+        # 调用 lookup_metadata 逻辑获取最新元数据
+        from app.services.pdf_service import _fetch_from_openalex, _fetch_from_crossref
+        result = {}
+
+        if method == "doi" and paper.doi:
+            result = _fetch_from_openalex(paper.doi)
+            if not result:
+                result = _fetch_from_crossref(paper.doi)
+
+        if not result and paper.title:
+            # 用标题搜索 OpenAlex
+            try:
+                import urllib.request
+                import urllib.parse
+                encoded_title = urllib.parse.quote(paper.title)
+                url = f"https://api.openalex.org/works?filter=title.search:{encoded_title}&per_page=1"
+                req = urllib.request.Request(url, headers={"User-Agent": "AI-Nexus-Assistant/1.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read())
+                results_list = data.get("results", [])
+                if results_list:
+                    from app.services.pdf_service import _reconstruct_abstract
+                    item = results_list[0]
+                    if item.get("title"):
+                        result["title"] = item["title"]
+                    if item.get("authorships"):
+                        authors = []
+                        for a in item["authorships"]:
+                            name = a.get("author", {}).get("display_name", "")
+                            if name:
+                                authors.append(name)
+                        if authors:
+                            result["authors"] = authors[:10]
+                    if item.get("publication_year"):
+                        result["year"] = item["publication_year"]
+                    if item.get("primary_location", {}).get("source", {}).get("display_name"):
+                        result["journal"] = item["primary_location"]["source"]["display_name"]
+                    if item.get("doi"):
+                        result["doi"] = item["doi"].replace("https://doi.org/", "")
+            except Exception:
+                pass
+
+        if not result:
+            raise HTTPException(404, "无法从外部数据源获取元数据，请检查 DOI 或标题是否正确")
+
+        # 用获取到的元数据生成新引用
+        new_citation = format_gb(result, 1)
+
+        return {
+            "new_citation": new_citation,
+            "metadata": result,
+            "old_citation": old_citation,
+        }
+    finally:
+        db.close()
+
+
+@app.post("/api/papers/{paper_id}/apply-citation")
+def apply_paper_citation(paper_id: str, body: dict):
+    """应用修正后的引用元数据更新论文记录"""
+    metadata = body.get("metadata", {})
+    if not metadata:
+        raise HTTPException(400, "缺少 metadata")
+
+    db = get_session()
+    try:
+        paper = paper_service.get_paper(db, paper_id)
+        if not paper:
+            raise HTTPException(404, "Paper not found")
+
+        # 更新字段
+        if metadata.get("authors"):
+            paper.authors = json.dumps(metadata["authors"], ensure_ascii=False)
+        if metadata.get("year"):
+            try:
+                paper.year = int(metadata["year"])
+            except (ValueError, TypeError):
+                pass
+        if metadata.get("journal"):
+            paper.journal = str(metadata["journal"])[:500]
+        if metadata.get("doi"):
+            paper.doi = str(metadata["doi"])[:200]
+        if metadata.get("title"):
+            paper.title = str(metadata["title"])[:500]
+
+        # 重新生成引用
+        from app.search.citation import format_gb
+        paper_dict = {
+            "title": paper.title,
+            "authors": json.loads(paper.authors) if paper.authors else [],
+            "year": paper.year,
+            "journal": paper.journal,
+            "doi": paper.doi,
+            "paper_type": paper.paper_type,
+        }
+        paper.citation = format_gb(paper_dict, 1)
+
+        db.commit()
+        db.refresh(paper)
+        return _paper_to_dict(paper)
     finally:
         db.close()
 
@@ -3990,6 +4112,7 @@ def delete_agent_workflow(workflow_id: str):
 class FetchPdfRequest(BaseModel):
     doi: str = ""
     title: str = ""
+    location: str = ""  # 机构网络位置（可选，用于日志提示）
 
 
 class BatchFetchPdfRequest(BaseModel):
@@ -4001,6 +4124,7 @@ async def fetch_paper_pdf(req: FetchPdfRequest):
     """从出版社网站拉取 PDF 并入库
 
     流程: DOI/标题 → doi.org 重定向 → 落地页 → PDF 链接提取 → 下载 → 元数据提取 → 入库
+    支持 Unpaywall 开放获取 API 兜底
     """
     if not req.doi and not req.title:
         raise HTTPException(400, "请提供 DOI 或论文标题")
@@ -4010,10 +4134,18 @@ async def fetch_paper_pdf(req: FetchPdfRequest):
 
     pdf_dir = str(data_dir / "pdfs")
 
-    # 拉取 PDF
+    # 拉取 PDF（内部已有重试和 Unpaywall 兜底）
     result = fetch_pdf(req.doi or req.title, pdf_dir, timeout=60)
     if not result.get("success"):
-        raise HTTPException(422, result.get("error", "PDF 拉取失败"))
+        error_msg = result.get("error", "PDF 拉取失败")
+        # 根据错误类型返回更合适的 HTTP 状态码
+        if "超时" in error_msg or "连接失败" in error_msg:
+            raise HTTPException(504, error_msg)
+        if "不存在" in error_msg or "404" in error_msg:
+            raise HTTPException(404, error_msg)
+        if "拒绝" in error_msg or "403" in error_msg:
+            raise HTTPException(403, error_msg)
+        raise HTTPException(422, error_msg)
 
     pdf_path = result["pdf_path"]
 
@@ -4129,7 +4261,14 @@ async def refetch_paper_pdf(paper_id: str):
         result = fetch_pdf(doi_or_url, pdf_dir, timeout=60)
 
         if not result.get("success"):
-            raise HTTPException(422, result.get("error", "PDF 拉取失败"))
+            error_msg = result.get("error", "PDF 拉取失败")
+            if "超时" in error_msg or "连接失败" in error_msg:
+                raise HTTPException(504, error_msg)
+            if "不存在" in error_msg or "404" in error_msg:
+                raise HTTPException(404, error_msg)
+            if "拒绝" in error_msg or "403" in error_msg:
+                raise HTTPException(403, error_msg)
+            raise HTTPException(422, error_msg)
 
         # 更新论文的 local_path
         paper.local_path = result["pdf_path"]

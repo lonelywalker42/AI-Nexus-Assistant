@@ -45,6 +45,7 @@ export default function LiteraturePage() {
   const [expandedAbstracts, setExpandedAbstracts] = useState<Set<number>>(new Set());
   const [reviewPool, setReviewPool] = useState<Set<number>>(new Set());
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [copiedDoiIdx, setCopiedDoiIdx] = useState<number | null>(null);
 
   // AI 综述
   const [reviewInput, setReviewInput] = useState("");
@@ -599,6 +600,28 @@ export default function LiteraturePage() {
                                 {p.journal ? ` · ${p.journal}` : ""}
                               </p>
 
+                              {/* DOI 行 */}
+                              {p.doi && (
+                                <p className="text-xs mt-1 flex items-center gap-1.5" style={{ color: "var(--text-secondary)" }}>
+                                  <span>DOI:</span>
+                                  <span
+                                    className="cursor-pointer transition-colors"
+                                    style={{ color: copiedDoiIdx === i ? "var(--accent-green)" : "var(--accent-blue)" }}
+                                    title="点击复制 DOI"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigator.clipboard.writeText(p.doi).then(() => {
+                                        setCopiedDoiIdx(i);
+                                        setTimeout(() => setCopiedDoiIdx(null), 2000);
+                                      });
+                                    }}
+                                  >
+                                    {p.doi}
+                                    {copiedDoiIdx === i && <span className="ml-1 text-[10px]">已复制 ✓</span>}
+                                  </span>
+                                </p>
+                              )}
+
                               {/* 第三行：摘要（1行，可展开） */}
                               {p.abstract && (
                                 <p
@@ -612,7 +635,7 @@ export default function LiteraturePage() {
                                   }}
                                   onClick={(e) => { e.stopPropagation(); toggleExpandAbstract(i); }}
                                 >
-                                  {p.abstract.slice(0, 300)}
+                                  {p.abstract}
                                   {!isExpanded && p.abstract.length > 150 && (
                                     <span className="ml-1 text-[11px] font-medium" style={{
                                       background: "linear-gradient(90deg, var(--accent-blue), var(--accent-green))",
@@ -698,8 +721,27 @@ export default function LiteraturePage() {
                         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
                           {p.authors?.slice(0, 2).join(", ")}{p.year ? ` · ${p.year}` : ""}
                         </p>
+                        {p.doi && (
+                          <p className="text-[10px] flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
+                            <span>DOI:</span>
+                            <span
+                              className="cursor-pointer truncate"
+                              style={{ color: copiedDoiIdx === i ? "var(--accent-green)" : "var(--accent-blue)" }}
+                              title="点击复制 DOI"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(p.doi).then(() => {
+                                  setCopiedDoiIdx(i);
+                                  setTimeout(() => setCopiedDoiIdx(null), 2000);
+                                });
+                              }}
+                            >
+                              {p.doi}
+                            </span>
+                          </p>
+                        )}
                         {p.abstract && (
-                          <p className="text-[11px] line-clamp-3" style={{ color: "var(--text-muted)" }}>{p.abstract.slice(0, 150)}</p>
+                          <p className="text-[11px] line-clamp-3" style={{ color: "var(--text-muted)" }}>{p.abstract}</p>
                         )}
                         <div className="flex gap-1.5 mt-auto pt-1">
                           <button className="btn-ghost text-[10px] py-1 flex-1" onClick={async () => {

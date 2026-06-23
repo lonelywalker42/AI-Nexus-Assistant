@@ -91,6 +91,13 @@ export default function PaperLibraryPage() {
   // v4.1.0: 拖拽上传
   const [dragOver, setDragOver] = useState(false);
 
+  // v4.4.0: 引用格式修正
+  const [showCorrectDialog, setShowCorrectDialog] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  const [correctOldCitation, setCorrectOldCitation] = useState("");
+  const [correctNewCitation, setCorrectNewCitation] = useState("");
+  const [correctMetadata, setCorrectMetadata] = useState<Record<string, unknown> | null>(null);
+
   // v4.1.0: 分类系统
   const [categories, setCategories] = useState<{ id: string; name: string; parent_id: string; sort_order: number; is_system: boolean; system_key: string; paper_count: number }[]>([]);
 
@@ -166,6 +173,40 @@ export default function PaperLibraryPage() {
     navigator.clipboard.writeText(citationText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // v4.4.0: 引用格式修正
+  const handleCorrectCitation = async (method: "doi" | "title") => {
+    if (!selectedId) return;
+    setCorrecting(true);
+    setCorrectOldCitation(citationText);
+    setCorrectNewCitation("");
+    setCorrectMetadata(null);
+    try {
+      const result = await papersApi.correctCitation(selectedId, method);
+      setCorrectOldCitation(result.old_citation);
+      setCorrectNewCitation(result.new_citation);
+      setCorrectMetadata(result.metadata);
+    } catch (err) {
+      alert(`修正失败: ${err}`);
+      setShowCorrectDialog(false);
+    } finally {
+      setCorrecting(false);
+    }
+  };
+
+  const handleApplyCitation = async () => {
+    if (!selectedId || !correctMetadata) return;
+    try {
+      const updated = await papersApi.applyCitation(selectedId, correctMetadata);
+      setPapers(prev => prev.map(p => p.id === selectedId ? updated : p));
+      setShowCorrectDialog(false);
+      setCorrectMetadata(null);
+      // 刷新引用
+      papersApi.citation(selectedId, citationFormat).then(r => setCitationText(r.citation)).catch(() => {});
+    } catch (err) {
+      alert(`应用失败: ${err}`);
+    }
   };
 
   const handleImportPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -695,6 +736,14 @@ export default function PaperLibraryPage() {
                     <button className="btn-ghost text-[10px] py-1" onClick={handleCopyCitation}>
                       {copied ? "已复制 ✓" : "复制"}
                     </button>
+                    <button className="btn-ghost text-[10px] py-1" onClick={() => {
+                      setShowCorrectDialog(true);
+                      setCorrectOldCitation("");
+                      setCorrectNewCitation("");
+                      setCorrectMetadata(null);
+                    }}>
+                      修正引用
+                    </button>
                   </div>
                 </div>
                 <pre className="text-[10px] p-2 rounded-lg whitespace-pre-wrap break-all"
@@ -1165,6 +1214,83 @@ export default function PaperLibraryPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* v4.4.0: 引用格式修正对话框 */}
+      {showCorrectDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="glass-card p-6 w-[560px] max-h-[80vh] flex flex-col" style={{ background: "var(--glass-bg)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>修正引用格式</h3>
+              <button onClick={() => { setShowCorrectDialog(false); setCorrectMetadata(null); }}
+                className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
+            </div>
+
+            {/* 选择修正方式 */}
+            {!correctNewCitation && !correcting && (
+              <div className="space-y-3">
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  选择修正方式，将通过外部数据源重新获取元数据并生成 GB/T 7714 引用格式。
+                </p>
+                {/* 当前引用预览 */}
+                <div>
+                  <p className="text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>当前引用:</p>
+                  <pre className="text-[10px] p-2 rounded-lg whitespace-pre-wrap break-all"
+                    style={{ background: "var(--hover-bg)", color: "var(--text-secondary)" }}>
+                    {correctOldCitation || citationText || "无引用数据"}
+                  </pre>
+                </div>
+                <div className="flex gap-3">
+                  <button className="btn-gradient btn-click text-sm flex-1 py-2"
+                    onClick={() => handleCorrectCitation("doi")}
+                    disabled={!selected?.doi}>
+                    按 DOI 修正 {selected?.doi ? `(${selected.doi})` : "(无DOI)"}
+                  </button>
+                  <button className="btn-gradient btn-click text-sm flex-1 py-2"
+                    onClick={() => handleCorrectCitation("title")}>
+                    按标题修正
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 加载中 */}
+            {correcting && (
+              <div className="text-center py-8">
+                <div className="animate-spin w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full mx-auto" />
+                <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>正在从外部数据源获取元数据...</p>
+              </div>
+            )}
+
+            {/* 修正结果对比 */}
+            {correctNewCitation && !correcting && (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>旧引用:</p>
+                  <pre className="text-[10px] p-2 rounded-lg whitespace-pre-wrap break-all"
+                    style={{ background: "rgba(239,68,68,0.05)", color: "var(--text-muted)" }}>
+                    {correctOldCitation}
+                  </pre>
+                </div>
+                <div>
+                  <p className="text-xs font-medium mb-1" style={{ color: "var(--accent-green)" }}>新引用:</p>
+                  <pre className="text-[10px] p-2 rounded-lg whitespace-pre-wrap break-all"
+                    style={{ background: "rgba(16,185,129,0.05)", color: "var(--text-primary)" }}>
+                    {correctNewCitation}
+                  </pre>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button className="btn-ghost text-xs" onClick={() => { setShowCorrectDialog(false); setCorrectMetadata(null); }}>
+                    取消
+                  </button>
+                  <button className="btn-gradient btn-click text-xs" onClick={handleApplyCitation}>
+                    确认应用
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

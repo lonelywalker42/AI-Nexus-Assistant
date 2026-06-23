@@ -1,0 +1,8 @@
+{
+  "admin": {
+    "password_hash": "UG2kgFFxVaYAob4PAlOAellwKl9naUmm0BK7/pueJwU=",
+    "salt": "33f613ab9d9d9e72de2288810c683068",
+    "role": "admin",
+    "created_at": "2026-06-23T01:34:23.376049"
+  }
+}

@@ -5,7 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
-export const APP_VERSION = "4.3.0";
+export const APP_VERSION = "4.3.1";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
@@ -660,6 +660,15 @@ export const papersApi = {
   lookupMetadata: (doi: string, title: string) =>
     request<{ metadata: Record<string, unknown> }>("/api/papers/lookup-metadata", {
       method: "POST", body: JSON.stringify({ doi, title }),
+    }),
+
+  // v4.4.0 新增: 引用格式修正
+  correctCitation: (paperId: string, method: "doi" | "title") =>
+    request<{ new_citation: string; metadata: Record<string, unknown>; old_citation: string }>(
+      `/api/papers/${paperId}/correct-citation`, { method: "POST", body: JSON.stringify({ method }) }),
+  applyCitation: (paperId: string, metadata: Record<string, unknown>) =>
+    request<PaperDetail>(`/api/papers/${paperId}/apply-citation`, {
+      method: "POST", body: JSON.stringify({ metadata }),
     }),
 
   // v4.1.0 新增: 分类管理

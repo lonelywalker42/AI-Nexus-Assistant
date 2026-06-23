@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { knowledgeApi, chatApi, importGroupApi, knowledgeImportApi, type KnowledgeCard, type ImportGroup } from "../api/client";
+import { knowledgeApi, importGroupApi, knowledgeImportApi, type KnowledgeCard, type ImportGroup } from "../api/client";
 import { IconFile, IconChat, IconArrowLeft, IconStar, IconLightbulb, IconX, IconGlobe } from "../components/Icons";
 
 const CATEGORIES = [
@@ -191,21 +191,6 @@ export default function KnowledgePage() {
 
   const handleBackFromList = () => { setActiveCategory(""); setView("categories"); };
 
-  const handleChatFromCard = async (card: KnowledgeCard) => {
-    // 如果卡片已有 chat_session_id，直接跳转
-    if (card.chat_session_id) {
-      window.location.hash = `chat-${card.chat_session_id}`;
-      return;
-    }
-    try {
-      const res = await chatApi.createSession(`IDEA: ${card.title.slice(0, 30)}`, "idea");
-      await chatApi.addMessage(res.id,
-        `请帮我分析和拓展以下想法：\n\n标题：${card.title}\n内容：${card.summary || "无"}\n\n请提供：1) 这个想法的可行性分析 2) 可能的研究方向 3) 建议的下一步行动`
-      );
-      await knowledgeApi.updateCard(card.id, { user_notes: `chat_session:${res.id}` });
-      window.location.hash = `chat-${res.id}`;
-    } catch (err) { alert("创建对话失败: " + err); }
-  };
 
   // ── DeepSeek 智能导入 ──────────────────────────────────────
 
@@ -764,10 +749,6 @@ export default function KnowledgePage() {
                 <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{new Date(card.updated_at || card.created_at).toLocaleDateString()}</span>
               </div>
               <div className="flex flex-col gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={(e) => { e.stopPropagation(); handleChatFromCard(card); }}
-                  className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
-                  style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}
-                  title="AI 对话分析"><IconChat size={12} /></button>
                 <button onClick={(e) => handleDelete(card.id, e)}
                   className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
                   style={{ color: "var(--text-muted)" }}
@@ -806,9 +787,6 @@ export default function KnowledgePage() {
                 <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{new Date(card.updated_at || card.created_at).toLocaleDateString()}</span>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={(e) => { e.stopPropagation(); handleChatFromCard(card); }}
-                  className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer"
-                  style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>AI</button>
                 <button onClick={(e) => handleDelete(card.id, e)}
                   className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer"
                   style={{ color: "var(--text-muted)" }}>删除</button>
@@ -835,13 +813,23 @@ export default function KnowledgePage() {
               {new Date(selectedCard.created_at).toLocaleString("zh-CN")}
             </span>
             <div className="flex-1" />
-            <button className="btn-ghost text-xs py-1.5 flex items-center gap-1.5"
-              onClick={() => handleChatFromCard(selectedCard)}>
-              <IconChat size={13} /> AI 对话分析
-            </button>
-            {(selectedCard as any).chat_session_id && (
+            {(selectedCard as any).import_group_id && (
               <button className="text-xs px-2 py-1.5 rounded-lg cursor-pointer"
                 style={{ background: "rgba(139,92,246,0.1)", color: "#8b5cf6" }}
+                onClick={async () => {
+                  try {
+                    const detail = await importGroupApi.get((selectedCard as any).import_group_id);
+                    setSelectedGroup(detail);
+                    setGroupCards(detail.cards || []);
+                    setView("importGroupDetail");
+                  } catch (err) { alert("加载导入分组失败: " + err); }
+                }}>
+                查看导入对话
+              </button>
+            )}
+            {(selectedCard as any).chat_session_id && !(selectedCard as any).import_group_id && (
+              <button className="text-xs px-2 py-1.5 rounded-lg cursor-pointer"
+                style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}
                 onClick={() => { window.location.hash = `chat-${(selectedCard as any).chat_session_id}`; }}>
                 查看关联对话
               </button>

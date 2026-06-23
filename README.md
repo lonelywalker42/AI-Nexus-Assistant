@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献管理、试验管理、知识库、AI对话、音乐播放、电子书阅读的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v4.3.0-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v4.3.1-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,7 +16,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v4.3.0 |
+| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v4.3.1 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ## 功能模块
@@ -241,6 +241,7 @@ API 文档: `http://127.0.0.1:8765/docs`
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| v4.3.1 | 2026-06-23 | 文献检索增强（引用修正、DOI复制、PDF获取修复）+ DeepSeek导入修复（FOREIGN KEY、摘要生成、UI跳转） |
 | v4.3.0 | 2026-06-23 | 代码规范化（API层统一、重复代码消除、返回格式统一、检查更新修复） |
 | v3.6.0 | 2026-06-21 | ScholarAIO特性移植（出版社PDF拉取、MinerU PDF转换、arXiv导入、BibTeX/RIS导入、论文笔记、元数据审计、语义推荐） |
 | v3.5.0 | 2026-06-21 | 科研助手功能增强（PDF元数据提取、FTS5索引、语义搜索、引用图谱、主题聚类、工作区） |

@@ -10,15 +10,16 @@ DATABASE_URL = f"sqlite:///{get_data_dir() / 'nexus.db'}"
 engine = create_engine(
     DATABASE_URL,
     echo=False,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
 )
 
-# 启用 WAL 模式
+# 启用 WAL 模式 + busy_timeout
 @event.listens_for(engine, "connect")
 def _set_sqlite_pragma(dbapi_conn, connection_record):
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout = 10000")
     cursor.close()
 
 

@@ -23,11 +23,20 @@ def normalize_doi(doi_or_url: str) -> str:
       - "10.xxxx/yyy"         → "https://doi.org/10.xxxx/yyy"
       - "https://doi.org/..." → 直接返回
       - "doi:10.xxxx/yyy"    → "https://doi.org/10.xxxx/yyy"
+      - "http://dx.doi.org/..." → "https://doi.org/..."
+      - "DOI: 10.xxxx/yyy"  → "https://doi.org/10.xxxx/yyy"
+      - 带空格/换行的 DOI    → 自动清理
     """
     s = doi_or_url.strip()
     if not s:
         return ""
-    # 已经是 URL
+    # 清理多余空白和换行
+    s = re.sub(r'\s+', '', s)
+    # 已经是 URL — 统一为 https://doi.org/
+    if s.startswith("http://doi.org/") or s.startswith("https://doi.org/"):
+        return s.replace("http://doi.org/", "https://doi.org/")
+    if s.startswith("http://dx.doi.org/") or s.startswith("https://dx.doi.org/"):
+        return s.replace("http://dx.doi.org/", "https://doi.org/").replace("https://dx.doi.org/", "https://doi.org/")
     if s.startswith("http://") or s.startswith("https://"):
         return s
     # 去掉 "doi:" 前缀
@@ -137,6 +146,61 @@ def normalize_pdf_header(content: bytes) -> bytes:
 # 阶段 4: 下载管线
 
 
+def _try_unpaywall(doi: str) -> Optional[str]:
+    """尝试从 Unpaywall API 获取开放获取 PDF 链接。
+
+    Args:
+        doi: 纯 DOI（不含 URL 前缀）
+
+    Returns:
+        PDF URL 或 None
+    """
+    import urllib.request
+    import json as _json
+
+    clean_doi = doi.strip()
+    # 去掉可能的 URL 前缀
+    if clean_doi.startswith("https://doi.org/"):
+        clean_doi = clean_doi[len("https://doi.org/"):]
+    elif clean_doi.startswith("http://doi.org/"):
+        clean_doi = clean_doi[len("http://doi.org/"):]
+
+    try:
+        url = f"https://api.unpaywall.org/v2/{clean_doi}?email=test@example.com"
+        req = urllib.request.Request(url, headers={"User-Agent": "AI-Nexus-Assistant/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read())
+
+        # 优先取 best_oa_location
+        best = data.get("best_oa_location")
+        if best and best.get("url_for_pdf"):
+            return best["url_for_pdf"]
+
+        # 遍历所有 oa_locations
+        for loc in data.get("oa_locations", []):
+            if loc.get("url_for_pdf"):
+                return loc["url_for_pdf"]
+
+    except Exception as e:
+        _log.debug(f"Unpaywall 查询失败 ({clean_doi}): {e}")
+
+    return None
+
+
+def _extract_doi_from_url(url_or_doi: str) -> str:
+    """从 URL 或 DOI 字符串中提取纯 DOI"""
+    s = url_or_doi.strip()
+    if s.startswith("https://doi.org/"):
+        return s[len("https://doi.org/"):]
+    if s.startswith("http://doi.org/"):
+        return s[len("http://doi.org/"):]
+    if s.startswith("https://dx.doi.org/"):
+        return s[len("https://dx.doi.org/"):]
+    if re.match(r"^10\.\d{4,}/", s):
+        return s
+    return ""
+
+
 def fetch_pdf(
     doi_or_url: str,
     output_dir: str,
@@ -152,6 +216,7 @@ def fetch_pdf(
          - 是 HTML？→ 进入步骤 3
       3. HTML 解析 PDF 链接（三种模式）
       4. 逐候选 URL 下载 + 验证
+      5. 兜底: Unpaywall API 获取开放获取链接
 
     Args:
         doi_or_url: DOI 字符串或完整 URL
@@ -166,7 +231,7 @@ def fetch_pdf(
 
     url = normalize_doi(doi_or_url)
     if not url:
-        return {"success": False, "error": "无效的 DOI 或 URL"}
+        return {"success": False, "error": "无效的 DOI 或 URL，请检查输入格式（如 10.1234/abcd）"}
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -183,104 +248,164 @@ def fetch_pdf(
         "Accept": "application/pdf,text/html,*/*",
     }
 
-    try:
-        with httpx.Client(
-            proxy=None,  # 绕过本地代理（Clash 等）
-            follow_redirects=True,
-            timeout=timeout,
-            headers=headers,
-        ) as client:
-            # 阶段 2: 抓取落地页
-            _log.info(f"正在获取: {url}")
-            resp = client.get(url)
-            resp.raise_for_status()
+    max_retries = 2  # 总共尝试 2 次（1 次重试）
+    last_error = ""
 
-            content_type = resp.headers.get("content-type", "").lower()
+    for attempt in range(max_retries):
+        try:
+            with httpx.Client(
+                proxy=None,  # 绕过本地代理（Clash 等）
+                follow_redirects=True,
+                timeout=timeout,
+                headers=headers,
+            ) as client:
+                # 阶段 2: 抓取落地页
+                _log.info(f"正在获取: {url} (尝试 {attempt+1}/{max_retries})")
+                resp = client.get(url)
 
-            # 如果直接返回 PDF
-            if "application/pdf" in content_type:
-                raw = resp.content
-                if validate_pdf(raw):
-                    raw = normalize_pdf_header(raw)
-                    with open(pdf_path, "wb") as f:
-                        f.write(raw)
-                    _log.info(f"直接下载 PDF: {pdf_path}")
-                    return {
-                        "success": True,
-                        "pdf_path": pdf_path,
-                        "source_url": str(resp.url),
-                        "method": "direct",
-                    }
+                # 区分不同 HTTP 错误
+                if resp.status_code == 403:
+                    last_error = "访问被拒绝 (403)，该文献可能需要机构网络访问或付费订阅"
+                    continue
+                if resp.status_code == 404:
+                    last_error = "DOI 对应的页面不存在 (404)，请检查 DOI 是否正确"
+                    break  # 404 不重试
+                if resp.status_code == 429:
+                    last_error = "请求过于频繁 (429)，请稍后重试"
+                    continue
+                if resp.status_code >= 500:
+                    last_error = f"服务器错误 ({resp.status_code})，出版社服务可能暂时不可用"
+                    continue  # 5xx 重试
 
-            # 阶段 3: 从 HTML 提取 PDF 链接
-            html = resp.text
-            pdf_urls = extract_pdf_urls_from_html(html)
+                resp.raise_for_status()
 
-            if not pdf_urls:
-                # 尝试从 HTML 中提取重定向的 PDF URL
-                redirect_match = re.search(
-                    r'(?:window\.location|location\.href)\s*=\s*["\']([^"\']*\.pdf[^"\']*)["\']',
-                    html, re.IGNORECASE
-                )
-                if redirect_match:
-                    pdf_urls = [redirect_match.group(1)]
+                content_type = resp.headers.get("content-type", "").lower()
 
-            if not pdf_urls:
-                return {
-                    "success": False,
-                    "error": "未找到 PDF 链接",
-                    "source_url": str(resp.url),
-                    "html_snippet": html[:500],
-                }
+                # 如果直接返回 PDF
+                if "application/pdf" in content_type:
+                    raw = resp.content
+                    if validate_pdf(raw):
+                        raw = normalize_pdf_header(raw)
+                        with open(pdf_path, "wb") as f:
+                            f.write(raw)
+                        _log.info(f"直接下载 PDF: {pdf_path}")
+                        return {
+                            "success": True,
+                            "pdf_path": pdf_path,
+                            "source_url": str(resp.url),
+                            "method": "direct",
+                        }
 
-            _log.info(f"找到 {len(pdf_urls)} 个候选 PDF URL")
+                # 阶段 3: 从 HTML 提取 PDF 链接
+                html = resp.text
+                pdf_urls = extract_pdf_urls_from_html(html)
 
-            # 阶段 4: 逐候选 URL 尝试下载
-            for i, pdf_url in enumerate(pdf_urls):
-                # 相对 URL 补全
-                if pdf_url.startswith("/"):
-                    from urllib.parse import urljoin
-                    pdf_url = urljoin(str(resp.url), pdf_url)
-                elif not pdf_url.startswith("http"):
-                    from urllib.parse import urljoin
-                    pdf_url = urljoin(str(resp.url) + "/", pdf_url)
+                if not pdf_urls:
+                    # 尝试从 HTML 中提取重定向的 PDF URL
+                    redirect_match = re.search(
+                        r'(?:window\.location|location\.href)\s*=\s*["\']([^"\']*\.pdf[^"\']*)["\']',
+                        html, re.IGNORECASE
+                    )
+                    if redirect_match:
+                        pdf_urls = [redirect_match.group(1)]
 
-                try:
-                    _log.info(f"尝试候选 {i+1}/{len(pdf_urls)}: {pdf_url[:100]}")
-                    pdf_resp = client.get(pdf_url)
+                if pdf_urls:
+                    _log.info(f"找到 {len(pdf_urls)} 个候选 PDF URL")
+
+                    # 阶段 4: 逐候选 URL 尝试下载
+                    for i, pdf_url in enumerate(pdf_urls):
+                        # 相对 URL 补全
+                        if pdf_url.startswith("/"):
+                            from urllib.parse import urljoin
+                            pdf_url = urljoin(str(resp.url), pdf_url)
+                        elif not pdf_url.startswith("http"):
+                            from urllib.parse import urljoin
+                            pdf_url = urljoin(str(resp.url) + "/", pdf_url)
+
+                        try:
+                            _log.info(f"尝试候选 {i+1}/{len(pdf_urls)}: {pdf_url[:100]}")
+                            pdf_resp = client.get(pdf_url)
+                            pdf_resp.raise_for_status()
+
+                            raw = pdf_resp.content
+                            if validate_pdf(raw):
+                                raw = normalize_pdf_header(raw)
+                                with open(pdf_path, "wb") as f:
+                                    f.write(raw)
+                                _log.info(f"PDF 下载成功: {pdf_path}")
+                                return {
+                                    "success": True,
+                                    "pdf_path": pdf_path,
+                                    "source_url": pdf_url,
+                                    "method": f"candidate_{i+1}",
+                                }
+                            else:
+                                _log.debug(f"候选 {i+1}: 非有效 PDF")
+                        except Exception as e:
+                            _log.debug(f"候选 {i+1} 下载失败: {e}")
+                            continue
+
+                    last_error = f"从出版社页面找到 {len(pdf_urls)} 个候选链接，但均下载失败（可能需要机构网络访问）"
+                else:
+                    last_error = "出版社页面未包含 PDF 链接，该文献可能需要付费订阅或机构网络访问"
+
+                # 如果从 doi.org 落地页没找到，跳出重试循环，进入 Unpaywall 兜底
+                break
+
+        except httpx.TimeoutException:
+            last_error = f"请求超时 ({timeout}s)，网络连接可能较慢"
+            if attempt < max_retries - 1:
+                _log.info(f"超时，正在重试...")
+                continue
+        except httpx.ConnectError:
+            last_error = "网络连接失败，请检查网络连接"
+            break  # 连接错误不重试
+        except httpx.HTTPStatusError as e:
+            last_error = f"HTTP 错误 {e.response.status_code}"
+            if e.response.status_code >= 500 and attempt < max_retries - 1:
+                continue
+            break
+        except Exception as e:
+            last_error = f"拉取异常: {str(e)}"
+            _log.error(f"PDF 拉取异常: {e}")
+            break
+
+    # 阶段 5: Unpaywall API 兜底
+    _log.info(f"出版社直接拉取失败，尝试 Unpaywall API 兜底...")
+    doi = _extract_doi_from_url(doi_or_url)
+    if doi:
+        unpaywall_url = _try_unpaywall(doi)
+        if unpaywall_url:
+            _log.info(f"Unpaywall 找到 OA 链接: {unpaywall_url[:100]}")
+            try:
+                with httpx.Client(
+                    proxy=None,
+                    follow_redirects=True,
+                    timeout=timeout,
+                    headers=headers,
+                ) as client:
+                    pdf_resp = client.get(unpaywall_url)
                     pdf_resp.raise_for_status()
-
                     raw = pdf_resp.content
                     if validate_pdf(raw):
                         raw = normalize_pdf_header(raw)
                         with open(pdf_path, "wb") as f:
                             f.write(raw)
-                        _log.info(f"PDF 下载成功: {pdf_path}")
+                        _log.info(f"Unpaywall PDF 下载成功: {pdf_path}")
                         return {
                             "success": True,
                             "pdf_path": pdf_path,
-                            "source_url": pdf_url,
-                            "method": f"candidate_{i+1}",
+                            "source_url": unpaywall_url,
+                            "method": "unpaywall",
                         }
-                    else:
-                        _log.debug(f"候选 {i+1}: 非有效 PDF")
-                except Exception as e:
-                    _log.debug(f"候选 {i+1} 下载失败: {e}")
-                    continue
+            except Exception as e:
+                _log.debug(f"Unpaywall 下载失败: {e}")
+                last_error += f"；Unpaywall OA 链接也下载失败"
 
-            return {
-                "success": False,
-                "error": f"所有 {len(pdf_urls)} 个候选 URL 均下载失败",
-                "candidates": pdf_urls[:5],
-            }
-
-    except httpx.TimeoutException:
-        return {"success": False, "error": f"请求超时 ({timeout}s)"}
-    except httpx.HTTPStatusError as e:
-        return {"success": False, "error": f"HTTP 错误: {e.response.status_code}"}
-    except Exception as e:
-        _log.error(f"PDF 拉取异常: {e}")
-        return {"success": False, "error": str(e)}
+    return {
+        "success": False,
+        "error": last_error or "PDF 拉取失败",
+    }
 
 
 def batch_fetch_pdf(
