@@ -2647,6 +2647,10 @@ class GameMinesweeper {
         this.drawHelp();
         return;
       }
+      // Any other key dismisses help and starts the game
+      this.showHelp = false;
+      if (this._helpRaf) cancelAnimationFrame(this._helpRaf);
+      this.loop();
       return;
     }
     if (this.over || this.won) {
@@ -3030,6 +3034,7 @@ class GamePacman {
     if (this.over) {
       if (e.key === 'r') { this.destroy(); gameInstance = new GamePacman(); gameInstance.init(); return; }
       if (e.key === 'h' || e.key === 'H') { showHighScores('pacman'); return; }
+      if (e.key === 'Escape') { backToMenu(); return; }
       return;
     }
     const map = { ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 }, ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 } };
@@ -4350,11 +4355,11 @@ class GameRacer {
         // Random lane position: -0.6 to 0.6 (avoid edges)
         const lane = (Math.random() - 0.5) * 1.2;
         const colors = [C.red, C.amber, C.cyan, C.magenta, C.blue, '#ff6600', '#cc33ff', '#33ccff', '#ffcc00', '#66ff33'];
-        this.obstacles.push({ x: lane, dist: 0, color: colors[Math.floor(Math.random() * colors.length)] });
+        this.obstacles.push({ x: lane, dist: -0.5, color: colors[Math.floor(Math.random() * colors.length)] });
       }
     }
     // Move obstacles toward player
-    const moveSpeed = (this.speed + 80) * dt / 1000;
+    const moveSpeed = this.speed * dt / 1000;
     this.obstacles.forEach(o => { o.dist += moveSpeed; });
     // Remove passed obstacles
     this.obstacles = this.obstacles.filter(o => o.dist < 1.2);

@@ -5,8 +5,9 @@
 ### 修复
 - **Pong首次失分卡死**: 修复球出界后 respawn 逻辑使用索引赋值导致数组错位 — 改用 push 方式 respawn，AI 追踪增加空值保护
 - **Flappy Bird障碍间距**: 管道生成间隔从200帧增至250帧，垂直间隙从150px增至160px，间隙生成范围优化
-- **Pac-Man ESC退出**: 将 ESC 键处理提升至方法顶部，确保在所有游戏状态下（帮助/游戏中/结束）均可退出
-- **Racer无行驶车辆**: 障碍生成间隔从80帧降至50帧，速度阈值从10降至3，车辆尺寸增大（50x35），新增挡风玻璃/尾灯细节
+- **Pac-Man ESC退出（补丁）**: game over 状态缺少 Escape 键处理 — 补充 `if (e.key === 'Escape') { backToMenu(); return; }`
+- **Racer无行驶车辆（补丁）**: 障碍物从 dist=0 生成导致首帧不可见 — 改为 dist=-0.5；移速公式 `(speed+80)` 去掉 +80 基础值，使障碍物仅在玩家加速时逼近
+- **Mines hard模式无响应（补丁）**: help 界面 handleKey 仅处理 D/Escape，其余按键直接 return — 补充任意键 dismiss help 并启动游戏循环
 - **IDEA卡片显示**: 增加 loading/error 状态管理，API 失败时显示错误信息和重试按钮
 - **引用按钮UI统一**: DOI 复制按钮补全 h-[28px] leading-none，三个控件样式完全一致
 - **PDF拉取错误信息**: 优化 422 错误提示，提供 4 种具体操作建议（校园网/手动下载/Sci-Hub/作者主页）
