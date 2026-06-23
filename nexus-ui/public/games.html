@@ -84,7 +84,7 @@ function getHighScore(gameKey) {
 
 function showHighScores(gameKey) {
   const scores = getHighScores(gameKey);
-  const gameNames = { '2048': '2 0 4 8', 'tetris': 'TETRIS', 'shooter': 'SHOOTER', 'wordhopper': 'WORD HOP', 'snake': 'SNAKE', 'breakout': 'BREAKOUT', 'minesweeper': 'MINES', 'flappy': 'FLAPPY', 'pacman': 'PAC-MAN', 'pong': 'PONG', 'frogger': 'FROGGER', 'bomberman': 'BOMBER' };
+  const gameNames = { '2048': '2 0 4 8', 'tetris': 'TETRIS', 'shooter': 'SHOOTER', 'wordhopper': 'WORD HOP', 'snake': 'SNAKE', 'breakout': 'BREAKOUT', 'minesweeper': 'MINES', 'flappy': 'FLAPPY', 'pacman': 'PAC-MAN', 'pong': 'PONG', 'frogger': 'FROGGER', 'bomberman': 'BOMBER', 'invaders': 'INVADERS', 'hextris': 'HEXTRIS', 'tower': 'TOWER', 'racer': 'RACER' };
   let selected = -1; // -1 = back button
 
   function drawScores() {
@@ -3776,6 +3776,656 @@ class GameBomberman {
     }
   }
 }
+
+// ══════════════════════════════════════════════
+//  SPACE INVADERS
+// ══════════════════════════════════════════════
+class GameInvaders {
+  constructor() { this.over = false; }
+
+  init(savedState) {
+    this.score = 0; this.lives = 3; this.level = 1; this.over = false;
+    this.player = { x: W / 2 - 15, w: 30, h: 16 };
+    this.bullets = []; this.enemyBullets = [];
+    this.enemies = []; this.barriers = [];
+    this.dir = 1; this.moveTimer = 0; this.moveInterval = 600;
+    this.shootTimer = 0; this.stars = Array.from({ length: 50 }, () => ({
+      x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.5 + 0.5
+    }));
+    this.initLevel();
+    this._keyH = (e) => this.key(e);
+    document.addEventListener('keydown', this._keyH);
+    this.lastTime = performance.now();
+    this.loop();
+  }
+
+  initLevel() {
+    this.enemies = [];
+    const rows = 5, cols = 8, ew = 28, eh = 20, gap = 6;
+    const sx = (W - cols * (ew + gap)) / 2;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        this.enemies.push({
+          x: sx + c * (ew + gap), y: 60 + r * (eh + gap),
+          w: ew, h: eh, type: r < 1 ? 2 : r < 3 ? 1 : 0, alive: true
+        });
+      }
+    }
+    this.moveInterval = Math.max(200, 600 - this.level * 50);
+    this.dir = 1;
+  }
+
+  saveProgress() { saveGameProgress('invaders', { score: this.score, lives: this.lives, level: this.level }); }
+  destroy() { document.removeEventListener('keydown', this._keyH); if (this._raf) cancelAnimationFrame(this._raf); }
+
+  key(e) {
+    if (e.key === 'Escape') { backToMenu(); return; }
+    if (this.over && e.key === 'r') { this.init(); return; }
+    if (this.over && (e.key === 'h' || e.key === 'H')) { showHighScores('invaders'); return; }
+    if (this.over) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); this.player.x = Math.max(5, this.player.x - 8); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); this.player.x = Math.min(W - this.player.w - 5, this.player.x + 8); }
+    if (e.key === ' ') { e.preventDefault(); if (this.bullets.length < 3) this.bullets.push({ x: this.player.x + this.player.w / 2 - 2, y: H - 70, w: 4, h: 10 }); }
+  }
+
+  loop() {
+    if (this.over) { this.draw(); return; }
+    const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
+    this.moveTimer += dt; this.shootTimer += dt;
+    // Move enemies
+    if (this.moveTimer >= this.moveInterval) {
+      this.moveTimer = 0;
+      let edgeHit = false;
+      this.enemies.filter(e => e.alive).forEach(e => { e.x += this.dir * 12; if (e.x <= 5 || e.x + e.w >= W - 5) edgeHit = true; });
+      if (edgeHit) { this.dir *= -1; this.enemies.filter(e => e.alive).forEach(e => { e.y += 16; e.x += this.dir * 12; }); }
+      // Check if enemies reached bottom
+      if (this.enemies.some(e => e.alive && e.y + e.h >= H - 60)) { this.gameOver(); return; }
+    }
+    // Enemy shoot
+    if (this.shootTimer >= Math.max(400, 1200 - this.level * 100)) {
+      this.shootTimer = 0;
+      const alive = this.enemies.filter(e => e.alive);
+      if (alive.length) { const e = alive[Math.floor(Math.random() * alive.length)]; this.enemyBullets.push({ x: e.x + e.w / 2, y: e.y + e.h }); }
+    }
+    // Move bullets
+    this.bullets = this.bullets.filter(b => { b.y -= 6; return b.y > 0; });
+    this.enemyBullets = this.enemyBullets.filter(b => { b.y += 4; return b.y < H; });
+    // Bullet-enemy collision
+    this.bullets = this.bullets.filter(b => {
+      for (let e of this.enemies) {
+        if (e.alive && b.x < e.x + e.w && b.x + b.w > e.x && b.y < e.y + e.h && b.y + b.h > e.y) {
+          e.alive = false; this.score += (3 - e.type) * 10; return false;
+        }
+      }
+      return true;
+    });
+    // Enemy bullet-player collision
+    this.enemyBullets = this.enemyBullets.filter(b => {
+      if (b.x > this.player.x && b.x < this.player.x + this.player.w && b.y > H - 70 && b.y < H - 50) {
+        this.lives--; if (this.lives <= 0) { this.gameOver(); } return false;
+      }
+      return true;
+    });
+    // Level complete
+    if (this.enemies.every(e => !e.alive)) { this.level++; this.initLevel(); }
+    this.draw();
+    this._raf = requestAnimationFrame(() => this.loop());
+  }
+
+  gameOver() {
+    this.over = true;
+    saveHighScore('invaders', this.score, { level: this.level });
+    clearGameProgress('invaders');
+    this.draw();
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    // Stars
+    this.stars.forEach(s => { ctx.fillStyle = `rgba(255,255,255,${s.s / 2})`; ctx.fillRect(s.x, s.y, s.s, s.s); });
+    // Enemies
+    const colors = [C.green, C.cyan, C.amber];
+    this.enemies.filter(e => e.alive).forEach(e => {
+      ctx.fillStyle = colors[e.type];
+      // Pixel art enemy
+      const px = 4;
+      if (e.type === 2) { // Top alien
+        ctx.fillRect(e.x + 12, e.y, px, px); ctx.fillRect(e.x + 16, e.y, px, px);
+        ctx.fillRect(e.x + 8, e.y + 4, px * 3, px);
+        ctx.fillRect(e.x + 4, e.y + 8, px * 4, px);
+        ctx.fillRect(e.x + 8, e.y + 12, px, px); ctx.fillRect(e.x + 16, e.y + 12, px, px);
+      } else if (e.type === 1) { // Middle alien
+        ctx.fillRect(e.x + 8, e.y, px * 3, px);
+        ctx.fillRect(e.x + 4, e.y + 4, px * 5, px);
+        ctx.fillRect(e.x + 4, e.y + 8, px, px); ctx.fillRect(e.x + 12, e.y + 8, px, px); ctx.fillRect(e.x + 20, e.y + 8, px, px);
+        ctx.fillRect(e.x + 8, e.y + 12, px, px); ctx.fillRect(e.x + 16, e.y + 12, px, px);
+      } else { // Bottom alien
+        ctx.fillRect(e.x + 8, e.y, px * 3, px);
+        ctx.fillRect(e.x + 4, e.y + 4, px * 5, px);
+        ctx.fillRect(e.x + 4, e.y + 8, px * 5, px);
+        ctx.fillRect(e.x + 8, e.y + 12, px, px); ctx.fillRect(e.x + 16, e.y + 12, px, px);
+      }
+    });
+    // Player
+    ctx.fillStyle = C.green;
+    ctx.fillRect(this.player.x, H - 66, this.player.w, this.player.h);
+    ctx.fillRect(this.player.x + 12, H - 74, 6, 8);
+    // Bullets
+    ctx.fillStyle = C.amber;
+    this.bullets.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+    ctx.fillStyle = C.red;
+    this.enemyBullets.forEach(b => ctx.fillRect(b.x - 2, b.y, 4, 8));
+    // HUD
+    ctx.fillStyle = C.amber; ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'left';
+    ctx.fillText('SCORE ' + this.score, 10, 20);
+    ctx.fillStyle = C.cyan; ctx.fillText('LV ' + this.level, 10, 38);
+    ctx.fillStyle = C.red; ctx.textAlign = 'right';
+    ctx.fillText('♥'.repeat(this.lives), W - 10, 20);
+    // Game over
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.red; ctx.font = '28px Consolas, monospace';
+      ctx.fillText('GAME OVER', W / 2, H / 2 - 40);
+      ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace';
+      ctx.fillText('Score: ' + this.score, W / 2, H / 2 - 10);
+      const hi = getHighScore('invaders');
+      if (hi > 0) { ctx.fillStyle = C.yellow; ctx.font = '12px Consolas, monospace'; ctx.fillText('BEST: ' + hi, W / 2, H / 2 + 15); }
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
+      ctx.fillText('R restart · ESC menu · H scores', W / 2, H / 2 + 45);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  HEXTRIS (Simplified Hexagonal Block Puzzle)
+// ══════════════════════════════════════════════
+class GameHextris {
+  constructor() { this.over = false; }
+
+  init() {
+    this.score = 0; this.over = false;
+    this.hex = { angle: 0, sides: [0, 0, 0, 0, 0, 0] }; // 6 sides, color index
+    this.blocks = []; // falling blocks {side, color}
+    this.stacked = [[], [], [], [], [], []]; // blocks stacked on each side
+    this.spawnTimer = 0; this.spawnInterval = 1200;
+    this.colors = [C.red, C.green, C.blue, C.yellow, C.magenta, C.cyan];
+    this.lastTime = performance.now();
+    this._keyH = (e) => this.key(e);
+    document.addEventListener('keydown', this._keyH);
+    this.loop();
+  }
+
+  saveProgress() { saveGameProgress('hextris', { score: this.score }); }
+  destroy() { document.removeEventListener('keydown', this._keyH); if (this._raf) cancelAnimationFrame(this._raf); }
+
+  key(e) {
+    if (e.key === 'Escape') { backToMenu(); return; }
+    if (this.over && e.key === 'r') { this.init(); return; }
+    if (this.over && (e.key === 'h' || e.key === 'H')) { showHighScores('hextris'); return; }
+    if (this.over) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); this.hex.angle = (this.hex.angle + 1) % 6; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); this.hex.angle = (this.hex.angle + 5) % 6; }
+  }
+
+  spawnBlock() {
+    const side = Math.floor(Math.random() * 6);
+    const color = Math.floor(Math.random() * this.colors.length);
+    this.blocks.push({ side, color, progress: 0 });
+  }
+
+  loop() {
+    if (this.over) { this.draw(); return; }
+    const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
+    this.spawnTimer += dt;
+    if (this.spawnTimer >= this.spawnInterval) {
+      this.spawnTimer = 0;
+      this.spawnBlock();
+      this.spawnInterval = Math.max(400, this.spawnInterval - 20);
+    }
+    // Move blocks
+    this.blocks.forEach(b => { b.progress += dt / 800; });
+    // Check collision with hexagon
+    this.blocks = this.blocks.filter(b => {
+      if (b.progress >= 1) {
+        const targetSide = (b.side + this.hex.angle) % 6;
+        this.stacked[targetSide].push(b.color);
+        // Check match
+        if (this.stacked[targetSide].length >= 3) {
+          const last3 = this.stacked[targetSide].slice(-3);
+          if (last3[0] === last3[1] && last3[1] === last3[2]) {
+            this.stacked[targetSide].splice(-3, 3);
+            this.score += 100;
+          }
+        }
+        // Check overflow
+        if (this.stacked[targetSide].length >= 8) {
+          this.over = true;
+          saveHighScore('hextris', this.score);
+          clearGameProgress('hextris');
+        }
+        return false;
+      }
+      return true;
+    });
+    this.draw();
+    this._raf = requestAnimationFrame(() => this.loop());
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    // Title
+    ctx.fillStyle = C.green; ctx.font = '24px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.shadowColor = C.green; ctx.shadowBlur = 8;
+    ctx.fillText('H E X T R I S', W / 2, 50); ctx.shadowBlur = 0;
+    // Score
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    ctx.fillText('SCORE: ' + this.score, W / 2, 80);
+    // Draw hexagon
+    const cx = W / 2, cy = H / 2 + 20, r = 80;
+    ctx.strokeStyle = C.dim; ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const a1 = (i * 60 - 90 + this.hex.angle * 60) * Math.PI / 180;
+      const a2 = ((i + 1) * 60 - 90 + this.hex.angle * 60) * Math.PI / 180;
+      const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+      const x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2);
+      // Draw stacked blocks on this side
+      const stack = this.stacked[i];
+      if (stack.length > 0) {
+        const dx = (x2 - x1) / stack.length;
+        const dy = (y2 - y1) / stack.length;
+        stack.forEach((c, j) => {
+          ctx.fillStyle = this.colors[c];
+          ctx.fillRect(x1 + dx * j - 4, y1 + dy * j - 4, 8, 8);
+        });
+      }
+      ctx.strokeStyle = C.dim;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    // Draw falling blocks
+    this.blocks.forEach(b => {
+      const a = (b.side * 60 - 90 + this.hex.angle * 60) * Math.PI / 180;
+      const x = cx + r * (1 - b.progress) * Math.cos(a);
+      const y = cy + r * (1 - b.progress) * Math.sin(a);
+      ctx.fillStyle = this.colors[b.color];
+      ctx.fillRect(x - 6, y - 6, 12, 12);
+    });
+    // Controls hint
+    ctx.fillStyle = C.dim; ctx.font = '11px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.fillText('← → ROTATE HEXAGON', W / 2, H - 40);
+    // Game over
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.red; ctx.font = '28px Consolas, monospace';
+      ctx.fillText('GAME OVER', W / 2, H / 2 - 40);
+      ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace';
+      ctx.fillText('Score: ' + this.score, W / 2, H / 2 - 10);
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
+      ctx.fillText('R restart · ESC menu · H scores', W / 2, H / 2 + 30);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  TOWER STACKING
+// ══════════════════════════════════════════════
+class GameTower {
+  constructor() { this.over = false; }
+
+  init() {
+    this.score = 0; this.over = false; this.blocks = [];
+    this.current = { x: 50, w: 160, dir: 1, speed: 2 };
+    this.baseY = H - 60;
+    this.cameraY = 0;
+    this.colors = [C.green, C.cyan, C.amber, C.magenta, C.blue, C.red, C.yellow];
+    this.addBlock(W / 2 - 80, 160); // Base block
+    this._keyH = (e) => this.key(e);
+    document.addEventListener('keydown', this._keyH);
+    this._clickH = () => this.place();
+    canvas.addEventListener('click', this._clickH);
+    this.lastTime = performance.now();
+    this.loop();
+  }
+
+  addBlock(x, w) { this.blocks.push({ x, w, color: this.colors[this.blocks.length % this.colors.length] }); }
+
+  saveProgress() { saveGameProgress('tower', { score: this.score, blocks: this.blocks }); }
+  destroy() {
+    document.removeEventListener('keydown', this._keyH);
+    canvas.removeEventListener('click', this._clickH);
+    if (this._raf) cancelAnimationFrame(this._raf);
+  }
+
+  key(e) {
+    if (e.key === 'Escape') { backToMenu(); return; }
+    if (this.over && e.key === 'r') { this.init(); return; }
+    if (this.over && (e.key === 'h' || e.key === 'H')) { showHighScores('tower'); return; }
+    if (this.over) return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); this.place(); }
+  }
+
+  place() {
+    const top = this.blocks[this.blocks.length - 1];
+    const overlap = Math.min(this.current.x + this.current.w, top.x + top.w) - Math.max(this.current.x, top.x);
+    if (overlap <= 0) {
+      this.over = true;
+      saveHighScore('tower', this.score);
+      clearGameProgress('tower');
+      return;
+    }
+    const newX = Math.max(this.current.x, top.x);
+    this.blocks.push({ x: newX, w: overlap, color: this.colors[this.blocks.length % this.colors.length] });
+    this.score++;
+    // Camera scroll
+    if (this.blocks.length > 8) this.cameraY = (this.blocks.length - 8) * 24;
+    // Speed increase
+    this.current.speed = Math.min(6, 2 + this.score * 0.2);
+    this.current.w = overlap;
+    this.current.x = this.current.dir > 0 ? -overlap : W;
+    this.draw();
+  }
+
+  loop() {
+    if (this.over) { this.draw(); return; }
+    const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
+    this.current.x += this.current.dir * this.current.speed * (dt / 16);
+    if (this.current.x + this.current.w > W) { this.current.x = W - this.current.w; this.current.dir = -1; }
+    if (this.current.x < 0) { this.current.x = 0; this.current.dir = 1; }
+    this.draw();
+    this._raf = requestAnimationFrame(() => this.loop());
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    // Title
+    ctx.fillStyle = C.green; ctx.font = '20px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.shadowColor = C.green; ctx.shadowBlur = 8;
+    ctx.fillText('T O W E R', W / 2, 40); ctx.shadowBlur = 0;
+    // Score
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    ctx.fillText('SCORE: ' + this.score, W / 2, 65);
+    // Blocks
+    const bh = 24;
+    this.blocks.forEach((b, i) => {
+      const y = this.baseY - i * bh + this.cameraY;
+      if (y < -bh || y > H) return;
+      ctx.fillStyle = b.color;
+      ctx.fillRect(b.x, y, b.w, bh - 2);
+      // Pixel highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.fillRect(b.x, y, b.w, 3);
+    });
+    // Current moving block
+    if (!this.over) {
+      const topIdx = this.blocks.length - 1;
+      const y = this.baseY - (topIdx + 1) * bh + this.cameraY;
+      ctx.fillStyle = this.colors[this.blocks.length % this.colors.length];
+      ctx.fillRect(this.current.x, y, this.current.w, bh - 2);
+    }
+    // Game over
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.red; ctx.font = '28px Consolas, monospace';
+      ctx.fillText('GAME OVER', W / 2, H / 2 - 40);
+      ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace';
+      ctx.fillText('Height: ' + this.score, W / 2, H / 2 - 10);
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
+      ctx.fillText('R restart · ESC menu · H scores', W / 2, H / 2 + 30);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  PSEUDO-3D RACER
+// ══════════════════════════════════════════════
+class GameRacer {
+  constructor() { this.over = false; }
+
+  init() {
+    this.score = 0; this.speed = 0; this.maxSpeed = 160; this.over = false;
+    this.playerX = 0; // -1 to 1
+    this.road = []; this.segments = 200;
+    this.cameraDepth = 100; this.cameraHeight = 120;
+    this.drawDistance = 120;
+    this.stars = Array.from({ length: 50 }, () => ({
+      x: Math.random() * W, y: Math.random() * H / 2, s: Math.random() * 2
+    }));
+    this.roadWidth = 1200;
+    // Generate road curves
+    for (let i = 0; i < this.segments; i++) {
+      this.road.push({ curve: Math.sin(i * 0.02) * 3, y: 0 });
+    }
+    this._keyH = (e) => this.key(e);
+    document.addEventListener('keydown', this._keyH);
+    this._keyUpH = (e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') this.speed = Math.max(0, this.speed - 2); };
+    document.addEventListener('keyup', this._keyUpH);
+    this.lastTime = performance.now();
+    this.loop();
+  }
+
+  saveProgress() { saveGameProgress('racer', { score: this.score, speed: this.speed }); }
+  destroy() {
+    document.removeEventListener('keydown', this._keyH);
+    document.removeEventListener('keyup', this._keyUpH);
+    if (this._raf) cancelAnimationFrame(this._raf);
+  }
+
+  key(e) {
+    if (e.key === 'Escape') { backToMenu(); return; }
+    if (this.over && e.key === 'r') { this.init(); return; }
+    if (this.over && (e.key === 'h' || e.key === 'H')) { showHighScores('racer'); return; }
+    if (this.over) return;
+    if (e.key === 'ArrowUp') { e.preventDefault(); this.speed = Math.min(this.maxSpeed, this.speed + 3); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); this.speed = Math.max(0, this.speed - 4); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); this.playerX = Math.max(-1, this.playerX - 0.05); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); this.playerX = Math.min(1, this.playerX + 0.05); }
+  }
+
+  loop() {
+    if (this.over) { this.draw(); return; }
+    const now = performance.now(); const dt = now - this.lastTime; this.lastTime = now;
+    this.score += Math.floor(this.speed * dt / 1000);
+    // Auto crash if too slow
+    if (this.speed < 10 && this.score > 0) {
+      // Not crashing, just slow
+    }
+    this.draw();
+    this._raf = requestAnimationFrame(() => this.loop());
+  }
+
+  draw() {
+    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, W, H);
+    // Sky gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, H / 2);
+    grad.addColorStop(0, '#0a0a2a'); grad.addColorStop(1, '#1a0a3a');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H / 2);
+    // Stars
+    this.stars.forEach(s => { ctx.fillStyle = `rgba(255,255,255,${s.s / 2})`; ctx.fillRect(s.x, s.y, s.s, s.s); });
+    // Road
+    const horizon = H / 2;
+    for (let i = 0; i < this.drawDistance; i++) {
+      const t = i / this.drawDistance;
+      const y = horizon + (1 - t) * (H / 2 - 20);
+      const w = this.roadWidth * (1 - t);
+      const x = W / 2 + this.playerX * w * 0.5;
+      // Road
+      ctx.fillStyle = i % 2 === 0 ? '#333' : '#2a2a2a';
+      ctx.fillRect(x - w / 2, y, w, 4);
+      // Rumble strips
+      ctx.fillStyle = i % 2 === 0 ? C.red : '#fff';
+      ctx.fillRect(x - w / 2 - 8, y, 8, 4);
+      ctx.fillRect(x + w / 2, y, 8, 4);
+      // Grass
+      ctx.fillStyle = i % 2 === 0 ? '#0a3a0a' : '#0a2a0a';
+      ctx.fillRect(0, y, x - w / 2 - 8, 4);
+      ctx.fillRect(x + w / 2 + 8, y, W, 4);
+    }
+    // Player car
+    const carY = H - 80;
+    const carX = W / 2 + this.playerX * 60;
+    ctx.fillStyle = C.green;
+    ctx.fillRect(carX - 15, carY, 30, 20);
+    ctx.fillRect(carX - 10, carY - 8, 20, 8);
+    // Wheels
+    ctx.fillStyle = '#111';
+    ctx.fillRect(carX - 18, carY + 2, 6, 6);
+    ctx.fillRect(carX + 12, carY + 2, 6, 6);
+    ctx.fillRect(carX - 18, carY + 12, 6, 6);
+    ctx.fillRect(carX + 12, carY + 12, 6, 6);
+    // HUD
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace'; ctx.textAlign = 'left';
+    ctx.fillText('SCORE ' + this.score, 10, 25);
+    ctx.fillStyle = C.cyan;
+    ctx.fillText('SPEED ' + Math.floor(this.speed) + ' km/h', 10, 45);
+    // Speed bar
+    ctx.fillStyle = '#222'; ctx.fillRect(10, 55, 100, 8);
+    ctx.fillStyle = this.speed > 120 ? C.red : C.green;
+    ctx.fillRect(10, 55, (this.speed / this.maxSpeed) * 100, 8);
+    // Controls hint
+    ctx.fillStyle = C.dim; ctx.font = '10px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.fillText('↑ ACCEL  ↓ BRAKE  ← → STEER', W / 2, H - 10);
+    // Game over (off-road detection simplified)
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.red; ctx.font = '28px Consolas, monospace';
+      ctx.fillText('GAME OVER', W / 2, H / 2 - 40);
+      ctx.fillStyle = C.amber; ctx.font = '18px Consolas, monospace';
+      ctx.fillText('Score: ' + this.score, W / 2, H / 2 - 10);
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
+      ctx.fillText('R restart · ESC menu · H scores', W / 2, H / 2 + 30);
+    }
+  }
+}
+
+// ── Update game registry ──
+GAME_KEYS.push('invaders', 'hextris', 'tower', 'racer');
+const NEW_GAMES = [
+  { name: 'INVADERS', key: 'invaders', desc: 'ALIEN ATTACK' },
+  { name: 'HEXTRIS', key: 'hextris', desc: 'HEX PUZZLE' },
+  { name: 'TOWER', key: 'tower', desc: 'STACK BLOCKS' },
+  { name: 'RACER', key: 'racer', desc: 'SPEED RACE' },
+];
+// Update menu to include new games
+const origDrawMenu = drawMenu;
+drawMenu = function() {
+  const allGames = [
+    { name: '2048', key: '2048', desc: 'SLIDE & MERGE' },
+    { name: 'TETRIS', key: 'tetris', desc: 'STACK BLOCKS' },
+    { name: 'SHOOTER', key: 'shooter', desc: 'DESTROY ALL' },
+    { name: 'WORD HOP', key: 'wordhopper', desc: 'TYPING PRACTICE' },
+    { name: 'SNAKE', key: 'snake', desc: 'EAT & GROW' },
+    { name: 'BREAKOUT', key: 'breakout', desc: 'SMASH BRICKS' },
+    { name: 'MINES', key: 'minesweeper', desc: 'SWEEP MINES' },
+    { name: 'FLAPPY', key: 'flappy', desc: 'TAP & FLY' },
+    { name: 'PAC-MAN', key: 'pacman', desc: 'EAT DOTS' },
+    { name: 'PONG', key: 'pong', desc: 'PING PONG' },
+    { name: 'FROGGER', key: 'frogger', desc: 'CROSS ROAD' },
+    { name: 'BOMBER', key: 'bomberman', desc: 'BLAST WALLS' },
+    { name: 'INVADERS', key: 'invaders', desc: 'ALIEN ATTACK' },
+    { name: 'HEXTRIS', key: 'hextris', desc: 'HEX PUZZLE' },
+    { name: 'TOWER', key: 'tower', desc: 'STACK BLOCKS' },
+    { name: 'RACER', key: 'racer', desc: 'SPEED RACE' },
+  ];
+
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = C.green;
+  ctx.font = '28px Consolas, monospace';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = C.green;
+  ctx.shadowBlur = 12;
+  ctx.fillText('RETRO ARCADE', W / 2, 55);
+  ctx.shadowBlur = 0;
+
+  // Subtitle
+  ctx.fillStyle = C.dim;
+  ctx.font = '12px Consolas, monospace';
+  ctx.fillText('SELECT A GAME  ·  16 GAMES', W / 2, 80);
+
+  // Game buttons — 2-column grid
+  const COLS = 2, bw = 200, bh = 48, gap = 6;
+  const startX = (W - COLS * bw - (COLS - 1) * gap) / 2;
+  const startY = 95;
+
+  allGames.forEach((g, i) => {
+    const col = i % COLS, row = Math.floor(i / COLS);
+    const x = startX + col * (bw + gap);
+    const y = startY + row * (bh + gap);
+
+    // Button border
+    ctx.strokeStyle = currentGame === g.key ? C.amber : C.dim;
+    ctx.lineWidth = currentGame === g.key ? 2 : 1;
+    ctx.strokeRect(x, y, bw, bh);
+
+    // Glow on hover
+    if (currentGame === g.key) {
+      ctx.fillStyle = 'rgba(0,255,65,0.05)';
+      ctx.fillRect(x + 1, y + 1, bw - 2, bh - 2);
+    }
+
+    // Name
+    ctx.fillStyle = currentGame === g.key ? C.amber : C.green;
+    ctx.font = '13px Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(g.name, x + bw / 2, y + 19);
+
+    // Description
+    ctx.fillStyle = C.dim;
+    ctx.font = '8px Consolas, monospace';
+    ctx.fillText(g.desc, x + bw / 2, y + 32);
+
+    // High score
+    const highScore = getHighScore(g.key);
+    if (highScore > 0) {
+      ctx.fillStyle = C.yellow;
+      ctx.font = '8px Consolas, monospace';
+      ctx.fillText('HI: ' + highScore, x + bw / 2, y + 43);
+    }
+  });
+
+  // Controls hint
+  ctx.fillStyle = C.dark;
+  ctx.font = '10px Consolas, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('↑↓←→ SELECT  ·  ENTER START  ·  ESC MENU', W / 2, H - 20);
+};
+
+// Update startGame to handle new games
+const origStartGame = startGame;
+startGame = function(key) {
+  currentGame = key;
+  document.removeEventListener('keydown', menuKey);
+  if (animFrame) cancelAnimationFrame(animFrame);
+  if (key === '2048') gameInstance = new Game2048();
+  else if (key === 'tetris') gameInstance = new GameTetris();
+  else if (key === 'shooter') gameInstance = new GameShooter();
+  else if (key === 'wordhopper') gameInstance = new GameWordHopper();
+  else if (key === 'snake') gameInstance = new GameSnake();
+  else if (key === 'breakout') gameInstance = new GameBreakout();
+  else if (key === 'minesweeper') gameInstance = new GameMinesweeper();
+  else if (key === 'flappy') gameInstance = new GameFlappy();
+  else if (key === 'pacman') gameInstance = new GamePacman();
+  else if (key === 'pong') gameInstance = new GamePong();
+  else if (key === 'frogger') gameInstance = new GameFrogger();
+  else if (key === 'bomberman') gameInstance = new GameBomberman();
+  else if (key === 'invaders') gameInstance = new GameInvaders();
+  else if (key === 'hextris') gameInstance = new GameHextris();
+  else if (key === 'tower') gameInstance = new GameTower();
+  else if (key === 'racer') gameInstance = new GameRacer();
+
+  // Check for saved progress
+  const saved = loadGameProgress(key);
+  if (saved && saved.state && !saved.state.over) {
+    showRestorePrompt(key, saved.state);
+  } else {
+    gameInstance.init();
+  }
+};
 
 // ── Start ──
 document.addEventListener('keydown', menuKey);

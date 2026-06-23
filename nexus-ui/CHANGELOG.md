@@ -1,5 +1,27 @@
 # Changelog
 
+## v3.6.0 (2026-06-23)
+
+### 游戏机模式扩展 + 复古像素 UI
+
+**新增 4 款游戏（共 16 款）**
+- Space Invaders（太空侵略者）：经典固定射击，外星人波次进攻
+- Hextris（六边形方块）：旋转六边形，匹配同色方块消除
+- Tower Stacking（叠塔游戏）：点击/按键堆叠方块，偏差会被切掉
+- Pseudo-3D Racer（伪 3D 赛车）：复古街机风格赛车，加速/刹车/转向
+
+**游戏机 UI 全面升级**
+- CRT 扫描线效果：半透明扫描线叠加，还原复古显示器质感
+- 霓虹绿主题色：标题、边框、LED 指示灯统一采用 #00ff41 霓虹绿
+- 像素字体支持：优先加载 Press Start 2P / VT323 像素字体
+- CRT 显示器边框：圆角边框 + 内发光 + 外发光模拟 CRT 显示器
+- 动画 LED 指示灯：右上角呼吸灯效果
+- 控制提示栏：底部显示 SELECT/START/ESC 控制说明
+
+**参考来源**
+- 调研报告：docs/GAME-CONSOLE-RESEARCH.md
+- 设计系统：UI/UX ProMax Retro-Futurism + Pixel Art 风格
+
 ## v3.5.0 (2026-06-21)
 
 ### 科研助手功能增强（参考 ScholarAIO）

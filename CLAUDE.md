@@ -256,9 +256,10 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - `public/todo-calendar.html` — Glass-style todo calendar with real-time clock, drag, task toggle
 
 ### Game Console Mode (游戏机模式)
-- `public/games.html` — Self-contained retro arcade with 8 pixel games on a single Canvas
-- **Games**: 2048, Tetris, Shooter (fighter jet), Word Hopper (CET-6 typing), Snake, Breakout, Minesweeper, Flappy Bird, Pac-Man, Pong, Frogger, Bomberman
-- **UI**: CRT scanline overlay, green-on-black retro aesthetic, 2-column grid menu
+- `public/games.html` — Self-contained retro arcade with 16 pixel games on a single Canvas
+- **Games**: 2048, Tetris, Shooter (fighter jet), Word Hopper (CET-6 typing), Snake, Breakout, Minesweeper, Flappy Bird, Pac-Man, Pong, Frogger, Bomberman, Space Invaders, Hextris, Tower Stacking, Pseudo-3D Racer
+- **UI**: CRT scanline overlay, neon green (#00ff41) retro aesthetic, 2-column grid menu, pixel font support (Press Start 2P / VT323)
+- **GameConsolePage**: CRT monitor frame with scanlines, LED indicator, glow effects
 - **Persistence**: `localStorage` for high scores (`nexus-game-scores`) and save/resume progress (`nexus-game-progress`)
 - **Navigation**: Keyboard (arrow keys + Enter) and mouse click support
 - **Integration**: `GameConsolePage.tsx` embeds via iframe, fullscreen toggle, integrated in sidebar under "个人助手"
