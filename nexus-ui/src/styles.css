@@ -28,12 +28,12 @@
   --overlay-subtle: rgba(0, 0, 0, 0.03);
   --overlay-light: rgba(0, 0, 0, 0.05);
   --overlay-medium: rgba(0, 0, 0, 0.08);
-  /* Animation timing (from openhanako) */
-  --duration-instant: 0.1s;
-  --duration-fast: 0.15s;
-  --duration-slow: 0.25s;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  /* Animation timing (P2: 精炼为 ease-out-cubic) */
+  --duration-instant: 0.08s;
+  --duration-fast: 0.12s;
+  --duration-slow: 0.16s;
+  --ease-out: cubic-bezier(0.33, 1, 0.68, 1); /* ease-out-cubic */
+  --ease-in: cubic-bezier(0.32, 0, 0.67, 0);
   --hover-bg: rgba(241, 245, 249, 0.6);
   --input-bg: rgba(255, 255, 255, 0.85);
   --font-size-base: 13px;
@@ -154,11 +154,15 @@ html.theme-transitioning .toast {
   transition: background 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease !important;
 }
 
+/* ── Inter 字体 + tabularFigures ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 body {
-  font-family: 'Open Sans', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', sans-serif;
   background: var(--bg-gradient);
   color: var(--text-primary);
   line-height: 1.6;
+  font-feature-settings: 'tnum' on; /* tabular figures for numbers */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
@@ -169,28 +173,159 @@ body {
   height: 100vh;
 }
 
-/* ── 玻璃质感卡片 (iOS 风格) ── */
+/* ── 卡片 (SpringNote 极简风 + 毛玻璃兼容) ── */
 .glass-card {
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur) saturate(150%);
   -webkit-backdrop-filter: var(--glass-blur) saturate(150%);
   border-radius: var(--radius-card);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.25s ease, transform 0.25s ease;
-}
-
-.glass-card:hover {
-  box-shadow: var(--shadow-md);
+  box-shadow: none; /* P2: 持久内容不使用阴影 */
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .glass-card-hover {
-  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
 }
 
 .glass-card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 30px rgba(0,0,0,0.06);
+}
+
+/* ── 标准化按钮系统 (5.3.1) ── */
+.btn-click {
+  transition: transform 0.12s ease-out;
+}
+
+.btn-click:active {
+  transform: scale(0.97);
+}
+
+/* 主操作按钮: 黑色胶囊 (SpringNote 风格) */
+.btn-primary {
+  background: #0F172A;
+  color: white;
+  border: none;
+  border-radius: 999px;
+  padding: 7px 20px;
+  font-weight: 600;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  transition: all 0.12s ease-out;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-primary:hover {
+  background: #1e293b;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+[data-theme="dark"] .btn-primary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+[data-theme="dark"] .btn-primary:hover {
+  background: #f1f5f9;
+}
+
+/* 渐变按钮 (AI/强调场景保留) */
+.btn-gradient {
+  background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-green) 100%);
+  color: white;
+  border: none;
+  border-radius: 999px;
+  padding: 7px 20px;
+  font-weight: 600;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  transition: all 0.12s ease-out;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-gradient:hover {
+  background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+}
+
+/* 次要按钮: 透明 + 边框 */
+.btn-ghost {
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.12s ease-out;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-ghost:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+/* 图标按钮: 34x34px 圆角10px */
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease-out;
+  padding: 0;
+}
+
+.btn-icon:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+/* 危险按钮 */
+.btn-danger {
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  color: #DC2626;
+  background: #FEE2E2;
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s ease-out;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-danger:hover {
+  background: #FECACA;
+}
+
+[data-theme="dark"] .btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+[data-theme="dark"] .btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
 }
 
 /* ── 滚动条 ── */
@@ -267,7 +402,7 @@ body {
   padding: 9px 14px;
   font-size: var(--font-size-base);
   color: var(--text-primary);
-  transition: all 0.2s ease;
+  transition: border-color 0.12s ease-out, box-shadow 0.12s ease-out;
   outline: none;
   width: 100%;
 }
@@ -350,23 +485,23 @@ select.input-glass {
   font-weight: 600;
 }
 
-/* ── 动画 ── */
+/* ── 动画 (P2: 统一 ease-out-cubic + 缩短时长) ── */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.25s ease forwards;
+  animation: fadeIn 0.16s cubic-bezier(0.33, 1, 0.68, 1) forwards;
 }
 
 @keyframes slideIn {
-  from { opacity: 0; transform: translateX(-12px); }
+  from { opacity: 0; transform: translateX(-8px); }
   to { opacity: 1; transform: translateX(0); }
 }
 
 .animate-slide-in {
-  animation: slideIn 0.25s ease forwards;
+  animation: slideIn 0.16s cubic-bezier(0.33, 1, 0.68, 1) forwards;
 }
 
 /* ── 工具类 ── */
@@ -398,14 +533,9 @@ select.input-glass {
   -webkit-text-fill-color: transparent;
 }
 
-/* ── 浮动按钮动画 ── */
-@keyframes fabPulse {
-  0%, 100% { box-shadow: 0 8px 24px rgba(59,130,246,0.3); }
-  50% { box-shadow: 0 8px 32px rgba(59,130,246,0.5); }
-}
-
+/* ── 浮动按钮 (P2: 移除脉冲动效，改为静态柔和阴影) ── */
 .fab-pulse {
-  animation: fabPulse 2s ease-in-out infinite;
+  box-shadow: 0 4px 16px rgba(59,130,246,0.25);
 }
 
 /* ── 唱片旋转动画 ── */
@@ -595,13 +725,13 @@ select.input-glass {
 
 /* ── Toast 通知 ── */
 @keyframes toastIn {
-  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes toastOut {
   from { opacity: 1; transform: translateY(0) scale(1); }
-  to { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to { opacity: 0; transform: translateY(-4px) scale(0.98); }
 }
 
 .toast-container {
@@ -648,15 +778,7 @@ select.input-glass {
   border: 1px solid var(--border-color);
 }
 
-/* ── 页面过渡 ── */
-.animate-fade-in {
-  animation: fadeIn 0.2s ease forwards;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+/* ── 页面过渡 (fadeIn 定义在上方，此处仅保留骨架屏) ── */
 
 /* ── Loading 骨架屏 ── */
 @keyframes shimmer {
@@ -675,7 +797,7 @@ select.input-glass {
 @keyframes chatMessageEnter {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -684,7 +806,7 @@ select.input-glass {
 }
 
 .chat-message-enter {
-  animation: chatMessageEnter 0.3s ease-out both;
+  animation: chatMessageEnter 0.16s cubic-bezier(0.33, 1, 0.68, 1) both;
 }
 
 /* ── Streaming Cursor ── */

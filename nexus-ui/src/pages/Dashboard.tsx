@@ -1,6 +1,79 @@
 import { useEffect, useState } from "react";
-import { dashboardApi, type DashboardData } from "../api/client";
+import { dashboardApi, tasksApi, type DashboardData } from "../api/client";
 import { IconCheck, IconSearch, IconFlask, IconChart, IconLightning } from "../components/Icons";
+
+/* ── 活跃度热力图 (5.1.3) ── */
+function ActivityHeatmap({ taskDates }: { taskDates: Map<string, number> }) {
+  const today = new Date();
+  const weeks: { date: Date; count: number }[][] = [];
+  let currentWeek: { date: Date; count: number }[] = [];
+
+  for (let i = 139; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split("T")[0];
+    const count = taskDates.get(key) || 0;
+    currentWeek.push({ date: d, count });
+    if (currentWeek.length === 7) {
+      weeks.push(currentWeek);
+      currentWeek = [];
+    }
+  }
+  if (currentWeek.length > 0) weeks.push(currentWeek);
+
+  const getColor = (count: number) => {
+    if (count === 0) return "var(--border-color)";
+    if (count <= 2) return "#DCFCE7";
+    if (count <= 4) return "#BBF7D0";
+    if (count <= 6) return "#86EFAC";
+    return "#4ADE80";
+  };
+
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  return (
+    <div className="relative">
+      <div className="flex gap-[3px]">
+        {weeks.map((week, wi) => (
+          <div key={wi} className="flex flex-col gap-[3px]">
+            {week.map((day, di) => (
+              <div
+                key={di}
+                className="rounded-[2px] cursor-pointer transition-transform hover:scale-110"
+                style={{ width: 13, height: 13, background: getColor(day.count) }}
+                onMouseEnter={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setTooltip({
+                    x: rect.left + rect.width / 2, y: rect.top - 8,
+                    text: `${day.date.toLocaleDateString("zh-CN")} · ${day.count} 项完成`,
+                  });
+                }}
+                onMouseLeave={() => setTooltip(null)}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      {tooltip && (
+        <div className="fixed z-[999] px-2 py-1 rounded text-[10px] font-medium pointer-events-none"
+          style={{
+            left: tooltip.x, top: tooltip.y, transform: "translate(-50%, -100%)",
+            background: "var(--text-primary)", color: "var(--glass-bg)",
+            boxShadow: "0 4px 30px rgba(0,0,0,0.015)",
+          }}>
+          {tooltip.text}
+        </div>
+      )}
+      <div className="flex items-center gap-1 mt-2">
+        <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>少</span>
+        {[0, 2, 4, 6, 8].map(c => (
+          <div key={c} className="rounded-[2px]" style={{ width: 11, height: 11, background: getColor(c) }} />
+        ))}
+        <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>多</span>
+      </div>
+    </div>
+  );
+}
 
 interface DashboardProps {
   onNavigate?: (page: string) => void;
@@ -17,9 +90,19 @@ const ACTIVITY_PAGE_MAP: Record<string, string> = {
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [taskDates, setTaskDates] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     dashboardApi.get().then(setData).catch(console.error);
+    // 加载任务完成日期统计（热力图）
+    tasksApi.list("").then(allTasks => {
+      const dates = new Map<string, number>();
+      allTasks.filter(t => t.completed && t.completed_at).forEach(t => {
+        const d = t.completed_at!.split("T")[0];
+        dates.set(d, (dates.get(d) || 0) + 1);
+      });
+      setTaskDates(dates);
+    }).catch(() => {});
   }, []);
 
   const tasks = data?.tasks;
@@ -101,6 +184,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 活跃度热力图 */}
+      <div className="glass-card p-5">
+        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>任务活跃度</h3>
+        <ActivityHeatmap taskDates={taskDates} />
       </div>
 
       <div className="glass-card p-5">

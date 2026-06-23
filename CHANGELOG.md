@@ -1,26 +1,39 @@
 # Changelog
 
-## v4.3.8 (2026-06-24) — SpringNote改进方案 + 标签着色 + 春日主题
+## v4.3.8 (2026-06-24) — SpringNote P0-P2 全面改进
 
 ### 新功能
-- **SpringNote 仿色主题（春日）**: 新增 `[data-theme="spring"]` 樱粉配色方案，灵感来自 SpringNote 的粉白设计风格 — 玫瑰粉强调色 `#ff6b9d`，樱粉渐变背景，配套滚动条/按钮/输入框样式
-- **标签着色系统**: 基于 djb2 哈希的 12 色调色板，同一标签在知识卡片、文献库、过滤栏全局一致着色，替代原有统一灰色
-- **标签点击过滤**: 知识卡片列表/网格视图中的标签现在可直接点击触发过滤，无需手动在过滤栏查找
-- **工具调用结果展开**: AI 对话中搜索工具的结果从固定 3 条改为可展开/收起全部结果
+- **AI 结构化日报 (P0-5.1.1)**: TodayPage 新增「快速想法」输入区，用户输入自然语言，AI 自动解析为完成事项/问题记录/明日计划三栏结构化内容，存储在 localStorage
+- **结构化概览卡片 (P1-5.1.4)**: TodayPage 进度条下方展示三栏概览（✅完成/⚠️问题/📋计划），数据来自 AI 整理结果
+- **自动周报摘要 (P1-5.1.2)**: TodayPage 自动汇总本周所有日报，展示完成项和遗留问题统计
+- **活跃度热力图 (P1-5.1.3)**: Dashboard 和 TodayPage 新增 GitHub 贡献风格热力图（140天/20周），5级绿色渐变，悬停 tooltip
+- **SpringNote 仿色主题**: 新增 `[data-theme="spring"]` 樱粉配色方案
+- **标签着色系统**: djb2 哈希 + 12 色调色板，全局一致着色
+- **标签点击过滤**: 知识卡片标签可直接点击过滤
+- **工具调用结果展开**: AI 对话搜索结果可展开全部
+
+### UI 改进 (P1/P2)
+- **按钮尺寸统一 (P0-5.3.1)**: 新增标准化按钮系统 — `btn-primary`(黑色胶囊)、`btn-ghost`(透明边框)、`btn-icon`(34x34px)、`btn-danger`(红底)，所有按钮统一 32px 高度 + 999px 圆角
+- **卡片样式简化 (P1-5.2.1)**: 玻璃卡片移除默认阴影（`box-shadow: none`），hover 时极淡阴影 `0 4px 30px rgba(0,0,0,0.06)`
+- **排版优化 (P1-5.2.2)**: 主字体切换为 Inter，启用 `font-feature-settings: 'tnum' on`（tabular figures）
+- **动画精炼 (P2-5.2.3)**: 统一缓动曲线为 `ease-out-cubic`(0.33,1,0.68,1)，微交互缩短至 120ms，FAB 脉冲动效移除改为静态柔和阴影
+- **阴影规范 (P2-5.2.4)**: 持久内容（卡片/面板）无阴影，仅弹窗/浮动层使用阴影
 
 ### 修复
-- **主题切换闪烁**: 新增 `theme-transitioning` CSS 类，主题切换时通过 class 控制平滑过渡动画（0.3s），避免硬切换闪烁
-- **综述池数量提示**: 文献综述生成超过 20 篇时显示「最多取前 20 篇」提示，避免用户误以为全部参与生成
-- **API 错误提示增强**: AI 对话和文献综述的流式错误增加分类提示 — 429 频率限制、401 认证失败、超时、服务端错误各有针对性建议
+- **主题切换闪烁**: `theme-transitioning` CSS 类实现 0.3s 平滑过渡
+- **综述池数量提示**: 超 20 篇显示「最多取前 20 篇」
+- **API 错误提示增强**: 429/401/超时/5xx 分类提示 + 重试建议
 
 ### 文件变更
-- `nexus-ui/src/styles.css`: spring 主题变量 + theme-transitioning 过渡类
-- `nexus-ui/src/utils/tagColors.ts`: 新建，标签哈希着色工具函数
-- `nexus-ui/src/pages/SettingsPage.tsx`: 春日主题按钮 + 过渡 class 应用
+- `nexus-ui/src/styles.css`: Inter 字体 + 标准化按钮系统 + 动画/阴影规范 + spring 主题
+- `nexus-ui/src/utils/tagColors.ts`: 标签哈希着色
+- `nexus-ui/src/pages/TodayPage.tsx`: AI 结构化日报 + 结构化概览 + 周报摘要 + 热力图
+- `nexus-ui/src/pages/Dashboard.tsx`: 活跃度热力图
+- `nexus-ui/src/pages/SettingsPage.tsx`: 春日主题按钮
 - `nexus-ui/src/pages/KnowledgePage.tsx`: 标签着色 + 点击过滤
 - `nexus-ui/src/pages/PaperLibraryPage.tsx`: 标签着色
-- `nexus-ui/src/pages/ChatPage.tsx`: 工具结果展开 + 错误分类提示
-- `nexus-ui/src/pages/LiteraturePage.tsx`: 综述池提示 + 错误分类提示
+- `nexus-ui/src/pages/ChatPage.tsx`: 工具结果展开 + 错误提示
+- `nexus-ui/src/pages/LiteraturePage.tsx`: 综述池提示 + 错误提示
 
 ## v4.3.6 (2026-06-23) — 游戏机修复 + 写作导出 + 去重增强 + UI统一
 
