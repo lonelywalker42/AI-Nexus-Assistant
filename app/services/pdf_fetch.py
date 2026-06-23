@@ -2,12 +2,19 @@
 
 基于 ScholarAIO 的 pdf_fetch 设计，适配 AI Nexus Assistant 架构。
 核心管线: DOI 规范化 → 落地页抓取 → PDF 链接提取 → 下载验证
+
+增强特性:
+  - Crossref API 标题→DOI 解析
+  - 多模式 PDF 链接提取（meta标签/锚点/正则/JavaScript重定向）
+  - Unpaywall 开放获取 API 兜底
+  - 校园网直连模式支持
 """
 
 import re
 import os
 import time
 import logging
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
@@ -53,10 +60,12 @@ def normalize_doi(doi_or_url: str) -> str:
 def extract_pdf_urls_from_html(html: str) -> list[str]:
     """从 HTML 中提取 PDF 候选 URL。
 
-    三种模式并行扫描（按优先级排序）:
+    五种模式并行扫描（按优先级排序）:
       1. <meta name="citation_pdf_url" content="...">  ← 最高优先级
-      2. <a href="...pdf"> / <a href=".../pdf/">       ← 次优先
-      3. 正则匹配 body 中的 https://...pdf URL          ← 兜底
+      2. <link rel="alternate" type="application/pdf">  ← 次优先
+      3. <a href="...pdf"> / <a href=".../pdf/">        ← 中等优先
+      4. JavaScript 重定向 / data 属性中的 PDF URL       ← 次低
+      5. 正则匹配 body 中的 https://...pdf URL           ← 兜底
     """
     candidates = []
     seen = set()
@@ -71,7 +80,37 @@ def extract_pdf_urls_from_html(html: str) -> list[str]:
             candidates.append(url)
             seen.add(url)
 
-    # 模式 2: <a> 标签中的 PDF 链接
+    # 模式 1b: citation_pdf_url 顺序颠倒（content 在 name 之前）
+    for m in re.finditer(
+        r'<meta\s+content=["\']([^"\']+)["\']\s+name=["\']citation_pdf_url["\']',
+        html, re.IGNORECASE
+    ):
+        url = m.group(1).strip()
+        if url and url not in seen:
+            candidates.append(url)
+            seen.add(url)
+
+    # 模式 2: <link rel="alternate" type="application/pdf">
+    for m in re.finditer(
+        r'<link\s+[^>]*rel=["\']alternate["\'][^>]*type=["\']application/pdf["\'][^>]*href=["\']([^"\']+)["\']',
+        html, re.IGNORECASE
+    ):
+        url = m.group(1).strip()
+        if url and url not in seen:
+            candidates.append(url)
+            seen.add(url)
+
+    # 模式 2b: href 在 type 之前
+    for m in re.finditer(
+        r'<link\s+[^>]*href=["\']([^"\']+)["\'][^>]*rel=["\']alternate["\'][^>]*type=["\']application/pdf["\']',
+        html, re.IGNORECASE
+    ):
+        url = m.group(1).strip()
+        if url and url not in seen:
+            candidates.append(url)
+            seen.add(url)
+
+    # 模式 3: <a> 标签中的 PDF 链接
     for m in re.finditer(
         r'<a\s+[^>]*href=["\']([^"\']*\.pdf[^"\']*)["\']',
         html, re.IGNORECASE
@@ -81,7 +120,7 @@ def extract_pdf_urls_from_html(html: str) -> list[str]:
             candidates.append(url)
             seen.add(url)
 
-    # 模式 2b: <a> 标签 href 包含 /pdf/
+    # 模式 3b: <a> 标签 href 包含 /pdf/
     for m in re.finditer(
         r'<a\s+[^>]*href=["\']([^"\']*(?:/pdf/|/pdf\b)[^"\']*)["\']',
         html, re.IGNORECASE
@@ -91,7 +130,37 @@ def extract_pdf_urls_from_html(html: str) -> list[str]:
             candidates.append(url)
             seen.add(url)
 
-    # 模式 3: 正则匹配 body 中的 PDF URL
+    # 模式 3c: <a> 标签包含 "Download PDF" 或 "PDF" 文本
+    for m in re.finditer(
+        r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(?:[^<]*(?:download|full\s*text|pdf)[^<]*)</a>',
+        html, re.IGNORECASE
+    ):
+        url = m.group(1).strip()
+        if url and url not in seen and _is_valid_pdf_url(url):
+            candidates.append(url)
+            seen.add(url)
+
+    # 模式 4: JavaScript 重定向中的 PDF URL
+    for m in re.finditer(
+        r'(?:window\.location|location\.href|window\.open)\s*=\s*["\']([^"\']*\.pdf[^"\']*)["\']',
+        html, re.IGNORECASE
+    ):
+        url = m.group(1).strip()
+        if url and url not in seen and _is_valid_pdf_url(url):
+            candidates.append(url)
+            seen.add(url)
+
+    # 模式 4b: data 属性中的 PDF URL
+    for m in re.finditer(
+        r'data-(?:pdf-url|download-url|file-url)=["\']([^"\']*\.pdf[^"\']*)["\']',
+        html, re.IGNORECASE
+    ):
+        url = m.group(1).strip()
+        if url and url not in seen and _is_valid_pdf_url(url):
+            candidates.append(url)
+            seen.add(url)
+
+    # 模式 5: 正则匹配 body 中的 PDF URL
     for m in re.finditer(
         r'(https?://[^\s"\'<>]+\.pdf(?:\?[^\s"\'<>]*)?)',
         html, re.IGNORECASE
@@ -102,6 +171,39 @@ def extract_pdf_urls_from_html(html: str) -> list[str]:
             seen.add(url)
 
     return candidates
+
+
+def _try_crossref_title_to_doi(title: str) -> Optional[str]:
+    """通过 Crossref API 将论文标题解析为 DOI。
+
+    用于用户输入纯标题（无 DOI）时的降级查询。
+    """
+    import urllib.request
+    import json as _json
+
+    if not title or len(title) < 10:
+        return None
+
+    try:
+        # Crossref API 查询
+        encoded_title = urllib.parse.quote(title)
+        url = f"https://api.crossref.org/works?query.title={encoded_title}&rows=1"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "AI-Nexus-Assistant/1.0 (mailto:support@example.com)",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read())
+
+        items = data.get("message", {}).get("items", [])
+        if items:
+            doi = items[0].get("DOI", "")
+            if doi and doi.startswith("10."):
+                return doi
+    except Exception as e:
+        _log.debug(f"Crossref 标题查询失败 ({title[:50]}): {e}")
+
+    return None
 
 
 def _is_valid_pdf_url(url: str) -> bool:
@@ -210,16 +312,16 @@ def fetch_pdf(
     """从出版社网站拉取 PDF。
 
     管线:
-      1. DOI → doi.org URL 规范化
+      1. DOI → doi.org URL 规范化（纯标题先通过 Crossref 查询 DOI）
       2. GET doi.org（跟随重定向）→ 落地页
          - Content-Type 是 PDF？→ 直接保存
          - 是 HTML？→ 进入步骤 3
-      3. HTML 解析 PDF 链接（三种模式）
+      3. HTML 解析 PDF 链接（五种模式）
       4. 逐候选 URL 下载 + 验证
       5. 兜底: Unpaywall API 获取开放获取链接
 
     Args:
-        doi_or_url: DOI 字符串或完整 URL
+        doi_or_url: DOI 字符串、完整 URL 或纯论文标题
         output_dir: PDF 保存目录
         timeout: 超时秒数
         filename: 可选文件名（不含 .pdf 后缀）
@@ -228,6 +330,14 @@ def fetch_pdf(
         dict: {success, pdf_path, source_url, method, error}
     """
     import httpx
+
+    # 如果输入看起来像纯标题（不是 DOI 也不是 URL），尝试 Crossref 查询
+    if not doi_or_url.startswith("http") and not re.match(r"^10\.\d{4,}/", doi_or_url):
+        _log.info("输入可能是论文标题，尝试 Crossref 查询 DOI...")
+        crossref_doi = _try_crossref_title_to_doi(doi_or_url)
+        if crossref_doi:
+            _log.info("Crossref 找到 DOI: %s", crossref_doi)
+            doi_or_url = crossref_doi
 
     url = normalize_doi(doi_or_url)
     if not url:
@@ -347,7 +457,12 @@ def fetch_pdf(
 
                     last_error = f"从出版社页面找到 {len(pdf_urls)} 个候选链接，但均下载失败（可能需要机构网络访问）"
                 else:
-                    last_error = "出版社页面未包含 PDF 链接，该文献可能需要付费订阅或机构网络访问"
+                    last_error = (
+                        "出版社页面未包含 PDF 链接。可能原因：\n"
+                        "1. 该文献需要付费订阅或机构网络访问\n"
+                        "2. 请确保在校园网环境下使用，或配置正确的代理\n"
+                        "3. 部分出版社需要手动登录后才能下载"
+                    )
 
                 # 如果从 doi.org 落地页没找到，跳出重试循环，进入 Unpaywall 兜底
                 break

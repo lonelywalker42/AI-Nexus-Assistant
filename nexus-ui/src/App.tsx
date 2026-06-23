@@ -93,6 +93,7 @@ function App() {
   const [authenticated, setAuthenticated] = useState(isLoggedIn());
   const { name } = useAppName();
   const { isMobile } = usePlatform();
+  const [initialChatSessionId, setInitialChatSessionId] = useState<string | null>(null);
 
   // 初始化主题（跟随 OS 暗色模式）
   useEffect(() => {
@@ -103,6 +104,28 @@ function App() {
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       document.documentElement.setAttribute("data-theme", prefersDark ? "dark" : "light");
     }
+  }, []);
+
+  // 处理 hash 跳转（从知识卡片跳转到对话）
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.slice(1); // 去掉 #
+      if (hash.startsWith("chat-")) {
+        const sessionId = hash.slice(5); // 去掉 "chat-" 前缀
+        if (sessionId) {
+          setInitialChatSessionId(sessionId);
+          setActivePage("chat");
+          // 清除 hash 避免重复触发
+          window.location.hash = "";
+        }
+      }
+    };
+
+    // 检查初始 hash
+    handleHashChange();
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
   useEffect(() => {
@@ -148,7 +171,7 @@ function App() {
       case "paper-library": return <PaperLibraryPage />;
       case "experiments": return <ExperimentPage />;
       case "knowledge": return <KnowledgePage />;
-      case "chat": return <ChatPage />;
+      case "chat": return <ChatPage initialSessionId={initialChatSessionId} onSessionLoaded={() => setInitialChatSessionId(null)} />;
       case "writing": return <WritingPage />;
       case "agent": return <ResearchAgentPage />;
       case "music": return <MusicPage />;

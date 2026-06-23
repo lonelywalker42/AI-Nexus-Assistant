@@ -146,9 +146,10 @@ export default function Sidebar({ pages, activePage, onNavigate }: SidebarProps)
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>v{APP_VERSION}</p>
               <div className="h-px" style={{ background: "var(--border-color)" }} />
               <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                面向航空航天/控制领域科研人员的个人研究助手桌面应用。
-                集成仪表盘、任务管理、今日工作、文献检索与管理、AI 综述、试验记录、知识库、AI 对话八大功能模块，
-                支持 8 源学术搜索、PDF 文献导入与 AI 元数据提取、流式 AI 对话（含联网搜索）、本地数据备份与恢复。
+                AI 驱动的一站式科研效率平台，为科研人员打造智能化工作流。
+                集成文献智能检索、AI 深度对话、知识图谱管理、实验数据追踪等核心能力，
+                支持多源学术搜索、PDF 智能解析、流式 AI 交互（含联网搜索与工具调用）、
+                DeepSeek 对话导入、本地数据安全备份，让科研工作更高效、更智能。
               </p>
               <div className="flex justify-center gap-4 text-[10px] pt-1" style={{ color: "var(--text-muted)" }}>
                 <span>Tauri 2 + React</span>

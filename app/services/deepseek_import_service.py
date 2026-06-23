@@ -516,34 +516,58 @@ def _llm_batch_worker(args: tuple) -> dict:
             db.close()
 
 
-def process_llm_batch(db: Session, group_id: str, session_infos: list[dict]) -> list[dict]:
+def process_llm_batch(db: Session, group_id: str, session_infos: list[dict], batch_size: int = 5) -> list[dict]:
     """阶段 2: 批量 LLM 处理所有已保存的会话
 
-    使用线程池并发处理（受信号量限制最大 5 并发 LLM 调用）。
+    分批次处理，每批次 batch_size 个会话，等待上一批次全部完成后再处理下一批次。
+    每个批次内使用线程池并发处理（受信号量限制最大并发数）。
     """
     total = len(session_infos)
     if total == 0:
         return []
 
-    _update_group(db, group_id, progress=f"[阶段2] 开始 LLM 处理 {total} 个会话...")
+    _update_group(db, group_id, progress=f"[阶段2] 开始 LLM 处理 {total} 个会话（每批 {batch_size} 个）...")
 
-    # 提交所有任务到线程池
-    futures = []
-    for i, info in enumerate(session_infos):
-        future = _llm_executor.submit(_llm_batch_worker, (group_id, info, i, total))
-        futures.append(future)
+    all_results = []
 
-    # 收集结果
-    results = []
-    for future in as_completed(futures):
-        try:
-            result = future.result()
-            results.append(result)
-        except Exception as e:
-            logger.error("LLM 批处理异常: %s", e)
-            results.append({"title": "未知", "cards": 0, "error": str(e)})
+    # 分批次处理
+    for batch_start in range(0, total, batch_size):
+        batch_end = min(batch_start + batch_size, total)
+        batch = session_infos[batch_start:batch_end]
+        batch_num = batch_start // batch_size + 1
+        total_batches = (total + batch_size - 1) // batch_size
 
-    return results
+        _update_group(db, group_id,
+                      progress=f"[阶段2] 处理批次 {batch_num}/{total_batches}（{len(batch)} 个会话）...")
+
+        logger.info("开始处理批次 %d/%d，会话数: %d", batch_num, total_batches, len(batch))
+
+        # 提交当前批次任务到线程池
+        futures = []
+        for i, info in enumerate(batch):
+            global_index = batch_start + i
+            future = _llm_executor.submit(_llm_batch_worker, (group_id, info, global_index, total))
+            futures.append(future)
+
+        # 等待当前批次所有任务完成
+        batch_results = []
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                batch_results.append(result)
+            except Exception as e:
+                logger.error("LLM 批处理异常: %s", e)
+                batch_results.append({"title": "未知", "cards": 0, "error": str(e)})
+
+        all_results.extend(batch_results)
+
+        # 批次间短暂等待，避免API限流
+        if batch_end < total:
+            import time
+            time.sleep(1)
+            logger.info("批次 %d 完成，等待 1 秒后处理下一批次...", batch_num)
+
+    return all_results
 
 
 # ── 主 pipeline 编排 ─────────────────────────────────────────

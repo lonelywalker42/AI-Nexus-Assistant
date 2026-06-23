@@ -5,7 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
-export const APP_VERSION = "4.3.2";
+export const APP_VERSION = "4.3.3";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
@@ -485,6 +485,16 @@ export const chatApi = {
       body: JSON.stringify({ title: title || "新对话", category: category || "general" }),
     }),
   deleteSession: (id: string) => request<{ ok: boolean }>(`/api/chat/sessions/${id}`, { method: "DELETE" }),
+  batchDelete: (ids: string[]) =>
+    request<{ deleted: number }>("/api/chat/sessions/batch-delete", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
+  deleteByCategory: (category: string) =>
+    request<{ deleted: number }>("/api/chat/sessions/delete-by-category", {
+      method: "POST",
+      body: JSON.stringify({ category }),
+    }),
   getMessages: (sessionId: string) => request<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`),
   exportSession: (sessionId: string) =>
     request<{ content: string; title: string }>(`/api/chat/sessions/${sessionId}/export`, { method: "POST" }),

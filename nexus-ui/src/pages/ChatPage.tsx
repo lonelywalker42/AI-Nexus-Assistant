@@ -166,7 +166,12 @@ function detectCategory(title: string, category: string): string {
   return "general";
 }
 
-export default function ChatPage() {
+interface ChatPageProps {
+  initialSessionId?: string | null;
+  onSessionLoaded?: () => void;
+}
+
+export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPageProps = {}) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [activeSession, setActiveSession] = useState<string | null>(null);
@@ -185,6 +190,10 @@ export default function ChatPage() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [streamStats, setStreamStats] = useState<{tokens: number; duration_ms: number} | null>(null);
   const streamStartTime = useRef<number>(0);
+
+  // 批量删除相关状态
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // 导入分组相关状态
   const [importGroups, setImportGroups] = useState<ImportGroup[]>([]);
@@ -239,6 +248,17 @@ export default function ChatPage() {
     }).catch(console.error);
   }, []);
 
+  // 处理从外部跳转来的初始会话 ID
+  useEffect(() => {
+    if (initialSessionId && sessions.length > 0) {
+      const session = sessions.find(s => s.id === initialSessionId);
+      if (session) {
+        setActiveSession(initialSessionId);
+        onSessionLoaded?.();
+      }
+    }
+  }, [initialSessionId, sessions, onSessionLoaded]);
+
   // 加载导入分组
   useEffect(() => {
     if (activeCategory === "import") {
@@ -288,6 +308,73 @@ export default function ChatPage() {
     setSessions(prev => prev.filter(s => s.id !== activeSession));
     setActiveSession(null);
     setMessages([]);
+  };
+
+  // 批量删除选中的会话
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    const confirmMsg = `确定要删除选中的 ${selectedIds.size} 个对话吗？此操作不可撤销。`;
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      const res = await chatApi.batchDelete(Array.from(selectedIds));
+      setSessions(prev => prev.filter(s => !selectedIds.has(s.id)));
+      if (activeSession && selectedIds.has(activeSession)) {
+        setActiveSession(null);
+        setMessages([]);
+      }
+      setSelectedIds(new Set());
+      setBatchMode(false);
+      alert(`成功删除 ${res.deleted} 个对话`);
+    } catch (err) {
+      alert("批量删除失败: " + err);
+    }
+  };
+
+  // 按分类删除会话
+  const handleDeleteByCategory = async (category: string) => {
+    const catInfo = CHAT_CATEGORIES.find(c => c.key === category);
+    const count = sessions.filter(s => detectCategory(s.title, s.category) === category).length;
+    if (count === 0) {
+      alert("该分类下没有对话");
+      return;
+    }
+    const confirmMsg = `确定要删除「${catInfo?.label || category}」分类下的 ${count} 个对话吗？此操作不可撤销。`;
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      const res = await chatApi.deleteByCategory(category);
+      setSessions(prev => prev.filter(s => detectCategory(s.title, s.category) !== category));
+      if (activeSession) {
+        const currentCat = sessions.find(s => s.id === activeSession);
+        if (currentCat && detectCategory(currentCat.title, currentCat.category) === category) {
+          setActiveSession(null);
+          setMessages([]);
+        }
+      }
+      alert(`成功删除 ${res.deleted} 个对话`);
+    } catch (err) {
+      alert("按分类删除失败: " + err);
+    }
+  };
+
+  // 切换选中状态
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // 全选/取消全选
+  const toggleSelectAll = () => {
+    const filteredSessions = (activeCategory === "all" ? sessions : sessions.filter(s => detectCategory(s.title, s.category) === activeCategory))
+      .filter(s => !sessionSearch.trim() || s.title.toLowerCase().includes(sessionSearch.toLowerCase()));
+    if (selectedIds.size === filteredSessions.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredSessions.map(s => s.id)));
+    }
   };
 
   // 快捷操作
@@ -532,6 +619,44 @@ export default function ChatPage() {
         </div>
 
         <button className="btn-gradient btn-click text-xs py-2" onClick={() => handleNewSession()}>新建对话</button>
+
+        {/* 批量操作区 */}
+        <div className="flex gap-1 px-1">
+          <button
+            className="px-2 py-1 rounded-lg text-[11px] cursor-pointer transition-all flex-1"
+            style={batchMode
+              ? { background: "rgba(239,68,68,0.12)", color: "#ef4444" }
+              : { background: "var(--hover-bg)", color: "var(--text-muted)" }
+            }
+            onClick={() => {
+              setBatchMode(!batchMode);
+              setSelectedIds(new Set());
+            }}
+          >
+            {batchMode ? "取消批量" : "批量删除"}
+          </button>
+          {batchMode && selectedIds.size > 0 && (
+            <button
+              className="px-2 py-1 rounded-lg text-[11px] cursor-pointer transition-all"
+              style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444" }}
+              onClick={handleBatchDelete}
+            >
+              删除 ({selectedIds.size})
+            </button>
+          )}
+          {!batchMode && activeCategory !== "all" && activeCategory !== "import" && (
+            <button
+              className="px-2 py-1 rounded-lg text-[11px] cursor-pointer transition-all"
+              style={{ background: "rgba(239,68,68,0.08)", color: "var(--text-muted)" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(239,68,68,0.15)"; e.currentTarget.style.color = "#ef4444"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(239,68,68,0.08)"; e.currentTarget.style.color = "var(--text-muted)"; }}
+              onClick={() => handleDeleteByCategory(activeCategory)}
+              title={`删除${CHAT_CATEGORIES.find(c => c.key === activeCategory)?.label || ""}分类下所有对话`}
+            >
+              清空分类
+            </button>
+          )}
+        </div>
         <div className="px-1">
           <input
             className="input-glass text-xs w-full"
@@ -589,32 +714,60 @@ export default function ChatPage() {
             )
           ) : (
             // 普通会话列表
-            (activeCategory === "all" ? sessions : sessions.filter(s => detectCategory(s.title, s.category) === activeCategory))
-              .filter(s => !sessionSearch.trim() || s.title.toLowerCase().includes(sessionSearch.toLowerCase()))
-              .map(s => {
-              const cat = detectCategory(s.title, s.category);
-              const catInfo = CHAT_CATEGORIES.find(c => c.key === cat);
-              return (
-              <div
-                key={s.id}
-                onClick={() => setActiveSession(s.id)}
-                className="px-3 py-2 rounded-xl text-sm cursor-pointer transition-all truncate"
-                style={activeSession === s.id
-                  ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)", fontWeight: 500 }
-                  : { color: "var(--text-secondary)" }
-                }
-                onMouseEnter={e => { if (activeSession !== s.id) e.currentTarget.style.background = "var(--hover-bg)"; }}
-                onMouseLeave={e => { if (activeSession !== s.id) e.currentTarget.style.background = "transparent"; }}
-              >
-                <span className="truncate">{s.title.slice(0, 20)}</span>
-                {cat !== "general" && catInfo && (
-                  <span className="ml-1 text-[9px] px-1 py-0.5 rounded" style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>
-                    {catInfo.label}
-                  </span>
-                )}
-              </div>
-              );
-            })
+            <>
+              {batchMode && (
+                <div className="px-3 py-1.5">
+                  <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>
+                    <input
+                      type="checkbox"
+                      checked={(() => {
+                        const filtered = (activeCategory === "all" ? sessions : sessions.filter(s => detectCategory(s.title, s.category) === activeCategory))
+                          .filter(s => !sessionSearch.trim() || s.title.toLowerCase().includes(sessionSearch.toLowerCase()));
+                        return filtered.length > 0 && filtered.every(s => selectedIds.has(s.id));
+                      })()}
+                      onChange={toggleSelectAll}
+                    />
+                    全选
+                  </label>
+                </div>
+              )}
+              {(activeCategory === "all" ? sessions : sessions.filter(s => detectCategory(s.title, s.category) === activeCategory))
+                .filter(s => !sessionSearch.trim() || s.title.toLowerCase().includes(sessionSearch.toLowerCase()))
+                .map(s => {
+                const cat = detectCategory(s.title, s.category);
+                const catInfo = CHAT_CATEGORIES.find(c => c.key === cat);
+                return (
+                <div
+                  key={s.id}
+                  onClick={() => batchMode ? toggleSelect(s.id) : setActiveSession(s.id)}
+                  className="px-3 py-2 rounded-xl text-sm cursor-pointer transition-all truncate flex items-center gap-2"
+                  style={activeSession === s.id && !batchMode
+                    ? { background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)", fontWeight: 500 }
+                    : selectedIds.has(s.id)
+                    ? { background: "rgba(239,68,68,0.08)", color: "var(--text-primary)" }
+                    : { color: "var(--text-secondary)" }
+                  }
+                  onMouseEnter={e => { if (activeSession !== s.id && !selectedIds.has(s.id)) e.currentTarget.style.background = "var(--hover-bg)"; }}
+                  onMouseLeave={e => { if (activeSession !== s.id && !selectedIds.has(s.id)) e.currentTarget.style.background = "transparent"; }}
+                >
+                  {batchMode && (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(s.id)}
+                      onChange={() => {}}
+                      className="flex-shrink-0"
+                    />
+                  )}
+                  <span className="truncate flex-1">{s.title.slice(0, 20)}</span>
+                  {cat !== "general" && catInfo && (
+                    <span className="text-[9px] px-1 py-0.5 rounded flex-shrink-0" style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>
+                      {catInfo.label}
+                    </span>
+                  )}
+                </div>
+                );
+              })}
+            </>
           )}
         </div>
         {activeSession && (

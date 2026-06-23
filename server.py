@@ -2764,6 +2764,44 @@ def delete_session(session_id: str):
         db.close()
 
 
+@app.post("/api/chat/sessions/batch-delete")
+def batch_delete_sessions(body: dict):
+    """批量删除对话会话"""
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(400, "No IDs provided")
+    db = get_session()
+    try:
+        deleted = 0
+        for sid in ids:
+            ok = chat_service.delete_session(db, sid)
+            if ok:
+                deleted += 1
+        return {"deleted": deleted}
+    finally:
+        db.close()
+
+
+@app.post("/api/chat/sessions/delete-by-category")
+def delete_sessions_by_category(body: dict):
+    """按分类删除对话会话"""
+    category = body.get("category", "")
+    if not category:
+        raise HTTPException(400, "Category is required")
+    db = get_session()
+    try:
+        from app.models import ChatSession
+        sessions = db.query(ChatSession).filter(ChatSession.category == category).all()
+        deleted = 0
+        for s in sessions:
+            ok = chat_service.delete_session(db, s.id)
+            if ok:
+                deleted += 1
+        return {"deleted": deleted}
+    finally:
+        db.close()
+
+
 @app.get("/api/chat/sessions/{session_id}/messages")
 def get_messages(session_id: str):
     db = get_session()

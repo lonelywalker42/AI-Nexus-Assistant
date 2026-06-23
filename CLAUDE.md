@@ -398,6 +398,7 @@ CHANGELOG.md                # Version change log
 docs/PRD-v3.md              # Major version PRD document
 docs/DEV-PRACTICES.md       # Development testing best practices
 docs/SCHOLARAIO_REFERENCE.md # ScholarAIO 参考分析与改进方案
+docs/LITKB_REFERENCE.md     # LitKB 参考分析与改进方案
 app/                        # Python backend
 nexus-ui/                   # Tauri frontend
 reference/                  # 参考项目 (gitignore)

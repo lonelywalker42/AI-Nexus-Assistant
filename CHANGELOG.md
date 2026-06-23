@@ -1,5 +1,33 @@
 # Changelog
 
+## v4.3.3 (2026-06-23) — PDF拉取增强 + AI对话批量删除 + DeepSeek导入优化
+
+### 新功能
+- **AI对话批量删除**: 新增批量选择模式、全选/取消全选、按分类清空对话功能
+- **PDF拉取增强**: 新增Crossref标题→DOI查询、5种PDF链接提取模式（meta标签/link标签/锚点/JavaScript重定向/正则）、改进错误提示
+- **DeepSeek导入分批处理**: LLM摘要生成改为分批次处理（每批5个），等待上一批次完成后再处理下一批次，避免API过载
+- **关联对话跳转**: IDEA卡片列表和网格视图新增关联对话图标按钮，点击可跳转到对应AI对话
+- **应用介绍产品化**: 更新About弹窗中的应用介绍为更专业的产品化描述
+
+### 修复
+- **对话跳转失败**: 修复从知识卡片点击"查看关联对话"后无法跳转的问题 — 添加hashchange监听器和initialSessionId参数传递
+- **IDEA卡片显示**: 修复关联对话图标在列表视图中不显示的问题
+
+### 改进
+- **LitKB参考分析**: 新增LitKB项目功能分析文档，提取结构化笔记、中英文互译搜索、集合分组等功能参考
+- **错误提示优化**: PDF拉取失败时提供更详细的解决建议（校园网、代理、登录等）
+
+### 文件变更
+- `app/services/pdf_fetch.py`: Crossref查询 + PDF链接提取增强
+- `app/services/deepseek_import_service.py`: 分批处理LLM任务
+- `server.py`: 批量删除对话API
+- `nexus-ui/src/api/client.ts`: 批量删除API客户端
+- `nexus-ui/src/App.tsx`: hash跳转监听
+- `nexus-ui/src/pages/ChatPage.tsx`: 批量删除UI + 初始会话加载
+- `nexus-ui/src/pages/KnowledgePage.tsx`: 关联对话图标
+- `nexus-ui/src/components/Sidebar.tsx`: 产品化应用介绍
+- `docs/LITKB_REFERENCE.md`: LitKB项目参考分析文档
+
 ## v4.3.2 (2026-06-23) — 检查更新修复 + 文献卡片UI优化
 
 ### 修复

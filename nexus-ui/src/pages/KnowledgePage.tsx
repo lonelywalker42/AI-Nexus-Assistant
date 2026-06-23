@@ -749,6 +749,14 @@ export default function KnowledgePage() {
                 <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{new Date(card.updated_at || card.created_at).toLocaleDateString()}</span>
               </div>
               <div className="flex flex-col gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                {card.chat_session_id && (
+                  <button onClick={(e) => { e.stopPropagation(); window.location.hash = `chat-${card.chat_session_id}`; }}
+                    className="text-xs px-2 py-1 rounded-lg cursor-pointer"
+                    style={{ color: "var(--accent-blue)" }}
+                    title="查看关联对话">
+                    <IconChat size={14} />
+                  </button>
+                )}
                 <button onClick={(e) => handleDelete(card.id, e)}
                   className="text-xs px-2 py-1 rounded-lg cursor-pointer transition-colors"
                   style={{ color: "var(--text-muted)" }}
@@ -787,6 +795,14 @@ export default function KnowledgePage() {
                 <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>{new Date(card.updated_at || card.created_at).toLocaleDateString()}</span>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {card.chat_session_id && (
+                  <button onClick={(e) => { e.stopPropagation(); window.location.hash = `chat-${card.chat_session_id}`; }}
+                    className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer"
+                    style={{ color: "var(--accent-blue)" }}
+                    title="查看关联对话">
+                    <IconChat size={12} />
+                  </button>
+                )}
                 <button onClick={(e) => handleDelete(card.id, e)}
                   className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer"
                   style={{ color: "var(--text-muted)" }}>删除</button>
