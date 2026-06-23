@@ -145,6 +145,8 @@ export default function WritingPage() {
   const [linkedPapers, setLinkedPapers] = useState<PaperDetail[]>([]);
   const [showPaperSearch, setShowPaperSearch] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportToast, setExportToast] = useState<string | null>(null);
   const [paperQuery, setPaperQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Pick<PaperDetail, "id" | "title" | "authors" | "year">[]>([]);
 
@@ -390,22 +392,29 @@ export default function WritingPage() {
 
   const handleExportMarkdown = async () => {
     if (!activeDoc) return;
+    setExporting(true);
     try {
       const res = await writingApi.exportDoc(activeDoc.id, "markdown") as any;
       if (res.error) { alert("导出失败: " + res.error); return; }
+      const filename = res.filename || `${title}.md`;
       const blob = new Blob([res.content], { type: "text/markdown;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = res.filename || `${title}.md`; a.click();
+      a.href = url; a.download = filename; a.click();
       URL.revokeObjectURL(url);
+      setExportToast(`已导出: ${filename}（浏览器下载目录）`);
+      setTimeout(() => setExportToast(null), 5000);
     } catch (err) { alert("导出失败: " + err); }
+    finally { setExporting(false); }
   };
 
   const handleExportDocx = async () => {
     if (!activeDoc) return;
+    setExporting(true);
     try {
       const res = await writingApi.exportDoc(activeDoc.id, "docx") as any;
       if (res.error) { alert("导出失败: " + res.error); return; }
+      const filename = res.filename || `${title}.docx`;
       // base64 解码
       const binary = atob(res.content);
       const bytes = new Uint8Array(binary.length);
@@ -413,13 +422,23 @@ export default function WritingPage() {
       const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = res.filename || `${title}.docx`; a.click();
+      a.href = url; a.download = filename; a.click();
       URL.revokeObjectURL(url);
+      setExportToast(`已导出: ${filename}（浏览器下载目录）`);
+      setTimeout(() => setExportToast(null), 5000);
     } catch (err) { alert("导出失败: " + err); }
+    finally { setExporting(false); }
   };
 
   return (
     <div className="flex h-full gap-3">
+      {/* 导出完成提示 */}
+      {exportToast && (
+        <div className="fixed top-4 right-4 z-[9999] glass-card px-4 py-2 text-sm shadow-lg"
+          style={{ color: "var(--accent-green)", border: "1px solid var(--accent-green)" }}>
+          ✅ {exportToast}
+        </div>
+      )}
       {/* Left Panel — Document List + Sources */}
       <div className="w-60 flex-shrink-0 flex flex-col gap-2">
         <div className="flex items-center justify-between">
@@ -545,9 +564,10 @@ export default function WritingPage() {
                 </button>
                 <div className="relative" ref={exportMenuRef}>
                   <button className="btn-ghost text-[10px] py-1 px-2"
-                    style={{ color: "var(--accent-green)" }}
+                    style={{ color: exporting ? "var(--text-muted)" : "var(--accent-green)" }}
+                    disabled={exporting}
                     onClick={() => setShowExportMenu(!showExportMenu)}>
-                    导出 ▾
+                    {exporting ? "导出中..." : "导出 ▾"}
                   </button>
                   {showExportMenu && (
                     <div className="absolute right-0 top-full mt-1 glass-card p-1 min-w-[100px] z-50"

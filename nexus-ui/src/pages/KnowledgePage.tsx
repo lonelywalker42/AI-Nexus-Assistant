@@ -141,25 +141,49 @@ export default function KnowledgePage() {
   const loadCards = () => {
     setLoading(true);
     setLoadError(null);
-    // 加载过滤后的卡片
-    knowledgeApi.listCards({
-      search: debouncedSearch, sort_by: sortBy, sort_order: sortOrder,
-      star_min: starMin || undefined, tag: tagFilter || undefined,
-    }).then(data => {
-      setCards(Array.isArray(data) ? data : []);
+    // 加载全部卡片（用于分类计数 + 主列表），前端做筛选
+    knowledgeApi.listCards({}).then(data => {
+      const all = Array.isArray(data) ? data : [];
+      setAllCards(all);
+      // 前端筛选：搜索、排序、星级、标签
+      let filtered = all;
+      if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
+        filtered = filtered.filter(c =>
+          (c.title || "").toLowerCase().includes(q) ||
+          (c.summary || "").toLowerCase().includes(q) ||
+          (Array.isArray(c.key_points) ? c.key_points.join(" ") : (c.key_points || "")).toLowerCase().includes(q)
+        );
+      }
+      if (starMin) filtered = filtered.filter(c => (c.star_rating || 0) >= starMin);
+      if (tagFilter) filtered = filtered.filter(c =>
+        (c.tags || []).some((t: any) => (typeof t === "string" ? t : t.name) === tagFilter)
+      );
+      // 排序
+      filtered.sort((a: any, b: any) => {
+        const va = sortBy === "star_rating" ? (a.star_rating || 0) : (a[sortBy] || "");
+        const vb = sortBy === "star_rating" ? (b.star_rating || 0) : (b[sortBy] || "");
+        if (sortBy === "star_rating") {
+          return sortOrder === "asc" ? va - vb : vb - va;
+        }
+        const cmp = String(va).localeCompare(String(vb));
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+      setCards(filtered);
+      setLoadError(null);
       setLoading(false);
     }).catch(err => {
       console.error("加载卡片失败:", err);
       const msg = err?.message || "";
       if (msg.includes("not ready") || msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
-        setLoadError("后端服务未就绪，请确认 server.py 已启动 (python server.py)");
+        setLoadError("网络连接失败，请检查后端服务是否运行 (python server.py)");
+      } else if (msg.includes("API Error")) {
+        setLoadError("服务返回错误: " + msg);
       } else {
         setLoadError("加载卡片失败: " + msg);
       }
       setLoading(false);
     });
-    // 同时加载全部卡片用于分类计数（忽略搜索/筛选条件）
-    knowledgeApi.listCards({}).then(d => setAllCards(Array.isArray(d) ? d : [])).catch(console.error);
   };
   useEffect(() => { loadCards(); }, [debouncedSearch, sortBy, sortOrder, starMin, tagFilter]);
 

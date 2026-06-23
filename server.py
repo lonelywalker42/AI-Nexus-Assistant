@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.3.7")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.3.8")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -3313,9 +3313,18 @@ async def import_deepseek(request: Request, background_tasks: BackgroundTasks):
 
     total_messages = sum(len(c["messages"]) for c in conversations)
 
-    # 创建 ImportGroup
+    # 文件级去重检查：同名文件已导入时，仅做提示（不阻断，因为会话级去重会处理）
     db = get_session()
     try:
+        if filename:
+            existing_group = db.query(ImportGroup).filter(
+                ImportGroup.original_filename == filename,
+                ImportGroup.status == "completed",
+            ).first()
+            if existing_group:
+                print(f"[deepseek-import] 提示: 文件 '{filename}' 已于 {existing_group.created_at} 导入过，会话级去重将自动跳过重复项", flush=True)
+
+        # 创建 ImportGroup
         group = ImportGroup(
             title=conversations[0]["title"] if len(conversations) == 1 else f"批量导入 ({len(conversations)} 个对话)",
             source_url=conversations[0].get("source_url") or "",
@@ -3872,7 +3881,10 @@ def export_writing_document(doc_id: str, fmt: str = "markdown"):
                 import base64
                 with open(tmp_path, "rb") as f:
                     docx_bytes = f.read()
-                os.unlink(tmp_path)
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass  # Windows 文件锁，忽略清理失败
                 return {
                     "content": base64.b64encode(docx_bytes).decode(),
                     "filename": f"{title}.docx",

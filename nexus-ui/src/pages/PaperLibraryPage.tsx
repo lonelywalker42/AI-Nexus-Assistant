@@ -32,6 +32,8 @@ export default function PaperLibraryPage() {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState("");
   const [citationFormat, setCitationFormat] = useState("gb7714");
+  const [showCitationDropdown, setShowCitationDropdown] = useState(false);
+  const citationDropdownRef = useRef<HTMLDivElement>(null);
   const [citationText, setCitationText] = useState("");
   const [copied, setCopied] = useState(false);
   const [copiedDoi, setCopiedDoi] = useState(false);
@@ -130,6 +132,17 @@ export default function PaperLibraryPage() {
       papersApi.citation(selectedId, citationFormat).then(r => setCitationText(r.citation)).catch(() => setCitationText(""));
     }
   }, [selectedId, citationFormat]);
+
+  // 点击外部关闭引用格式下拉
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (citationDropdownRef.current && !citationDropdownRef.current.contains(e.target as Node)) {
+        setShowCitationDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const handleStar = async (id: string, rating: number, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -744,10 +757,31 @@ export default function PaperLibraryPage() {
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>引用格式</h3>
                   <div className="flex gap-1.5 items-center">
-                    <select className="input-glass text-[10px] py-1 px-2 h-[28px] leading-none" value={citationFormat}
-                      onChange={e => setCitationFormat(e.target.value)}>
-                      {CITATION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                    </select>
+                    <div className="relative" ref={citationDropdownRef}>
+                      <button className="input-glass text-[10px] py-1 px-2 h-[28px] leading-none cursor-pointer flex items-center gap-1"
+                        onClick={() => setShowCitationDropdown(!showCitationDropdown)}>
+                        {CITATION_FORMATS.find(f => f.value === citationFormat)?.label || citationFormat}
+                        <span style={{ color: "var(--text-muted)" }}>▾</span>
+                      </button>
+                      {showCitationDropdown && (
+                        <div className="absolute right-0 bottom-full mb-1 glass-card p-1 min-w-[100px] z-50"
+                          style={{ border: "1px solid var(--border-color)" }}>
+                          {CITATION_FORMATS.map(f => (
+                            <button key={f.value}
+                              className="block w-full text-left px-2 py-1 text-[10px] rounded cursor-pointer transition-colors"
+                              style={{
+                                color: citationFormat === f.value ? "var(--accent-blue)" : "var(--text-secondary)",
+                                background: citationFormat === f.value ? "rgba(59,130,246,0.1)" : "transparent",
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.background = "var(--hover-bg)")}
+                              onMouseLeave={e => (e.currentTarget.style.background = citationFormat === f.value ? "rgba(59,130,246,0.1)" : "transparent")}
+                              onClick={() => { setCitationFormat(f.value); setShowCitationDropdown(false); }}>
+                              {f.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <button className="btn-ghost text-[10px] py-1 px-2 h-[28px] leading-none whitespace-nowrap" onClick={handleCopyCitation}>
                       {copied ? "已复制 ✓" : "复制"}
                     </button>

@@ -90,8 +90,11 @@ def export_docx(content: str, output_path: str, title: str = "文档") -> dict:
         else:
             doc.add_paragraph()
 
-    doc.save(output_path)
-    return {"status": "ok", "path": output_path}
+    try:
+        doc.save(output_path)
+        return {"status": "ok", "path": output_path}
+    except Exception as e:
+        return {"status": "error", "message": f"DOCX 保存失败: {str(e)}"}
 
 
 def export_markdown_refs(db: Session, paper_ids: list[str] = None,

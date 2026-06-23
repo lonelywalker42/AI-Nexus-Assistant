@@ -537,6 +537,19 @@ def _process_single_session_llm(
     # ── 创建知识卡片（一个会话 = 一张卡片）──
     _update_group(db, group_id, progress=f"[阶段2] [{index + 1}/{total}] 创建卡片: {optimized_title}")
 
+    # 卡片级去重：检查是否已有相同 chat_session_id 的卡片
+    existing_card = db.query(KnowledgeCard).filter(
+        KnowledgeCard.chat_session_id == session_id
+    ).first()
+    if existing_card:
+        logger.info("跳过重复卡片（chat_session_id 已存在）: %s -> %s", session_id, existing_card.title)
+        return {
+            "title": existing_card.title,
+            "session_id": session_id,
+            "cards": 0,
+            "skipped": True,
+        }
+
     card = KnowledgeCard(
         title=optimized_title[:200],
         summary=summary_data.get("overall_summary", "")[:1000],
