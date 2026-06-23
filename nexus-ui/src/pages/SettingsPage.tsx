@@ -9,6 +9,7 @@ interface UpdateInfo {
   available: boolean;
   downloading?: boolean;
   progress?: number;
+  totalSize?: number;
 }
 
 export default function SettingsPage() {
@@ -31,13 +32,51 @@ export default function SettingsPage() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
+  // 通过 latest.json fallback 获取版本号
+  const fetchVersionFromLatestJson = async (): Promise<{ version: string; notes: string } | null> => {
+    try {
+      const resp = await fetch("https://github.com/lonelywalker42/AI-Nexus-Assistant/releases/latest/download/latest.json");
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      // latest.json 格式: { "version": { "x86_64-pc-windows-msvc": { "url": "...", "signature": "..." } } }
+      // 从下载链接中提取版本号: .../download/v1.2.3/nexus-ui.exe
+      const platforms = data.platforms || data;
+      for (const key of Object.keys(platforms)) {
+        const entry = platforms[key];
+        if (entry?.url) {
+          const match = entry.url.match(/download\/v?([\d.]+)\//);
+          if (match) return { version: match[1], notes: data.notes || "" };
+        }
+      }
+      if (data.version && typeof data.version === "string") {
+        return { version: data.version.replace("v", ""), notes: data.notes || "" };
+      }
+    } catch {}
+    return null;
+  };
+
   // 检查更新（通过 GitHub API，跨平台通用）
   const checkForUpdate = async () => {
     setCheckingUpdate(true);
     setUpdateError(null);
     try {
-      const resp = await fetch("https://api.github.com/repos/lonelywalker42/AI-Nexus-Assistant/releases/latest");
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const resp = await fetch("https://api.github.com/repos/lonelywalker42/AI-Nexus-Assistant/releases/latest", {
+        headers: { "Accept": "application/vnd.github+json" },
+      });
+      if (!resp.ok) {
+        if (resp.status === 403) {
+          // 403 可能由代理或 API 限流引起，尝试从 latest.json fallback
+          const fallback = await fetchVersionFromLatestJson();
+          if (fallback) {
+            const available = compareVersions(fallback.version, APP_VERSION) > 0;
+            setUpdateInfo({ version: fallback.version, notes: fallback.notes || "无更新说明", available });
+            setCheckingUpdate(false);
+            return;
+          }
+          throw new Error("GitHub API 请求被拒绝（可能由网络代理引起）。请检查代理设置，或关闭代理后重试。");
+        }
+        throw new Error(`HTTP ${resp.status}`);
+      }
       const data = await resp.json();
       const latestVer = (data.tag_name as string).replace("v", "");
       const currentVer = APP_VERSION;
@@ -66,6 +105,8 @@ export default function SettingsPage() {
 
   // 尝试使用 Tauri 原生 updater（仅桌面端生效）
   const nativeUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateError(null);
     try {
       const { check } = await import("@tauri-apps/plugin-updater");
       const { relaunch } = await import("@tauri-apps/plugin-process");
@@ -77,11 +118,12 @@ export default function SettingsPage() {
           available: true,
           downloading: false,
           progress: 0,
+          totalSize: 0,
         });
         setUpdateInfo(prev => prev ? { ...prev, downloading: true } : null);
         await update.downloadAndInstall((progress) => {
           if (progress.event === "Started" && progress.data.contentLength) {
-            setUpdateInfo(prev => prev ? { ...prev, progress: 0 } : null);
+            setUpdateInfo(prev => prev ? { ...prev, progress: 0, totalSize: progress.data.contentLength } : null);
           } else if (progress.event === "Progress" && progress.data.chunkLength) {
             setUpdateInfo(prev => {
               if (!prev) return null;
@@ -95,9 +137,15 @@ export default function SettingsPage() {
       } else {
         setUpdateInfo({ version: "", notes: "", available: false });
       }
-    } catch {
-      // 非 Tauri 环境（浏览器开发模式），回退到 GitHub API
+    } catch (err: any) {
+      // 非 Tauri 环境（浏览器开发模式）或更新检查失败，回退到 GitHub API
+      const msg = err?.message || String(err);
+      if (msg && !msg.includes("plugin") && !msg.includes("import")) {
+        setUpdateError(`原生更新失败: ${msg}`);
+      }
       await checkForUpdate();
+    } finally {
+      setCheckingUpdate(false);
     }
   };
 
@@ -565,10 +613,24 @@ export default function SettingsPage() {
             </div>
             {updateInfo.downloading ? (
               <div className="space-y-1">
-                <div className="text-xs" style={{ color: "var(--text-muted)" }}>下载中...</div>
-                <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "var(--border-color)" }}>
-                  <div className="h-full rounded-full transition-all" style={{ background: "var(--accent-blue)", width: updateInfo.progress ? `${Math.min(100, updateInfo.progress)}%` : "0%" }} />
-                </div>
+                {(() => {
+                  const percent = updateInfo.totalSize
+                    ? Math.min(100, Math.round((updateInfo.progress || 0) / updateInfo.totalSize * 100))
+                    : 0;
+                  const downloadedMB = ((updateInfo.progress || 0) / 1048576).toFixed(1);
+                  const totalMB = updateInfo.totalSize ? (updateInfo.totalSize / 1048576).toFixed(1) : "?";
+                  return (
+                    <>
+                      <div className="flex items-center justify-between text-xs" style={{ color: "var(--text-muted)" }}>
+                        <span>下载中...</span>
+                        <span>{downloadedMB} MB / {totalMB} MB ({percent}%)</span>
+                      </div>
+                      <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "var(--border-color)" }}>
+                        <div className="h-full rounded-full transition-all" style={{ background: "var(--accent-blue)", width: `${percent}%` }} />
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             ) : (
               <div className="flex gap-2">
@@ -579,8 +641,17 @@ export default function SettingsPage() {
                       const { relaunch } = await import("@tauri-apps/plugin-process");
                       const update = await check();
                       if (update) {
-                        setUpdateInfo(prev => prev ? { ...prev, downloading: true } : null);
-                        await update.downloadAndInstall();
+                        setUpdateInfo(prev => prev ? { ...prev, downloading: true, progress: 0, totalSize: 0 } : null);
+                        await update.downloadAndInstall((progress) => {
+                          if (progress.event === "Started" && progress.data.contentLength) {
+                            setUpdateInfo(prev => prev ? { ...prev, progress: 0, totalSize: progress.data.contentLength } : null);
+                          } else if (progress.event === "Progress" && progress.data.chunkLength) {
+                            setUpdateInfo(prev => {
+                              if (!prev) return null;
+                              return { ...prev, progress: (prev.progress || 0) + progress.data.chunkLength };
+                            });
+                          }
+                        });
                         setUpdateInfo(prev => prev ? { ...prev, downloading: false } : null);
                         await relaunch();
                       }

@@ -33,6 +33,7 @@ export default function PaperLibraryPage() {
   const [citationFormat, setCitationFormat] = useState("gb7714");
   const [citationText, setCitationText] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedDoi, setCopiedDoi] = useState(false);
 
   // 综述
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -173,6 +174,13 @@ export default function PaperLibraryPage() {
     navigator.clipboard.writeText(citationText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyDoi = () => {
+    if (!selected?.doi) return;
+    navigator.clipboard.writeText(selected.doi);
+    setCopiedDoi(true);
+    setTimeout(() => setCopiedDoi(false), 2000);
   };
 
   // v4.4.0: 引用格式修正
@@ -728,15 +736,15 @@ export default function PaperLibraryPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>引用格式</h3>
-                  <div className="flex gap-2 items-center">
-                    <select className="input-glass text-[10px] py-1" value={citationFormat}
+                  <div className="flex gap-1.5 items-center">
+                    <select className="input-glass text-[11px] py-1.5 px-2" value={citationFormat}
                       onChange={e => setCitationFormat(e.target.value)}>
                       {CITATION_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                     </select>
-                    <button className="btn-ghost text-[10px] py-1" onClick={handleCopyCitation}>
+                    <button className="btn-ghost text-[11px] py-1.5 px-3 min-w-[52px]" onClick={handleCopyCitation}>
                       {copied ? "已复制 ✓" : "复制"}
                     </button>
-                    <button className="btn-ghost text-[10px] py-1" onClick={() => {
+                    <button className="btn-ghost text-[11px] py-1.5 px-3" onClick={() => {
                       setShowCorrectDialog(true);
                       setCorrectOldCitation("");
                       setCorrectNewCitation("");
@@ -746,10 +754,23 @@ export default function PaperLibraryPage() {
                     </button>
                   </div>
                 </div>
-                <pre className="text-[10px] p-2 rounded-lg whitespace-pre-wrap break-all"
+                <pre className="text-[11px] p-2 rounded-lg whitespace-pre-wrap break-all"
                   style={{ background: "var(--hover-bg)", color: "var(--text-secondary)" }}>
                   {citationText || "无引用数据"}
                 </pre>
+                {/* DOI 行 */}
+                {selected.doi && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] font-medium shrink-0" style={{ color: "var(--text-muted)" }}>DOI:</span>
+                    <a href={`https://doi.org/${selected.doi}`} target="_blank" rel="noopener"
+                      className="text-[11px] truncate flex-1" style={{ color: "var(--accent-blue)" }}>
+                      {selected.doi}
+                    </a>
+                    <button className="btn-ghost text-[11px] py-1 px-2.5 min-w-[52px] shrink-0" onClick={handleCopyDoi}>
+                      {copiedDoi ? "已复制 ✓" : "复制"}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
