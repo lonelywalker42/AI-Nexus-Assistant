@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { modelsApi, backupApi, systemApi, APP_VERSION, type ModelConfig, type BackupItem } from "../api/client";
 import { useAppName, setAppName, resetAppName } from "../hooks/useAppName";
+import { IconSun, IconBook } from "../components/Icons";
 
 // 自动更新相关类型
 interface UpdateInfo {
@@ -428,7 +429,7 @@ export default function SettingsPage() {
             onClick={() => handleThemeChange("spring")}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "spring" ? "text-white" : ""}`}
             style={theme === "spring" ? { background: "#ff6b9d" } : { background: "var(--hover-bg)", color: "var(--text-secondary)", border: "1px solid var(--border-color)" }}
-          >🌸 春日</button>
+          ><span className="flex items-center gap-1"><IconSun size={14} /> 春日</span></button>
           <button
             onClick={() => handleThemeChange("dark")}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${theme === "dark" ? "bg-primary-500 text-white" : ""}`}
@@ -574,7 +575,7 @@ export default function SettingsPage() {
 
         {/* open-webSearch 配置指南 */}
         <details className="text-xs" style={{ color: "var(--text-secondary)" }}>
-          <summary className="cursor-pointer font-medium" style={{ color: "var(--accent-blue)" }}>📖 配置指南</summary>
+          <summary className="cursor-pointer font-medium flex items-center gap-1" style={{ color: "var(--accent-blue)" }}><IconBook size={14} /> 配置指南</summary>
           <div className="mt-3 space-y-3 pl-3 border-l-2" style={{ borderColor: "var(--border-color)" }}>
             <div>
               <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>便携版 (Portable)</p>

@@ -1,5 +1,49 @@
 # Changelog
 
+## v4.4.0 (2026-06-24) — Bug 修复 + UI 设计语言规范化
+
+### Bug 修复
+- **Mines hard 模式崩溃**: 修复按 D 切换难度后网格数组未重新初始化导致游戏无响应的 Bug
+- **DeepSeek 导入后卡片不显示**: 修复导入完成后竞态条件（两个并发请求）和轮询错误静默吞掉的问题
+- **PDF 拉取 422 错误**: 移除 `proxy=None` 硬编码，改为尊重系统代理设置（与 ScholarAIO 一致）；错误状态码从 422 改为 502
+- **非功能性按钮**: 移除 LiteraturePage 中无 onClick 的"在线检索"占位按钮
+
+### UI 设计语言规范化
+- **设计语言文档**: 新增 `docs/DESIGN_LANGUAGE.md`，定义色彩、排版、圆角、间距、阴影、动画、图标、组件规范
+- **emoji 图标替换**: 全面替换页面标题/按钮中的 emoji 为 SVG 图标组件（Icons.tsx 新增 7 个图标）
+  - ResearchAgentPage: 🤖→IconBrain, 📚→IconBook, ✍️→IconEdit, 🧪→IconFlask, 📝→IconClipboard, 💬→IconChat
+  - KnowledgePage: 📊→IconChart, 🧠→IconBrain, ☰→IconList, ⊞→IconGrid, 📁→IconFolder, 📂→IconFolder
+  - PaperLibraryPage: 📥→IconDownload, 📄→IconFile, 📚→IconBook, 📋→IconClipboard, 🔍→IconSearch, 📝→IconEdit, 🔗→IconLink, 🔄→IconRefresh
+  - TodayPage: ✅→IconCheck, ⚠️→IconWarning, 📋→IconClipboard, 📊→IconChart, ✨→IconSparkle
+  - ChatPage: 🔍→IconSearch, 🔄→IconRefresh, 💭→IconBrain, 📊→IconChart, ✅→IconCheck
+  - SettingsPage: 🌸→IconSun, 📖→IconBook
+  - ResearchAgentPage: ⏳→IconClock, ✅→IconCheck, ❌→IconX
+- **圆角系统统一**: CSS 设计令牌 `--radius-card` 从 20px 调整为 16px，`--radius-element` 从 14px 调整为 12px
+- **阴影系统精简**: 阴影值统一为设计语言规范（极淡阴影，仅弹出层使用）
+
+### 新增图标组件
+- `IconWarning` — 警告三角形
+- `IconRefresh` — 刷新/重试
+- `IconDownload` — 下载
+- `IconLink` — 链接
+- `IconDocument` — 文档
+- `IconHash` — 井号/标签
+
+### 文件变更
+- `nexus-ui/public/games.html`: Mines 难度切换修复
+- `nexus-ui/src/pages/KnowledgePage.tsx`: 轮询错误处理 + 竞态修复 + emoji 替换
+- `nexus-ui/src/pages/PaperLibraryPage.tsx`: 错误信息优化 + emoji 替换
+- `nexus-ui/src/pages/ChatPage.tsx`: emoji 替换
+- `nexus-ui/src/pages/ResearchAgentPage.tsx`: emoji 替换
+- `nexus-ui/src/pages/TodayPage.tsx`: emoji 替换
+- `nexus-ui/src/pages/SettingsPage.tsx`: emoji 替换
+- `nexus-ui/src/pages/LiteraturePage.tsx`: 移除非功能性按钮
+- `nexus-ui/src/components/Icons.tsx`: 新增 7 个图标组件
+- `nexus-ui/src/styles.css`: 圆角/阴影设计令牌更新
+- `app/services/pdf_fetch.py`: 代理处理改为尊重系统代理
+- `server.py`: PDF 拉取错误状态码修正
+- `docs/DESIGN_LANGUAGE.md`: 设计语言规范文档
+
 ## v4.3.8 (2026-06-24) — SpringNote P0-P2 全面改进
 
 ### 新功能

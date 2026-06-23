@@ -7,6 +7,7 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { IconSearch, IconRefresh, IconBrain, IconChart, IconCheck, IconUpload } from "../components/Icons";
 
 // 从文本中提取关键词生成 ≤10 字标题
 function extractTitle(userMsg: string, _aiMsg: string): string {
@@ -146,7 +147,7 @@ const CHAT_CATEGORIES = [
   { key: "idea", label: "IDEA" },
   { key: "research", label: "研究" },
   { key: "discussion", label: "选题讨论" },
-  { key: "import", label: "📥 导入" },
+  { key: "import", label: <span className="flex items-center gap-1"><IconUpload size={12} /> 导入</span> },
 ];
 
 // 研究讨论结构化 prompt 模板
@@ -697,7 +698,7 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
         <div className="px-1">
           <input
             className="input-glass text-xs w-full"
-            placeholder="🔍 搜索会话..."
+            placeholder="搜索会话..."
             value={sessionSearch}
             onChange={e => setSessionSearch(e.target.value)}
           />
@@ -816,7 +817,7 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
                       onClick={(e) => { e.stopPropagation(); handleRegenerate(); }}
                       title="重新生成"
                     >
-                      🔄
+                      <IconRefresh size={12} />
                     </button>
                   )}
                 </div>
@@ -825,7 +826,7 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
                   <details className="thinking-block mb-2">
                     <summary className="text-xs cursor-pointer flex items-center gap-1.5"
                       style={{ color: msg.role === "user" ? "rgba(255,255,255,0.6)" : "var(--text-muted)" }}>
-                      <span className="thinking-icon">💭</span> Thinking
+                      <IconBrain size={12} className="thinking-icon" /> Thinking
                     </summary>
                     <div className="thinking-content mt-1.5 text-xs whitespace-pre-wrap"
                       style={{ color: msg.role === "user" ? "rgba(255,255,255,0.7)" : "var(--text-secondary)" }}>
@@ -851,7 +852,7 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
                       <div key={i} className="tool-call-item rounded-lg overflow-hidden"
                         style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.1)" }}>
                         <div className="flex items-center gap-2 text-xs px-3 py-1.5">
-                          <span className="tool-call-icon">{tc.result ? "✅" : "🔍"}</span>
+                          <span className="tool-call-icon">{tc.result ? <IconCheck size={12} style={{ color: "var(--accent-green)" }} /> : <IconSearch size={12} />}</span>
                           <span className="font-medium truncate flex-1" style={{ color: "var(--accent-blue)" }}>{tc.query}</span>
                           {!tc.result && <span className="stream-typing-dots" style={{ color: "var(--text-muted)" }}>搜索中</span>}
                         </div>
@@ -902,7 +903,7 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
                 {streamThinking && (
                   <details open className="thinking-block mb-2">
                     <summary className="text-xs cursor-pointer flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
-                      <span className="thinking-icon">💭</span> Thinking
+                      <IconBrain size={12} className="thinking-icon" /> Thinking
                     </summary>
                     <div className="thinking-content mt-1.5 text-xs whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>
                       {streamThinking}
@@ -918,7 +919,7 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
                 </div>
                 {streamStats && (
                   <div className="mt-2 text-[10px] flex items-center gap-3" style={{ color: "var(--text-muted)" }}>
-                    <span>📊 {streamStats.tokens} tokens</span>
+                    <span className="flex items-center gap-1"><IconChart size={11} /> {streamStats.tokens} tokens</span>
                     <span>⏱ {(streamStats.duration_ms / 1000).toFixed(1)}s</span>
                   </div>
                 )}

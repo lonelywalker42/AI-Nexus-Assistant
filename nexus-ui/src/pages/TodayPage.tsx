@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { tasksApi, dashboardApi, chatApi, modelsApi, type Task, type DashboardData } from "../api/client";
-import { IconPlus, IconCheck, IconSun, IconEdit, IconChevronRight, IconLightbulb } from "../components/Icons";
+import { IconPlus, IconCheck, IconSun, IconEdit, IconChevronRight, IconLightbulb, IconWarning, IconClipboard, IconChart, IconSparkle } from "../components/Icons";
 import { PRIORITIES, CATEGORIES, getPriority, getCategory, isOverdue } from "../constants/task";
 
 /* ── 结构化工作笔记数据模型 (5.1.1) ── */
@@ -98,16 +98,20 @@ function StructuredOverview({ note }: { note: StructuredWorkNote | null }) {
   }
 
   const sections = [
-    { icon: "✅", label: "完成事项", items: note.completed, color: "var(--accent-green)" },
-    { icon: "⚠️", label: "问题记录", items: note.issues, color: "#f59e0b" },
-    { icon: "📋", label: "明日计划", items: note.plans, color: "var(--accent-blue)" },
+    { iconName: "check", label: "完成事项", items: note.completed, color: "var(--accent-green)" },
+    { iconName: "warning", label: "问题记录", items: note.issues, color: "#f59e0b" },
+    { iconName: "clipboard", label: "明日计划", items: note.plans, color: "var(--accent-blue)" },
   ];
+
+  const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
+    check: IconCheck, warning: IconWarning, clipboard: IconClipboard,
+  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
       {sections.map(s => (
         <div key={s.label} className="glass-card p-3 space-y-1.5">
-          <p className="text-xs font-semibold" style={{ color: s.color }}>{s.icon} {s.label}</p>
+          <p className="text-xs font-semibold flex items-center gap-1" style={{ color: s.color }}>{(() => { const Icon = SECTION_ICONS[s.iconName]; return Icon ? <Icon size={12} /> : null; })()} {s.label}</p>
           {s.items.length > 0 ? (
             <ul className="space-y-1">
               {s.items.map((item, i) => (
@@ -149,7 +153,7 @@ function WeeklyReport({ dailyNotes }: { dailyNotes: Map<string, StructuredWorkNo
   return (
     <div className="glass-card p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>📊 本周周报摘要</p>
+        <p className="text-xs font-semibold flex items-center gap-1" style={{ color: "var(--text-primary)" }}><IconChart size={12} /> 本周周报摘要</p>
         <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "var(--hover-bg)", color: "var(--text-muted)" }}>
           {reportDays} 天有记录
         </span>
@@ -512,7 +516,7 @@ ${rawInput}`;
                 <button className="btn-primary btn-click text-xs py-1.5"
                   onClick={handleAiStructure}
                   disabled={isStructuring || !rawInput.trim()}>
-                  {isStructuring ? "整理中..." : "✨ AI 整理"}
+                  {isStructuring ? "整理中..." : <span className="flex items-center gap-1"><IconSparkle size={12} /> AI 整理</span>}
                 </button>
               </div>
             </div>

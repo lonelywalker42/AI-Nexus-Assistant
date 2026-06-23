@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.3.8")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.4.0")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -4288,7 +4288,10 @@ async def fetch_paper_pdf(req: FetchPdfRequest):
             raise HTTPException(404, error_msg)
         if "拒绝" in error_msg or "403" in error_msg:
             raise HTTPException(403, error_msg)
-        raise HTTPException(422, error_msg)
+        if "无效" in error_msg:
+            raise HTTPException(422, error_msg)
+        # 网络拉取失败用 502（Bad Gateway），而非 422
+        raise HTTPException(502, error_msg)
 
     pdf_path = result["pdf_path"]
 

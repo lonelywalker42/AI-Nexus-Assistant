@@ -20,6 +20,29 @@ from typing import Optional
 
 _log = logging.getLogger("nexus.pdf_fetch")
 
+
+def _make_httpx_client(**kwargs):
+    """创建 httpx.Client，对外部请求尊重系统代理设置。
+
+    与 ScholarAIO 的 trust_env 逻辑一致：
+    - 默认 trust_env=True，尊重 HTTP_PROXY/HTTPS_PROXY 环境变量和系统代理
+    - 调用方可通过 proxy= 参数显式覆盖
+    """
+    import httpx
+    kwargs.setdefault("follow_redirects", True)
+    kwargs.setdefault("timeout", 60)
+    kwargs.setdefault("trust_env", True)
+    return httpx.Client(**kwargs)
+
+
+def _make_localhost_client(**kwargs):
+    """创建绕过代理的 httpx.Client，仅用于 localhost 请求（如 open-webSearch）。"""
+    import httpx
+    kwargs.setdefault("proxy", None)
+    kwargs.setdefault("follow_redirects", True)
+    kwargs.setdefault("timeout", 10)
+    return httpx.Client(**kwargs)
+
 # 阶段 1: DOI → URL 规范化
 
 
@@ -486,9 +509,7 @@ def _try_scihub(doi: str, timeout: int = 30) -> Optional[str]:
         try:
             scihub_url = f"{mirror}/{clean_doi}"
             _log.info(f"尝试 Sci-Hub 镜像: {scihub_url[:80]}")
-            with httpx.Client(
-                proxy=None,
-                follow_redirects=True,
+            with _make_httpx_client(
                 timeout=timeout,
                 headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -666,9 +687,7 @@ def fetch_pdf(
         }
 
         try:
-            with httpx.Client(
-                proxy=None,  # 绕过本地代理（Clash 等）
-                follow_redirects=True,
+            with _make_httpx_client(
                 timeout=timeout,
                 headers=headers,
             ) as client:
@@ -804,9 +823,7 @@ def fetch_pdf(
         if unpaywall_url:
             _log.info(f"Unpaywall 找到 OA 链接: {unpaywall_url[:100]}")
             try:
-                with httpx.Client(
-                    proxy=None,
-                    follow_redirects=True,
+                with _make_httpx_client(
                     timeout=timeout,
                     headers=headers,
                 ) as client:
@@ -836,9 +853,7 @@ def fetch_pdf(
             if ss_url:
                 _log.info(f"Semantic Scholar 找到 OA 链接: {ss_url[:100]}")
                 try:
-                    with httpx.Client(
-                        proxy=None,
-                        follow_redirects=True,
+                    with _make_httpx_client(
                         timeout=timeout,
                         headers=headers,
                     ) as client:
@@ -870,9 +885,7 @@ def fetch_pdf(
             if crossref_url:
                 _log.info(f"Crossref 找到全文链接: {crossref_url[:100]}")
                 try:
-                    with httpx.Client(
-                        proxy=None,
-                        follow_redirects=True,
+                    with _make_httpx_client(
                         timeout=timeout,
                         headers=headers,
                     ) as client:
@@ -904,9 +917,7 @@ def fetch_pdf(
             if scihub_url:
                 _log.info(f"Sci-Hub 找到 PDF 链接: {scihub_url[:100]}")
                 try:
-                    with httpx.Client(
-                        proxy=None,
-                        follow_redirects=True,
+                    with _make_httpx_client(
                         timeout=timeout,
                         headers=headers,
                     ) as client:
@@ -963,9 +974,7 @@ def batch_fetch_pdf(
     os.makedirs(output_dir, exist_ok=True)
     results = []
 
-    with httpx.Client(
-        proxy=None,
-        follow_redirects=True,
+    with _make_httpx_client(
         timeout=timeout,
         headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",

@@ -2513,6 +2513,10 @@ class GameMinesweeper {
 
   init(savedState) {
     if (savedState) {
+      if (savedState.difficulty && this.difficulties[savedState.difficulty]) {
+        this.difficulty = savedState.difficulty;
+        this.applyDifficulty();
+      }
       this.grid = savedState.grid; this.revealed = savedState.revealed;
       this.flagged = savedState.flagged; this.score = savedState.score;
       this.over = savedState.over || false; this.won = savedState.won || false;
@@ -2541,7 +2545,8 @@ class GameMinesweeper {
     saveGameProgress('minesweeper', {
       grid: this.grid, revealed: this.revealed, flagged: this.flagged,
       score: this.score, over: this.over, won: this.won,
-      firstClick: this.firstClick, startTime: this.startTime, elapsed: this.elapsed
+      firstClick: this.firstClick, startTime: this.startTime, elapsed: this.elapsed,
+      difficulty: this.difficulty
     });
   }
 
@@ -2656,6 +2661,12 @@ class GameMinesweeper {
         const idx = (keys.indexOf(this.difficulty) + 1) % keys.length;
         this.difficulty = keys[idx];
         this.applyDifficulty();
+        // Reinitialize grid arrays to match new dimensions
+        this.grid = Array.from({ length: this.rows }, () => Array(this.cols).fill(0));
+        this.revealed = Array.from({ length: this.rows }, () => Array(this.cols).fill(false));
+        this.flagged = Array.from({ length: this.rows }, () => Array(this.cols).fill(false));
+        this.score = 0; this.over = false; this.won = false;
+        this.firstClick = true; this.startTime = 0; this.elapsed = 0;
         this.drawHelp();
         return;
       }

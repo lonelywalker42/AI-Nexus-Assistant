@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { papersApi, reviewsApi, type PaperDetail, type Review } from "../api/client";
-import { IconSearch, IconStar, IconFile, IconUpload, IconX } from "../components/Icons";
+import { IconSearch, IconStar, IconFile, IconUpload, IconX, IconDownload, IconClipboard, IconEdit, IconLink, IconRefresh, IconBook } from "../components/Icons";
 import { renderSimpleMarkdown } from "../utils/markdown";
 import { getTagColor } from "../utils/tagColors";
 
@@ -390,8 +390,12 @@ export default function PaperLibraryPage() {
       setFetchDoi("");
       setFetchTitle("");
       setFetchResult("拉取成功！");
-    } catch (err) {
-      setFetchResult(`拉取失败: ${err}`);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      // 提取 API 返回的详细错误信息
+      const match = msg.match(/API Error \d+: (.+)/s);
+      const detail = match ? match[1] : msg;
+      setFetchResult(`拉取失败: ${detail}`);
     }
     setFetching(false);
   };
@@ -523,7 +527,7 @@ export default function PaperLibraryPage() {
           {sortOrder === "desc" ? "↓" : "↑"}
         </button>
         <button className="btn-gradient btn-click text-xs py-2 px-3 flex items-center gap-1" onClick={() => setShowFetchModal(true)}>
-          📥 拉取 PDF
+          <IconDownload size={12} /> 拉取 PDF
         </button>
         <div className="relative">
           <button className="btn-gradient btn-click text-xs py-2 px-3 flex items-center gap-1" onClick={() => setShowImportMenu(!showImportMenu)}>
@@ -531,19 +535,19 @@ export default function PaperLibraryPage() {
           </button>
           {showImportMenu && (
             <div className="absolute right-0 top-full mt-1 z-50 glass-card p-1 min-w-[140px]" style={{ background: "var(--glass-bg)" }}>
-              <button className="w-full text-left text-xs px-3 py-2 rounded hover:bg-[var(--hover-bg)] cursor-pointer"
-                onClick={() => { fileInputRef.current?.click(); setShowImportMenu(false); }}>📄 导入 PDF</button>
-              <button className="w-full text-left text-xs px-3 py-2 rounded hover:bg-[var(--hover-bg)] cursor-pointer"
-                onClick={() => { bibtexInputRef.current?.click(); setShowImportMenu(false); }}>📚 导入 BibTeX</button>
-              <button className="w-full text-left text-xs px-3 py-2 rounded hover:bg-[var(--hover-bg)] cursor-pointer"
-                onClick={() => { risInputRef.current?.click(); setShowImportMenu(false); }}>📋 导入 RIS</button>
+              <button className="w-full text-left text-xs px-3 py-2 rounded hover:bg-[var(--hover-bg)] cursor-pointer flex items-center gap-1.5"
+                onClick={() => { fileInputRef.current?.click(); setShowImportMenu(false); }}><IconFile size={12} /> 导入 PDF</button>
+              <button className="w-full text-left text-xs px-3 py-2 rounded hover:bg-[var(--hover-bg)] cursor-pointer flex items-center gap-1.5"
+                onClick={() => { bibtexInputRef.current?.click(); setShowImportMenu(false); }}><IconBook size={12} /> 导入 BibTeX</button>
+              <button className="w-full text-left text-xs px-3 py-2 rounded hover:bg-[var(--hover-bg)] cursor-pointer flex items-center gap-1.5"
+                onClick={() => { risInputRef.current?.click(); setShowImportMenu(false); }}><IconClipboard size={12} /> 导入 RIS</button>
             </div>
           )}
         </div>
         <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={handleImportPdf} />
         <input ref={bibtexInputRef} type="file" accept=".bib,.bibtex" className="hidden" onChange={handleImportBibtex} />
         <input ref={risInputRef} type="file" accept=".ris" className="hidden" onChange={handleImportRis} />
-        <button className="btn-ghost text-xs py-2 px-3" onClick={handleAudit}>🔍 审计</button>
+        <button className="btn-ghost text-xs py-2 px-3 flex items-center gap-1" onClick={handleAudit}><IconSearch size={12} /> 审计</button>
         <button className={`btn-ghost text-xs py-2 ${batchMode ? "!bg-red-500 !text-white" : ""}`}
           onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}>
           {batchMode ? "取消" : "批量"}
@@ -870,7 +874,7 @@ export default function PaperLibraryPage() {
             {/* v3.6.0: 笔记系统（增强版） */}
             <div className="space-y-2 pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>📝 笔记</h3>
+                <h3 className="text-xs font-semibold flex items-center gap-1" style={{ color: "var(--text-primary)" }}><IconEdit size={12} /> 笔记</h3>
                 {!editingNotes ? (
                   <button className="btn-ghost text-[10px] py-1" onClick={() => { setNotesValue(selected.user_notes); setEditingNotes(true); }}>
                     编辑
@@ -915,7 +919,7 @@ export default function PaperLibraryPage() {
             {/* v3.6.0: 相关论文 */}
             {neighbors.length > 0 && (
               <div className="space-y-2 pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
-                <h3 className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>🔗 相关论文</h3>
+                <h3 className="text-xs font-semibold flex items-center gap-1" style={{ color: "var(--text-primary)" }}><IconLink size={12} /> 相关论文</h3>
                 <div className="space-y-1.5">
                   {neighbors.map(n => (
                     <div key={n.id} className="p-2 rounded-lg cursor-pointer hover:bg-[var(--hover-bg)] transition-colors"
@@ -1017,7 +1021,7 @@ export default function PaperLibraryPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
           <div className="glass-card p-6 w-[480px]" style={{ background: "var(--glass-bg)" }}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>📥 从出版社拉取 PDF</h3>
+              <h3 className="text-lg font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}><IconDownload size={18} /> 从出版社拉取 PDF</h3>
               <button onClick={() => { setShowFetchModal(false); setFetchResult(""); }}
                 className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
             </div>
@@ -1049,8 +1053,8 @@ export default function PaperLibraryPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
           <div className="glass-card p-6 w-[640px] max-h-[85vh] flex flex-col" style={{ background: "var(--glass-bg)" }}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-                📄 导入 PDF 确认 {importQueue.length > 1 && `(${currentImportIdx + 1}/${importQueue.length})`}
+              <h3 className="text-lg font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+                <IconFile size={18} /> 导入 PDF 确认 {importQueue.length > 1 && `(${currentImportIdx + 1}/${importQueue.length})`}
               </h3>
               <button onClick={() => { setShowImportDialog(false); setImportQueue([]); }}
                 className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
@@ -1132,7 +1136,7 @@ export default function PaperLibraryPage() {
                   <div className="flex justify-end">
                     <button className="btn-ghost text-xs flex items-center gap-1"
                       onClick={() => handleAutoFill(currentImportIdx)} disabled={autoFilling}>
-                      {autoFilling ? "查询中..." : "🔄 自动填充元数据"}
+                      {autoFilling ? "查询中..." : <span className="flex items-center gap-1"><IconRefresh size={12} /> 自动填充元数据</span>}
                     </button>
                   </div>
 
@@ -1239,7 +1243,7 @@ export default function PaperLibraryPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
           <div className="glass-card p-6 w-[600px] max-h-[80vh] flex flex-col" style={{ background: "var(--glass-bg)" }}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>🔍 元数据质量审计</h3>
+              <h3 className="text-lg font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}><IconSearch size={18} /> 元数据质量审计</h3>
               <button onClick={() => setShowAudit(false)}
                 className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
             </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { knowledgeApi, importGroupApi, knowledgeImportApi, type KnowledgeCard, type ImportGroup } from "../api/client";
-import { IconFile, IconChat, IconArrowLeft, IconStar, IconLightbulb, IconX, IconGlobe } from "../components/Icons";
+import { IconFile, IconChat, IconArrowLeft, IconStar, IconLightbulb, IconX, IconGlobe, IconChart, IconBrain, IconFolder, IconList, IconGrid } from "../components/Icons";
 import { getTagColor } from "../utils/tagColors";
 
 const CATEGORIES = [
@@ -289,9 +289,11 @@ export default function KnowledgePage() {
 
   const startProgressPolling = (groupId: string) => {
     if (pollingRef.current) clearInterval(pollingRef.current);
+    let pollFailCount = 0;
     pollingRef.current = setInterval(async () => {
       try {
         const progress = await importGroupApi.getProgress(groupId);
+        pollFailCount = 0; // 成功则重置失败计数
         setImportStatus(`[${progress.status}] ${progress.progress}\n已生成 ${progress.card_count} 张卡片`);
         if (progress.status === "completed" || progress.status === "failed") {
           if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
@@ -299,15 +301,23 @@ export default function KnowledgePage() {
           if (progress.status === "completed") {
             setImportStatus(`✅ ${progress.progress}`);
             // 重置所有筛选条件（包括分类），确保导入后能看到所有卡片
+            // 状态变更会通过 useEffect 自动触发 loadCards()，无需手动调用
             setSearch(""); setStarMin(0); setTagFilter(""); setActiveCategory("");
-            knowledgeApi.listCards({}).then(data => { setCards(data); setAllCards(data); }).catch(console.error);
             loadImportGroups();
           } else {
             setImportStatus(`❌ 导入失败: ${progress.error}`);
           }
         }
-      } catch {
-        // 忽略轮询错误
+      } catch (pollErr) {
+        console.error("轮询进度失败:", pollErr);
+        // 连续失败超过 5 次则停止轮询并提示用户
+        if (!pollFailCount) pollFailCount = 0;
+        pollFailCount++;
+        if (pollFailCount > 5) {
+          if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
+          setImportStatus(`⚠️ 进度查询失败，请刷新页面查看结果`);
+          setImporting(false);
+        }
       }
     }, 2000);
   };
@@ -449,7 +459,7 @@ export default function KnowledgePage() {
             <IconLightbulb size={13} /> 随手记
           </button>
           <button className="btn-ghost text-xs py-2 flex items-center gap-1" onClick={buildGraph}>
-            📊 知识图谱
+            <IconChart size={13} /> 知识图谱
           </button>
           <button className="btn-gradient btn-click text-xs py-2 px-3" onClick={handleCreate}>新建卡片</button>
         </div>
@@ -486,7 +496,7 @@ export default function KnowledgePage() {
             <button onClick={handleDeepSeekImport} disabled={importing}
               className="text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
               style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6", fontWeight: 600 }}>
-              🧠 DeepSeek 智能导入
+              <IconBrain size={13} /> DeepSeek 智能导入
             </button>
             <button onClick={() => { loadImportGroups(); setView("importGroups"); }}
               className="btn-ghost text-xs py-1.5 disabled:opacity-50">
@@ -542,12 +552,12 @@ export default function KnowledgePage() {
               <button className="p-1.5 rounded-md cursor-pointer transition-all"
                 style={viewMode === "list" ? { background: "var(--glass-bg)" } : {}}
                 onClick={() => setViewMode("list")}>
-                <span className="text-xs" style={{ color: viewMode === "list" ? "var(--accent-blue)" : "var(--text-muted)" }}>☰</span>
+                <IconList size={14} style={{ color: viewMode === "list" ? "var(--accent-blue)" : "var(--text-muted)" }} />
               </button>
               <button className="p-1.5 rounded-md cursor-pointer transition-all"
                 style={viewMode === "grid" ? { background: "var(--glass-bg)" } : {}}
                 onClick={() => setViewMode("grid")}>
-                <span className="text-xs" style={{ color: viewMode === "grid" ? "var(--accent-blue)" : "var(--text-muted)" }}>⊞</span>
+                <IconGrid size={14} style={{ color: viewMode === "grid" ? "var(--accent-blue)" : "var(--text-muted)" }} />
               </button>
             </div>
             <button className="px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
@@ -667,7 +677,7 @@ export default function KnowledgePage() {
                     <span>{group.message_count} 条消息</span>
                     <span>{group.card_count} 张卡片</span>
                     <span>{new Date(group.created_at).toLocaleString("zh-CN")}</span>
-                    {group.original_filename && <span>📁 {group.original_filename}</span>}
+                    {group.original_filename && <span className="flex items-center gap-1"><IconFolder size={13} /> {group.original_filename}</span>}
                   </div>
 
                   {group.knowledge_domain && group.knowledge_domain.length > 0 && (
@@ -765,8 +775,8 @@ export default function KnowledgePage() {
                       </div>
                     )}
                     {card.category_path && (
-                      <span className="text-[9px] mt-1 inline-block" style={{ color: "var(--text-muted)" }}>
-                        📂 {card.category_path}
+                      <span className="text-[9px] mt-1 inline-flex items-center gap-0.5" style={{ color: "var(--text-muted)" }}>
+                        <IconFolder size={10} /> {card.category_path}
                       </span>
                     )}
                   </div>

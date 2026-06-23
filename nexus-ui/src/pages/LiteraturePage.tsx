@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { searchApi, historyApi, chatApi, modelsApi, knowledgeApi, papersApi, enhancedSearchApi, type Paper, type HistoryRecord, type ModelConfig, type KnowledgeCard } from "../api/client";
-import { IconSearch, IconChevronRight, IconSparkle, IconBookmark, IconList, IconGrid, IconUpload, IconFilter, IconGlobe, IconX } from "../components/Icons";
+import { IconSearch, IconChevronRight, IconSparkle, IconBookmark, IconList, IconGrid, IconUpload, IconFilter, IconX } from "../components/Icons";
 import { renderSimpleMarkdown } from "../utils/markdown";
 
 const SOURCES = [
@@ -513,13 +513,6 @@ export default function LiteraturePage() {
                     <IconUpload size={12} /> {batchImporting ? "导入中..." : `批量导入到文献库${reviewPool.size > 0 ? ` (${reviewPool.size})` : ""}`}
                   </button>
                 )}
-                <button className="text-xs cursor-pointer flex items-center gap-1 transition-colors"
-                  style={{ color: "var(--text-muted)" }}
-                  onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-blue)")}
-                  onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
-                >
-                  <IconGlobe size={12} /> 在线检索
-                </button>
               </div>
               <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "var(--hover-bg)" }}>
                 <button className="p-1.5 rounded-md cursor-pointer transition-all"

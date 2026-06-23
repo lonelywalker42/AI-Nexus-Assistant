@@ -2,14 +2,19 @@ import { useState, useCallback } from "react";
 import { agentApi } from "../api/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { IconBook, IconEdit, IconFlask, IconClipboard, IconChat, IconBrain, IconClock, IconX, IconCheck } from "../components/Icons";
 
 const WORKFLOW_TYPES = [
-  { key: "review", label: "文献综述", icon: "📚", desc: "多源检索 + 综合报告生成" },
-  { key: "writing", label: "论文写作", icon: "✍️", desc: "分章节撰写学术论文" },
-  { key: "experiment", label: "实验设计", icon: "🧪", desc: "假设生成 + 实验方案 + 代码骨架" },
-  { key: "peer_review", label: "同行评审", icon: "📝", desc: "AI 模拟同行评审并给出改进建议" },
-  { key: "debate", label: "多视角讨论", icon: "💬", desc: "多 Agent 从不同角度讨论，提升推理质量" },
+  { key: "review", label: "文献综述", iconName: "book", desc: "多源检索 + 综合报告生成" },
+  { key: "writing", label: "论文写作", iconName: "edit", desc: "分章节撰写学术论文" },
+  { key: "experiment", label: "实验设计", iconName: "flask", desc: "假设生成 + 实验方案 + 代码骨架" },
+  { key: "peer_review", label: "同行评审", iconName: "clipboard", desc: "AI 模拟同行评审并给出改进建议" },
+  { key: "debate", label: "多视角讨论", iconName: "chat", desc: "多 Agent 从不同角度讨论，提升推理质量" },
 ];
+
+const ICON_MAP: Record<string, React.ComponentType<any>> = {
+  book: IconBook, edit: IconEdit, flask: IconFlask, clipboard: IconClipboard, chat: IconChat,
+};
 
 export default function ResearchAgentPage() {
   const [workflowType, setWorkflowType] = useState("review");
@@ -152,8 +157,8 @@ export default function ResearchAgentPage() {
 
   return (
     <div className="flex flex-col gap-4 h-full">
-      <h2 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>
-        🤖 科研 Agent 工作流
+      <h2 className="text-base font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+        <IconBrain size={18} /> 科研 Agent 工作流
       </h2>
 
       {/* 工作流类型选择 */}
@@ -169,7 +174,7 @@ export default function ResearchAgentPage() {
             onClick={() => !loading && setWorkflowType(wt.key)}
           >
             <div className="flex items-center gap-2">
-              <span className="text-lg">{wt.icon}</span>
+              {(() => { const Icon = ICON_MAP[wt.iconName]; return Icon ? <Icon size={18} style={{ color: "var(--accent-blue)" }} /> : null; })()}
               <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
                 {wt.label}
               </span>
@@ -215,7 +220,7 @@ export default function ResearchAgentPage() {
 
         <div className="flex justify-between items-center">
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            {loading ? "⏳ 正在执行..." : result ? "✅ 执行完成" : "就绪"}
+            {loading ? <span className="flex items-center gap-1"><IconClock size={13} /> 正在执行...</span> : result ? <span className="flex items-center gap-1"><IconCheck size={13} /> 执行完成</span> : "就绪"}
           </span>
           <button
             className="btn-gradient btn-click"
@@ -230,7 +235,7 @@ export default function ResearchAgentPage() {
       {/* 错误提示 */}
       {error && (
         <div className="glass-card p-3" style={{ border: "1px solid #ef4444" }}>
-          <p className="text-sm" style={{ color: "#ef4444" }}>❌ {error}</p>
+          <p className="text-sm flex items-center gap-1" style={{ color: "#ef4444" }}><IconX size={13} /> {error}</p>
         </div>
       )}
 
