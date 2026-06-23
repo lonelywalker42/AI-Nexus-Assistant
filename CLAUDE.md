@@ -14,6 +14,8 @@ AI Nexus Assistant is a personal research assistant desktop application that int
 - Frontend UI in SettingsPage: "检查更新" button + update dialog
 - Config: `tauri.conf.json` → `plugins.updater.endpoints`
 - Signing key: `~/.tauri/nexus.key` (generate with `npx tauri signer generate`)
+- **⚠️ `latest.json` 必须随每个版本发布** — updater 端点指向 `releases/latest/download/latest.json`，若缺失则自动更新完全失效
+- **签名命令**: `npx tauri signer sign -f ~/.tauri/nexus.key -p "" <file>` — 必须使用 `-f` 读取密钥文件 + `-p ""` 指定空密码，否则会挂起等待交互输入
 
 **JWT Authentication** (`app/auth.py`):
 - Endpoints: `POST /api/auth/login`, `POST /api/auth/refresh`, `GET /api/auth/me`
@@ -344,14 +346,42 @@ cd nexus-ui && npx tauri build      # Build Tauri app
 cp nexus-ui/src-tauri/target/release/nexus-ui.exe release/AI-Nexus-Assistant.exe
 cp nexus-ui/src-tauri/target/release/nexus_ui_lib.dll release/nexus_ui_lib.dll
 
-# Publish
+# Sign installers (必须！updater 需要 Ed25519 签名验证)
+cd nexus-ui
+npx tauri signer sign -f ~/.tauri/nexus.key -p "" "src-tauri/target/release/bundle/nsis/AI Nexus Assistant_X.Y.Z_x64-setup.exe"
+npx tauri signer sign -f ~/.tauri/nexus.key -p "" "src-tauri/target/release/bundle/msi/AI Nexus Assistant_X.Y.Z_x64_en-US.msi"
+cd ..
+
+# Generate latest.json (用 Python 生成，确保中文正确编码)
+python -c "
+import json, datetime
+nsis_sig = open('nexus-ui/src-tauri/target/release/bundle/nsis/...setup.exe.sig').read().strip()
+data = {
+    'version': 'X.Y.Z',
+    'notes': '更新说明',
+    'pub_date': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'platforms': {
+        'windows-x86_64': {
+            'signature': nsis_sig,
+            'url': 'https://github.com/lonelywalker42/AI-Nexus-Assistant/releases/download/vX.Y.Z/AI.Nexus.Assistant_X.Y.Z_x64-setup.exe'
+        }
+    }
+}
+with open('release/latest.json', 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+"
+
+# Publish (⚠️ 必须包含 latest.json！)
 git tag vX.Y.Z && git push origin main && git push origin vX.Y.Z
 gh release create vX.Y.Z --title "vX.Y.Z - Title" --notes "..." \
   release/AI-Nexus-Assistant.exe \
   release/nexus_ui_lib.dll \
-  "bundle/nsis/...setup.exe" \
-  "bundle/msi/...msi"
+  release/latest.json \
+  "nexus-ui/src-tauri/target/release/bundle/nsis/...setup.exe" \
+  "nexus-ui/src-tauri/target/release/bundle/msi/...msi"
 ```
+
+> **调试教训**: v4.3.1 及之前所有版本均未上传 `latest.json`，导致 Tauri 自动更新端点 `releases/latest/download/latest.json` 始终 404，自动更新功能完全失效。签名工具必须使用 `-f <keyfile> -p ""` 参数，否则 `tauri signer sign` 会挂起等待交互式密码输入。
 
 #### 4. Iteration (Bug fix v*.*.x)
 - Based on user feedback / bug reports
