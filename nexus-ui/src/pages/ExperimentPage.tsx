@@ -334,7 +334,7 @@ export default function ExperimentPage() {
             {/* 项目信息 */}
             <div className="glass-card p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>项目信息</h3>
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>项目信息</h3>
                 <div className="flex gap-2">
                   <button className="btn-ghost text-xs" onClick={async () => {
                     if (!activeId) return;
@@ -417,7 +417,7 @@ export default function ExperimentPage() {
             {/* 试验结果 */}
             <div className="glass-card p-5">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>试验结果 ({active.results.length})</h3>
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>试验结果 ({active.results.length})</h3>
                 <div className="flex gap-2">
                   <button className="btn-ghost text-xs" onClick={loadParamTable} disabled={active.results.length === 0}>
                     参数对比
@@ -574,7 +574,7 @@ export default function ExperimentPage() {
             {showParamTable && paramTable && (
               <div className="glass-card p-5 overflow-x-auto">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>参数对比</h3>
+                  <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>参数对比</h3>
                   <button className="btn-ghost text-xs" onClick={() => setShowParamTable(false)}>关闭</button>
                 </div>
                 <table className="w-full text-xs">
@@ -607,7 +607,7 @@ export default function ExperimentPage() {
             {/* AI 分析 */}
             <div className="glass-card p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>AI 分析</h3>
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>AI 分析</h3>
                 <div className="flex gap-2">
                   <button className="btn-ghost text-xs" onClick={async () => {
                     if (!activeId) return;
@@ -655,7 +655,7 @@ export default function ExperimentPage() {
             <div className="grid grid-cols-2 gap-4">
               {compareExps.map((exp, i) => (
                 <div key={exp.id} className="space-y-3">
-                  <h4 className="font-semibold" style={{ color: i === 0 ? "#3b82f6" : "#10b981" }}>{exp.title}</h4>
+                  <h4 className="text-sm font-semibold" style={{ color: i === 0 ? "var(--accent-blue)" : "var(--accent-green)" }}>{exp.title}</h4>
                   <div className="space-y-2 text-sm">
                     <div><strong>状态:</strong> {STATUS_LABELS[exp.status]}</div>
                     <div><strong>目标:</strong> {exp.objective || "未设置"}</div>

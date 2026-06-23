@@ -483,7 +483,7 @@ export default function KnowledgePage() {
           {importStatus && (
             <pre className="text-xs whitespace-pre-wrap rounded-lg p-3" style={{
               color: importStatus.includes("失败") || importStatus.includes("❌") ? "#ef4444" :
-                     importStatus.includes("✅") ? "#10b981" : "var(--text-secondary)",
+                     importStatus.includes("✅") ? "var(--accent-green)" : "var(--text-secondary)",
               background: "var(--hover-bg)", fontFamily: "inherit",
             }}>
               {importStatus}
@@ -539,7 +539,7 @@ export default function KnowledgePage() {
               <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>已选 {selectedIds.size} 项</span>
               {selectedIds.size > 0 && (
                 <>
-                  <button className="text-xs cursor-pointer" style={{ color: "#10b981" }} onClick={handleBatchExport}>导出</button>
+                  <button className="text-xs cursor-pointer" style={{ color: "var(--accent-green)" }} onClick={handleBatchExport}>导出</button>
                   <button className="text-xs cursor-pointer" style={{ color: "#ef4444" }} onClick={handleBatchDelete}>删除</button>
                 </>
               )}
@@ -619,8 +619,8 @@ export default function KnowledgePage() {
                       style={{
                         background: group.status === "completed" ? "rgba(16,185,129,0.1)" :
                                    group.status === "failed" ? "rgba(239,68,68,0.1)" : "rgba(59,130,246,0.1)",
-                        color: group.status === "completed" ? "#10b981" :
-                               group.status === "failed" ? "#ef4444" : "#3b82f6",
+                        color: group.status === "completed" ? "var(--accent-green)" :
+                               group.status === "failed" ? "#ef4444" : "var(--accent-blue)",
                       }}>
                       {group.status === "completed" ? "完成" : group.status === "failed" ? "失败" : "处理中"}
                     </span>
@@ -628,7 +628,7 @@ export default function KnowledgePage() {
                   </div>
 
                   {group.status === "processing" && (
-                    <p className="text-xs mb-1" style={{ color: "#3b82f6" }}>{group.progress}</p>
+                    <p className="text-xs mb-1" style={{ color: "var(--accent-blue)" }}>{group.progress}</p>
                   )}
 
                   {group.summary && (
@@ -676,7 +676,7 @@ export default function KnowledgePage() {
               <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
                 style={{
                   background: selectedGroup.status === "completed" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
-                  color: selectedGroup.status === "completed" ? "#10b981" : "#ef4444",
+                  color: selectedGroup.status === "completed" ? "var(--accent-green)" : "#ef4444",
                 }}>
                 {selectedGroup.status === "completed" ? "处理完成" : "处理失败"}
               </span>

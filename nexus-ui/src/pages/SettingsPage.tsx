@@ -291,7 +291,7 @@ export default function SettingsPage() {
 
       {/* AI 模型 */}
       <div className="glass-card p-5 space-y-4">
-        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>AI 模型配置</h3>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>AI 模型配置</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -360,7 +360,7 @@ export default function SettingsPage() {
             </div>
             <div className="flex gap-2">
               <button className="btn-gradient btn-click" onClick={handleSaveModel}>{editingId ? "保存修改" : "添加"}</button>
-              <button className="btn-ghost" onClick={() => { setShowForm(false); setEditingId(null); }}>取消</button>
+              <button className="btn-ghost text-xs" onClick={() => { setShowForm(false); setEditingId(null); }}>取消</button>
             </div>
           </div>
         )}
@@ -374,7 +374,7 @@ export default function SettingsPage() {
 
       {/* 个性化 */}
       <div className="glass-card p-5 space-y-4">
-        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>个性化</h3>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>个性化</h3>
         <div className="space-y-3">
           <div>
             <p className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>应用名称</p>
@@ -409,7 +409,7 @@ export default function SettingsPage() {
 
       {/* 主题 */}
       <div className="glass-card p-5 space-y-4">
-        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>主题</h3>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>主题</h3>
         <div className="flex gap-3">
           <button
             onClick={() => handleThemeChange("light")}
@@ -525,7 +525,7 @@ export default function SettingsPage() {
 
       {/* 联网搜索服务 */}
       <div className="glass-card p-5 space-y-4">
-        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>联网搜索服务</h3>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>联网搜索服务</h3>
         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
           AI 对话中使用联网搜索需要 open-webSearch 服务运行（需要 Node.js）
         </p>
@@ -602,7 +602,7 @@ export default function SettingsPage() {
 
       {/* 应用更新 */}
       <div className="glass-card p-5 space-y-4">
-        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>应用更新</h3>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>应用更新</h3>
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
           检查 GitHub Release 获取最新版本。桌面端支持自动下载安装，移动端请前往应用商店更新。
         </p>
@@ -700,9 +700,9 @@ export default function SettingsPage() {
 
       {/* 数据管理 */}
       <div className="glass-card p-5 space-y-4">
-        <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>数据管理</h3>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>数据管理</h3>
         <div className="flex gap-3 flex-wrap">
-          <button className="btn-ghost"
+          <button className="btn-ghost text-xs"
             onClick={() => {
               const input = document.createElement("input");
               input.type = "file";
@@ -723,7 +723,7 @@ export default function SettingsPage() {
               input.click();
             }}
           >导入 JSON</button>
-          <button className="btn-ghost"
+          <button className="btn-ghost text-xs"
             onClick={async () => {
               try {
                 const result = await backupApi.create();
@@ -734,7 +734,7 @@ export default function SettingsPage() {
               }
             }}
           >手动备份</button>
-          <button className="btn-ghost"
+          <button className="btn-ghost text-xs"
             onClick={() => {
               const input = document.createElement("input");
               input.type = "file";
@@ -759,7 +759,7 @@ export default function SettingsPage() {
               input.click();
             }}
           >导入 .db/.zip 恢复</button>
-          <button className="btn-ghost"
+          <button className="btn-ghost text-xs"
             onClick={async () => {
               try {
                 const blob = await backupApi.exportDb();
@@ -835,7 +835,7 @@ function MinerUSection() {
 
   return (
     <div className="glass-card p-5 space-y-3">
-      <h3 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>PDF 转换引擎 (MinerU)</h3>
+      <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>PDF 转换引擎 (MinerU)</h3>
       <p className="text-xs" style={{ color: "var(--text-muted)" }}>
         MinerU 可将 PDF 高质量转换为 Markdown，保留公式、图片和表格。安装后 LLM 阅读论文效果显著提升。约需 2GB 磁盘空间。
       </p>

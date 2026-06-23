@@ -104,7 +104,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       <div className="glass-card p-5">
-        <h3 className="text-base font-semibold mb-3" style={{ color: "var(--text-primary)" }}>近期活动</h3>
+        <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>近期活动</h3>
         <div className="space-y-1">
           {data?.activities?.length ? data.activities.map((a, i) => {
             const targetPage = ACTIVITY_PAGE_MAP[a.type] || "dashboard";

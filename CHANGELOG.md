@@ -12,6 +12,7 @@
 - **引用按钮UI统一（补丁）**: "复制"/"修正引用" 按钮移除 min-w-[52px] 固定宽度，改用 whitespace-nowrap 自适应文字宽度
 - **写作导出无响应（补丁）**: 导出下拉菜单从 CSS group-hover 改为 click 状态切换 + 点击外部关闭，兼容 Tauri WebView2
 - **DeepSeek导入去重（补丁）**: 导入完成后自动调用 deduplicate_sessions("import") 清除历史对话中的标题重复项
+- **UI一致性修复**: SettingsPage 按钮补全 text-xs；玻璃卡片标题统一为 text-sm font-semibold；硬编码颜色替换为 CSS 变量
 - **PDF拉取错误信息**: 优化 422 错误提示，提供 4 种具体操作建议（校园网/手动下载/Sci-Hub/作者主页）
 
 ### 新功能
