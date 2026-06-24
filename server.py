@@ -1177,7 +1177,7 @@ def list_cards(search: str = "", category: str = "", tag: str = "", source_type:
                 "star_rating": c.star_rating, "user_notes": c.user_notes,
                 "import_group_id": c.import_group_id,
                 "chat_session_id": c.chat_session_id,
-                "tags": [t.tag_name for t in card_tags],
+                "tags": [t.name for t in card_tags],
                 "created_at": c.created_at.isoformat(),
                 "updated_at": c.updated_at.isoformat() if c.updated_at else c.created_at.isoformat(),
             })
