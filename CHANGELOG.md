@@ -1,5 +1,15 @@
 # Changelog
 
+## v4.4.4 (2026-06-24) — 性能优化 + 稳定性修复
+
+### 性能优化
+- **list_cards 端点 N+1 查询优化**: 将逐卡片查询标签改为单次批量查询，324 张卡片响应时间从 0.19s 降至 0.003s（**54 倍提速**）
+
+### 稳定性修复
+- **前端 loadCards() 重试机制**: 添加 `fetchWithRetry` 包装，最多重试 3 次，指数退避（500ms → 1s → 2s），避免单次请求失败即永久显示"网络连接失败"
+- **request() 双保险超时**: `AbortSignal.timeout()` + `Promise.race` 兜底机制，解决部分 WebView2 版本 AbortSignal 兼容性问题
+- **错误识别增强**: 新增 `AbortError` 和 `Load failed` 错误类型识别
+
 ## v4.4.3 (2026-06-24) — Bug 修复
 
 ### Bug 修复
