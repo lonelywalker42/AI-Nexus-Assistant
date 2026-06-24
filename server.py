@@ -1166,10 +1166,20 @@ def list_cards(search: str = "", category: str = "", tag: str = "", source_type:
             cards.sort(key=lambda c: c.star_rating or 0, reverse=reverse)
         else:  # updated_at or created_at
             cards.sort(key=lambda c: getattr(c, sort_by, c.updated_at) or c.updated_at, reverse=reverse)
-        # Get tags for each card
+        # Batch-fetch all card tags in one query (avoid N+1)
+        card_ids = [c.id for c in cards]
+        tags_map: dict[str, list[str]] = {cid: [] for cid in card_ids}
+        if card_ids:
+            from app.models.knowledge import CardTag
+            rows = db.query(CardTag.card_id, CardTag.tag_name).filter(
+                CardTag.card_id.in_(card_ids)
+            ).all()
+            for card_id, tag_name in rows:
+                if card_id in tags_map:
+                    tags_map[card_id].append(tag_name)
+        # Build response
         result = []
         for c in cards:
-            card_tags = knowledge_service.get_card_tags(db, c.id)
             result.append({
                 "id": c.id, "title": c.title, "summary": c.summary,
                 "key_points": json.loads(c.key_points) if c.key_points else [],
@@ -1177,7 +1187,7 @@ def list_cards(search: str = "", category: str = "", tag: str = "", source_type:
                 "star_rating": c.star_rating, "user_notes": c.user_notes,
                 "import_group_id": c.import_group_id,
                 "chat_session_id": c.chat_session_id,
-                "tags": [t.name for t in card_tags],
+                "tags": tags_map.get(c.id, []),
                 "created_at": c.created_at.isoformat(),
                 "updated_at": c.updated_at.isoformat() if c.updated_at else c.created_at.isoformat(),
             })

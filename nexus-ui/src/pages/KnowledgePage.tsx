@@ -138,11 +138,27 @@ export default function KnowledgePage() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  // 带重试的请求包装（最多重试 3 次，指数退避）
+  const fetchWithRetry = async <T,>(fn: () => Promise<T>, maxRetries = 3): Promise<T> => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastError = err;
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
+        }
+      }
+    }
+    throw lastError;
+  };
+
   const loadCards = () => {
     setLoading(true);
     setLoadError(null);
     // 加载全部卡片（用于分类计数 + 主列表），前端做筛选
-    knowledgeApi.listCards({}).then(data => {
+    fetchWithRetry(() => knowledgeApi.listCards({})).then(data => {
       const all = Array.isArray(data) ? data : [];
       setAllCards(all);
       // 前端筛选：搜索、排序、星级、标签
@@ -176,9 +192,9 @@ export default function KnowledgePage() {
       console.error("加载卡片失败:", err);
       const msg = err?.message || "";
       const name = err?.name || "";
-      if (msg.includes("not ready") || msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+      if (msg.includes("not ready") || msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed")) {
         setLoadError("网络连接失败，请检查后端服务是否运行 (python server.py)");
-      } else if (name === "TimeoutError" || msg.includes("timed out") || msg.includes("timeout")) {
+      } else if (name === "TimeoutError" || name === "AbortError" || msg.includes("timed out") || msg.includes("timeout") || msg.includes("aborted")) {
         setLoadError("请求超时，后端响应过慢，请稍后重试");
       } else if (msg.includes("API Error")) {
         setLoadError("服务返回错误: " + msg);

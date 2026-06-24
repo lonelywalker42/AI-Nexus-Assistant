@@ -132,31 +132,44 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...(isGet ? {} : { "Content-Type": "application/json" }),
     ...(options?.headers as Record<string, string> || {}),
   };
-  // 30 秒超时，防止请求挂起
-  let mergedSignal: AbortSignal;
+  // 30 秒超时，防止请求挂起（AbortSignal.timeout + Promise.race 双保险）
+  const TIMEOUT_MS = 30000;
+  let abortController: AbortController | null = null;
+  let mergedSignal: AbortSignal | undefined;
   try {
-    const timeoutSignal = AbortSignal.timeout(30000);
+    const timeoutSignal = AbortSignal.timeout(TIMEOUT_MS);
     mergedSignal = options?.signal
       ? AbortSignal.any([options.signal, timeoutSignal])
       : timeoutSignal;
   } catch {
-    // AbortSignal.timeout/any 不可用时忽略超时
-    mergedSignal = options?.signal as AbortSignal;
+    // AbortSignal.timeout/any 不可用时，使用 AbortController + setTimeout 兜底
+    abortController = new AbortController();
+    mergedSignal = abortController.signal;
+    setTimeout(() => abortController?.abort(), TIMEOUT_MS);
   }
-  let res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: mergedSignal });
 
-  // 401 → 尝试刷新 token → 重试
-  if (res.status === 401) {
-    const refreshed = await authApi.refresh();
-    if (refreshed) {
-      const retryHeaders = {
-        ...getAuthHeader(),
-        ...(isGet ? {} : { "Content-Type": "application/json" }),
-        ...(options?.headers as Record<string, string> || {}),
-      };
-      res = await fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders, signal: mergedSignal });
+  const doFetch = async (): Promise<Response> => {
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: mergedSignal });
+    // 401 → 尝试刷新 token → 重试
+    if (res.status === 401) {
+      const refreshed = await authApi.refresh();
+      if (refreshed) {
+        const retryHeaders = {
+          ...getAuthHeader(),
+          ...(isGet ? {} : { "Content-Type": "application/json" }),
+          ...(options?.headers as Record<string, string> || {}),
+        };
+        return fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders, signal: mergedSignal });
+      }
     }
-  }
+    return res;
+  };
+
+  // Promise.race 兜底：即使 AbortSignal 机制失效，也能超时
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new DOMException("Request timed out", "TimeoutError")), TIMEOUT_MS + 1000);
+  });
+  const res = await Promise.race([doFetch(), timeoutPromise]);
 
   if (!res.ok) {
     const err = await res.text();
