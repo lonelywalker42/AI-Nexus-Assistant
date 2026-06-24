@@ -509,6 +509,7 @@ class Game2048 {
   constructor() { this.grid = []; this.score = 0; this.over = false; this.won = false; this.wonContinue = false; }
 
   init(savedState) {
+    if (this._keyH) document.removeEventListener('keydown', this._keyH);
     if (savedState) {
       this.grid = savedState.grid;
       this.score = savedState.score;
@@ -1626,6 +1627,7 @@ class GameWordHopper {
   }
 
   init(savedState) {
+    if (this._keyH) document.removeEventListener('keydown', this._keyH);
     if (savedState) {
       this.score = savedState.score;
       this.combo = savedState.combo;
@@ -3967,6 +3969,7 @@ class GameInvaders {
   constructor() { this.over = false; }
 
   init(savedState) {
+    if (this._keyH) document.removeEventListener('keydown', this._keyH);
     this.score = 0; this.lives = 3; this.level = 1; this.over = false;
     this.player = { x: W / 2 - 15, w: 30, h: 16 };
     this.bullets = []; this.enemyBullets = [];
@@ -4127,6 +4130,7 @@ class GameHextris {
   constructor() { this.over = false; }
 
   init() {
+    if (this._keyH) document.removeEventListener('keydown', this._keyH);
     this.score = 0; this.over = false;
     this.hex = { angle: 0, sides: [0, 0, 0, 0, 0, 0] }; // 6 sides, color index
     this.blocks = []; // falling blocks {side, color}
@@ -4257,6 +4261,8 @@ class GameTower {
   constructor() { this.over = false; }
 
   init() {
+    if (this._keyH) document.removeEventListener('keydown', this._keyH);
+    if (this._clickH) canvas.removeEventListener('click', this._clickH);
     this.score = 0; this.over = false; this.blocks = [];
     this.current = { x: 50, w: 160, dir: 1, speed: 2 };
     this.baseY = H - 60;
@@ -4367,6 +4373,8 @@ class GameRacer {
   constructor() { this.over = false; }
 
   init() {
+    if (this._keyH) document.removeEventListener('keydown', this._keyH);
+    if (this._keyUpH) document.removeEventListener('keyup', this._keyUpH);
     this.score = 0; this.speed = 0; this.maxSpeed = 160; this.over = false;
     this.playerX = 0; // -1 to 1
     this.road = []; this.segments = 200;
