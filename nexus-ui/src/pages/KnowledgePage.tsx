@@ -175,8 +175,11 @@ export default function KnowledgePage() {
     }).catch(err => {
       console.error("加载卡片失败:", err);
       const msg = err?.message || "";
+      const name = err?.name || "";
       if (msg.includes("not ready") || msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
         setLoadError("网络连接失败，请检查后端服务是否运行 (python server.py)");
+      } else if (name === "TimeoutError" || msg.includes("timed out") || msg.includes("timeout")) {
+        setLoadError("请求超时，后端响应过慢，请稍后重试");
       } else if (msg.includes("API Error")) {
         setLoadError("服务返回错误: " + msg);
       } else {
@@ -301,9 +304,11 @@ export default function KnowledgePage() {
           if (progress.status === "completed") {
             setImportStatus(`✅ ${progress.progress}`);
             // 重置所有筛选条件（包括分类），确保导入后能看到所有卡片
-            // 状态变更会通过 useEffect 自动触发 loadCards()，无需手动调用
             setSearch(""); setStarMin(0); setTagFilter(""); setActiveCategory("");
+            setView("categories");
             loadImportGroups();
+            // 显式调用 loadCards() 刷新卡片列表（useEffect 依赖可能不会全部触发）
+            loadCards();
           } else {
             setImportStatus(`❌ 导入失败: ${progress.error}`);
           }

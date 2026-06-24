@@ -126,23 +126,35 @@ export const authApi = {
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   await ensureBackend();
+  const isGet = !options?.method || options.method === "GET";
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...getAuthHeader(),
+    ...(isGet ? {} : { "Content-Type": "application/json" }),
     ...(options?.headers as Record<string, string> || {}),
   };
-  let res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  // 30 秒超时，防止请求挂起
+  let mergedSignal: AbortSignal;
+  try {
+    const timeoutSignal = AbortSignal.timeout(30000);
+    mergedSignal = options?.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal;
+  } catch {
+    // AbortSignal.timeout/any 不可用时忽略超时
+    mergedSignal = options?.signal as AbortSignal;
+  }
+  let res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: mergedSignal });
 
   // 401 → 尝试刷新 token → 重试
   if (res.status === 401) {
     const refreshed = await authApi.refresh();
     if (refreshed) {
       const retryHeaders = {
-        "Content-Type": "application/json",
         ...getAuthHeader(),
+        ...(isGet ? {} : { "Content-Type": "application/json" }),
         ...(options?.headers as Record<string, string> || {}),
       };
-      res = await fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders });
+      res = await fetch(`${API_BASE}${path}`, { ...options, headers: retryHeaders, signal: mergedSignal });
     }
   }
 
