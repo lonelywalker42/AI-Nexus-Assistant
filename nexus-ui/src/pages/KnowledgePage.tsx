@@ -494,8 +494,7 @@ export default function KnowledgePage() {
           <div className="flex gap-3 items-center flex-wrap">
             <span className="text-sm" style={{ color: "var(--text-secondary)" }}>导入:</span>
             <button onClick={handleDeepSeekImport} disabled={importing}
-              className="text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
-              style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6", fontWeight: 600 }}>
+              className="btn-gradient btn-click text-xs py-1.5 whitespace-nowrap disabled:opacity-50">
               <IconBrain size={13} /> DeepSeek 智能导入
             </button>
             <button onClick={() => { loadImportGroups(); setView("importGroups"); }}
@@ -633,8 +632,7 @@ export default function KnowledgePage() {
               DeepSeek 对话导入记录（{importGroups.length} 个分组）
             </span>
             <button onClick={handleDeepSeekImport} disabled={importing}
-              className="text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
-              style={{ background: "rgba(139,92,246,0.15)", color: "#8b5cf6", fontWeight: 600 }}>
+              className="btn-gradient btn-click text-xs py-1.5 whitespace-nowrap disabled:opacity-50">
               + 新增导入
             </button>
           </div>

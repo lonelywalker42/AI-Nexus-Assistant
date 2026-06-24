@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.4.0")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.4.1")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -2543,17 +2543,17 @@ def _paper_to_dict(p: Paper) -> dict:
             return default
 
     return {
-        "id": p.id, "title": p.title,
+        "id": p.id, "title": p.title or "",
         "authors": _safe_json(p.authors, []),
-        "year": p.year, "doi": p.doi, "abstract": p.abstract,
-        "journal": p.journal, "source": p.source, "url": p.url,
-        "citation": p.citation, "paper_type": p.paper_type,
-        "has_fulltext": p.has_fulltext, "star_rating": p.star_rating,
-        "user_notes": p.user_notes, "ai_summary": p.ai_summary,
-        "local_path": p.local_path,
+        "year": p.year or 0, "doi": p.doi or "", "abstract": p.abstract or "",
+        "journal": p.journal or "", "source": p.source or "", "url": p.url or "",
+        "citation": p.citation or "", "paper_type": p.paper_type or "未知",
+        "has_fulltext": p.has_fulltext or False, "star_rating": p.star_rating or 0,
+        "user_notes": p.user_notes or "", "ai_summary": p.ai_summary or "",
+        "local_path": p.local_path or "",
         "tags": _safe_json(p.tags, []),
-        "review_id": p.review_id,
-        "created_at": p.created_at.isoformat(),
+        "review_id": p.review_id or "",
+        "created_at": p.created_at.isoformat() if p.created_at else "",
     }
 
 
@@ -4295,8 +4295,13 @@ async def fetch_paper_pdf(req: FetchPdfRequest):
 
     pdf_path = result["pdf_path"]
 
-    # 提取元数据
-    meta = extract_pdf_metadata(pdf_path)
+    # 提取元数据（PDF 已保存到磁盘，元数据提取失败不应阻断入库）
+    meta = {}
+    try:
+        meta = extract_pdf_metadata(pdf_path) or {}
+    except Exception as e:
+        logging.warning(f"PDF 元数据提取失败（文件已保存）: {e}")
+
     if not meta.get("title") and req.title:
         meta["title"] = req.title
     if not meta.get("doi") and req.doi:
@@ -4330,7 +4335,6 @@ async def fetch_paper_pdf(req: FetchPdfRequest):
     # 入库
     db = get_session()
     try:
-        import uuid as _uuid
         paper = paper_service.create_paper(
             db,
             title=str(meta.get("title", "Unknown"))[:200],
@@ -4345,6 +4349,9 @@ async def fetch_paper_pdf(req: FetchPdfRequest):
             local_path=pdf_path,
         )
         return _paper_to_dict(paper)
+    except Exception as e:
+        logging.error(f"PDF 入库失败（PDF 已保存到 {pdf_path}）: {e}")
+        raise HTTPException(500, f"PDF 已下载但入库失败: {str(e)}")
     finally:
         db.close()
 

@@ -393,9 +393,18 @@ export default function PaperLibraryPage() {
     } catch (err: any) {
       const msg = err?.message || String(err);
       // 提取 API 返回的详细错误信息
-      const match = msg.match(/API Error \d+: (.+)/s);
-      const detail = match ? match[1] : msg;
-      setFetchResult(`拉取失败: ${detail}`);
+      const match = msg.match(/API Error (\d+): (.+)/s);
+      if (match) {
+        const code = match[1];
+        const detail = match[2];
+        // 截断过长的错误信息
+        const shortDetail = detail.length > 200 ? detail.slice(0, 200) + "..." : detail;
+        setFetchResult(`拉取失败 (${code}): ${shortDetail}`);
+      } else if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+        setFetchResult("拉取失败: 网络连接异常，请确认后端服务运行中 (python server.py) 且网络通畅");
+      } else {
+        setFetchResult(`拉取失败: ${msg.slice(0, 200)}`);
+      }
     }
     setFetching(false);
   };

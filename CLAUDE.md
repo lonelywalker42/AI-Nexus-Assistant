@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v4.4.0**.
+AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v4.4.1**.
 
 ## v4.0.0 Features (Multi-platform + Auto-update)
 
@@ -58,7 +58,8 @@ cd nexus-ui && npm run tauri dev          # Tauri dev mode
 
 # Install dependencies
 pip install -e .                          # Core Python deps
-pip install fastapi uvicorn openai anthropic  # For Tauri backend + AI
+pip install fastapi uvicorn openai anthropic httpx  # For Tauri backend + AI
+pip install python-docx                   # DOCX export support
 cd nexus-ui && npm install                # Frontend deps
 cd open-webSearch && npm install && npm run build  # Web search aggregator (Node.js)
 
@@ -74,6 +75,7 @@ cd nexus-ui && npx tsc --noEmit
 ## Environment Setup for Claude Code
 
 This section guides Claude Code through setting up the development environment from a fresh clone.
+**完整开发者指南**: 参见 `docs/DEV-SETUP.md`（含架构图、各平台说明、构建流程、常见问题排查）。
 
 ### Prerequisites
 
@@ -108,6 +110,9 @@ pip install -e .
 
 # Install Tauri backend dependencies
 pip install fastapi uvicorn openai anthropic httpx
+
+# DOCX export support
+pip install python-docx
 
 # Optional: MinerU for PDF conversion
 pip install magic-pdf
@@ -173,6 +178,8 @@ git commit -m "chore: update open-webSearch submodule"
 | `open-webSearch` not working | Run `cd open-webSearch && npm install && npm run build` |
 | Port 8765 in use | Kill existing process or change port in server.py |
 | Port 3210 in use | open-webSearch default port; restart app to clear |
+| DOCX export fails | `pip install python-docx` — not in pyproject.toml, must install separately |
+| VS Build Tools not found | Install "C++ 桌面开发" workload from [VS Build Tools](https://aka.ms/vs/17/release/vs_BuildTools.exe) |
 
 ## Backend: `app/` Directory
 

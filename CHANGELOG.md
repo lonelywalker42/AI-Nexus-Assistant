@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.4.1 (2026-06-24) — Bug 修复 + 开发者文档
+
+### Bug 修复
+- **DOCX 导出中文乱码**: 重写 `export_docx()` — 设置东亚字体（宋体）、行内格式解析（粗体/斜体/代码/链接）、标题/列表格式正确渲染
+- **文献库 PDF 拉取 "failed to fetch"**: `extract_pdf_metadata()` 包裹 try-except 失败不阻断入库；`_paper_to_dict` 增加 None 兜底；前端错误信息区分网络层/API 层
+- **TodayPage 按钮配色**: "AI 整理"和"添加"按钮从 `btn-primary` 统一为 `btn-gradient`
+- **IDEA 按钮文字换行**: "DeepSeek 智能导入"按钮改为 `btn-gradient` + `whitespace-nowrap`
+
+### 文档
+- **开发者环境配置指南**: 新增 `docs/DEV-SETUP.md`（527 行），含架构图、系统要求、Submodule 配置、各平台说明、构建流程、版本号同步清单、常见问题排查
+- **依赖补全**: README.md / CLAUDE.md 补充 `httpx`、`python-docx` 安装说明
+
 ## v4.4.0 (2026-06-24) — Bug 修复 + UI 设计语言规范化
 
 ### Bug 修复

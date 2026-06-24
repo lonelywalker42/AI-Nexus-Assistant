@@ -95,15 +95,18 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 
 ## 快速开始
 
+> **完整开发者指南**: 参见 [`docs/DEV-SETUP.md`](docs/DEV-SETUP.md)，包含架构概览、系统要求、Submodule 配置、各平台说明、构建流程、版本号同步清单和常见问题排查。
+
 ### 开发环境
 
 ```bash
-git clone https://github.com/lonelywalker42/AI-Nexus-Assistant.git
+git clone --recursive https://github.com/lonelywalker42/AI-Nexus-Assistant.git
 cd AI-Nexus-Assistant
 
 # Python 依赖
 pip install -e .
-pip install fastapi uvicorn openai anthropic
+pip install fastapi uvicorn openai anthropic httpx
+pip install python-docx              # DOCX 导出
 
 # 前端依赖
 cd nexus-ui && npm install

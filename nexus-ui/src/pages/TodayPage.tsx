@@ -513,7 +513,7 @@ ${rawInput}`;
                     清除
                   </button>
                 )}
-                <button className="btn-primary btn-click text-xs py-1.5"
+                <button className="btn-gradient btn-click text-xs py-1.5 whitespace-nowrap"
                   onClick={handleAiStructure}
                   disabled={isStructuring || !rawInput.trim()}>
                   {isStructuring ? "整理中..." : <span className="flex items-center gap-1"><IconSparkle size={12} /> AI 整理</span>}
@@ -540,7 +540,7 @@ ${rawInput}`;
                 {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
               </select>
               <span className="flex-1" />
-              <button className="btn-primary btn-click text-xs py-1.5" onClick={handleAddTask}>
+              <button className="btn-gradient btn-click text-xs py-1.5 whitespace-nowrap" onClick={handleAddTask}>
                 <IconPlus size={13} /> 添加
               </button>
             </div>
