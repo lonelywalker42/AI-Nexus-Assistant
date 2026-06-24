@@ -4564,51 +4564,79 @@ class GameRacer {
 }
 
 // ══════════════════════════════════════════════
-//  GOMOKU — Five-in-a-row with 5-level AI
+//  GOMOKU — Five-in-a-row with 7-level AI engine
 // ══════════════════════════════════════════════
-// AI algorithm reference: RainbowRoad1/Cgame/Five-in-a-row
-// Core idea: pattern scoring (1<<k for k consecutive) + threat accumulation
-// Extended with minimax + alpha-beta for higher difficulties
+// AI engine: Minimax + Alpha-Beta + Iterative Deepening + Zobrist TT
+//            + History Heuristic + VCF/VCT threat-space search
+// Architecture reference: THMGomokuAI, lihongxun945/gobang
 class GameGomoku {
   constructor() {
-    this.N = 15; // board size
+    this.N = 15;
     this.cellSize = 28;
     this.ox = (W - this.N * this.cellSize) / 2;
     this.oy = 70;
-    this.board = []; // 0=empty, 1=black(player), 2=white(AI)
+    this.board = [];
     this.cursor = { x: 7, y: 7 };
-    this.turn = 1; // 1=black(player), 2=white(AI)
-    this.over = false; this.won = 0; this.showHelp = true;
-    this.difficulty = 2; // 1-5
-    this.diffNames = ['', 'LV.1 RANDOM', 'LV.2 GREEDY', 'LV.3 DEFEND', 'LV.4 THINKER', 'LV.5 MASTER'];
-    this.thinking = false; // AI is computing
-    this.moveCount = 0;
-    this.lastMove = null;
-    // Threat score tables (per-player, per-cell) — inspired by reference m[S..3S-1]
-    this.scoreBlack = []; this.scoreWhite = [];
+    this.turn = 1; this.over = false; this.won = 0; this.showHelp = true;
+    this.difficulty = 2;
+    this.diffNames = ['', 'LV.1 RANDOM', 'LV.2 GREEDY', 'LV.3 DEFEND', 'LV.4 THINKER', 'LV.5 EXPERT', 'LV.6 MASTER', 'LV.7 HELL'];
+    this.diffDescs = ['', 'Random moves', 'Max threat score', 'Block + threats', 'Minimax depth 2', 'Iterative deepening 2s', 'VCF + ID 3s', 'VCF+VCT + ID 5s'];
+    this.thinking = false; this.moveCount = 0; this.lastMove = null;
+    // Zobrist hashing
+    this.zobristTable = []; this.zobristHash = 0;
+    // Transposition table
+    this.tt = new Map();
+    // History heuristic table
+    this.historyTable = new Array(225).fill(0).map(() => new Array(225).fill(0));
+    // Pattern scores
+    this.SCORES = { FIVE: 100000, OPEN_FOUR: 10000, BLOCK_FOUR: 1000, OPEN_THREE: 1000, BLOCK_THREE: 100, OPEN_TWO: 100, BLOCK_TWO: 10, OPEN_ONE: 1 };
+    // Win rate stats
+    this.STATS_KEY = 'nexus-gomoku-stats';
   }
 
   init(savedState) {
+    this._initZobrist();
     if (savedState) {
       this.board = savedState.board; this.cursor = savedState.cursor;
       this.turn = savedState.turn; this.over = savedState.over;
       this.won = savedState.won || 0; this.difficulty = savedState.difficulty;
       this.moveCount = savedState.moveCount || 0; this.lastMove = savedState.lastMove;
       this.showHelp = false;
+      this._rebuildZobristHash();
     } else {
       this.board = Array.from({ length: this.N }, () => Array(this.N).fill(0));
       this.cursor = { x: 7, y: 7 }; this.turn = 1;
       this.over = false; this.won = 0; this.moveCount = 0; this.lastMove = null;
-      this.showHelp = true;
+      this.showHelp = true; this.zobristHash = 0;
     }
-    this.scoreBlack = Array.from({ length: this.N }, () => Array(this.N).fill(0));
-    this.scoreWhite = Array.from({ length: this.N }, () => Array(this.N).fill(0));
+    this.tt.clear();
+    this.historyTable = new Array(225).fill(0).map(() => new Array(225).fill(0));
     this._keyD = (e) => this.handleKey(e);
     this._clickH = (e) => this.handleClick(e);
     document.addEventListener('keydown', this._keyD);
     canvas.addEventListener('click', this._clickH);
     this.loop();
   }
+
+  // ── Zobrist hashing ──
+  _initZobrist() {
+    const n = this.N;
+    this.zobristTable = Array.from({ length: n }, () =>
+      Array.from({ length: n }, () => [
+        0,
+        (Math.random() * 0xFFFFFFFF) >>> 0,
+        (Math.random() * 0xFFFFFFFF) >>> 0
+      ])
+    );
+  }
+  _rebuildZobristHash() {
+    let h = 0;
+    for (let y = 0; y < this.N; y++)
+      for (let x = 0; x < this.N; x++)
+        if (this.board[y][x]) h ^= this.zobristTable[y][x][this.board[y][x]];
+    this.zobristHash = h;
+  }
+  _zobristToggle(x, y, p) { this.zobristHash ^= this.zobristTable[y][x][p]; }
 
   saveProgress() {
     saveGameProgress('gomoku', {
@@ -4625,8 +4653,24 @@ class GameGomoku {
     if (this._helpRaf) cancelAnimationFrame(this._helpRaf);
   }
 
-  // ── Core: count consecutive same-color pieces from (x,y) in direction (dx,dy)
-  // Direct port of reference's sum(v, l) recursive logic
+  // ── Win rate stats ──
+  _recordResult(result) {
+    try {
+      const all = JSON.parse(localStorage.getItem(this.STATS_KEY) || '{}');
+      const key = String(this.difficulty);
+      if (!all[key]) all[key] = { played: 0, won: 0, lost: 0, draw: 0 };
+      all[key].played++;
+      if (result === 'win') all[key].won++;
+      else if (result === 'lose') all[key].lost++;
+      else all[key].draw++;
+      localStorage.setItem(this.STATS_KEY, JSON.stringify(all));
+    } catch {}
+  }
+  _getStats() {
+    try { return JSON.parse(localStorage.getItem(this.STATS_KEY) || '{}'); } catch { return {}; }
+  }
+
+  // ── Count consecutive pieces from (x,y) in direction (dx,dy) ──
   countDir(x, y, dx, dy, player) {
     let count = 0, nx = x + dx, ny = y + dy;
     while (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === player) {
@@ -4635,288 +4679,380 @@ class GameGomoku {
     return count;
   }
 
-  // ── Core: evaluate threat scores for all empty cells (reference: down() function)
-  // For each placed piece, scan 4 directions, compute consecutive length k,
-  // add (1<<k) to the empty cell at each end of the line
-  updateThreats() {
-    this.scoreBlack = Array.from({ length: this.N }, () => Array(this.N).fill(0));
-    this.scoreWhite = Array.from({ length: this.N }, () => Array(this.N).fill(0));
-    const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
-    for (let y = 0; y < this.N; y++) {
-      for (let x = 0; x < this.N; x++) {
-        const p = this.board[y][x];
-        if (!p) continue;
-        const scores = p === 1 ? this.scoreBlack : this.scoreWhite;
-        for (const [dx, dy] of dirs) {
-          // Only count in positive direction to avoid double-counting
-          const k = this.countDir(x, y, dx, dy, p);
-          if (k < 2) continue; // single piece doesn't create threats via this method
-          // Check both ends
-          const ends = [
-            { ex: x - dx, ey: y - dy }, // negative end
-            { ex: x + dx * k, ey: y + dy * k } // positive end
-          ];
-          for (const { ex, ey } of ends) {
-            if (ex >= 0 && ex < this.N && ey >= 0 && ey < this.N && this.board[ey][ex] === 0) {
-              scores[ey][ex] += (1 << k);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // ── Pattern-based evaluation for a single line segment
-  // Returns score for `player` on a line segment of cells
-  evalLine(cells, player) {
-    const opp = player === 1 ? 2 : 1;
-    let score = 0;
-    let i = 0;
+  // ── Evaluate a line segment for pattern scores ──
+  _evalLine(cells, player) {
+    const S = this.SCORES;
+    let score = 0, i = 0;
     while (i < cells.length) {
       if (cells[i] === player) {
         let count = 0, openEnds = 0;
         while (i < cells.length && cells[i] === player) { count++; i++; }
-        // Check open ends
         if (i - count > 0 && cells[i - count - 1] === 0) openEnds++;
         if (i < cells.length && cells[i] === 0) openEnds++;
-        if (count >= 5) score += 100000;
-        else if (count === 4) score += openEnds === 2 ? 10000 : (openEnds === 1 ? 1000 : 0);
-        else if (count === 3) score += openEnds === 2 ? 1000 : (openEnds === 1 ? 100 : 0);
-        else if (count === 2) score += openEnds === 2 ? 100 : (openEnds === 1 ? 10 : 0);
-        else if (count === 1) score += openEnds === 2 ? 10 : (openEnds === 1 ? 1 : 0);
-      } else {
-        i++;
-      }
+        if (count >= 5) score += S.FIVE;
+        else if (count === 4) score += openEnds === 2 ? S.OPEN_FOUR : (openEnds === 1 ? S.BLOCK_FOUR : 0);
+        else if (count === 3) score += openEnds === 2 ? S.OPEN_THREE : (openEnds === 1 ? S.BLOCK_THREE : 0);
+        else if (count === 2) score += openEnds === 2 ? S.OPEN_TWO : (openEnds === 1 ? S.BLOCK_TWO : 0);
+        else score += openEnds === 2 ? S.OPEN_ONE : 0;
+      } else { i++; }
     }
     return score;
   }
 
-  // ── Full board evaluation for minimax
-  evaluateBoard(player) {
-    const opp = player === 1 ? 2 : 1;
-    let myScore = 0, oppScore = 0;
+  // ── Full board evaluation (for AI = player 2) ──
+  evaluateBoard() {
     const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
-    // Evaluate all lines of length 5+ that pass through each cell
+    let aiScore = 0, plScore = 0;
     for (let y = 0; y < this.N; y++) {
       for (let x = 0; x < this.N; x++) {
         for (const [dx, dy] of dirs) {
-          // Extract line segment of up to 9 cells centered on (x,y)
+          if (this.board[y][x] !== 0) continue;
           const cells = [];
           for (let step = -4; step <= 4; step++) {
             const nx = x + dx * step, ny = y + dy * step;
-            if (nx < 0 || nx >= this.N || ny < 0 || ny >= this.N) { cells.push(-1); continue; }
-            cells.push(this.board[ny][nx]);
+            cells.push((nx >= 0 && nx < this.N && ny >= 0 && ny < this.N) ? this.board[ny][nx] : -1);
           }
-          myScore += this.evalLine(cells, player);
-          oppScore += this.evalLine(cells, opp);
+          aiScore += this._evalLine(cells, 2);
+          plScore += this._evalLine(cells, 1);
         }
       }
     }
-    return myScore - oppScore * 1.1; // Slightly weight defense
+    return aiScore - plScore * 1.08;
   }
 
-  // ── Check if player has won (5+ consecutive)
+  // ── Check if player has won (5+ consecutive) ──
   checkWin(player) {
     const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
     for (let y = 0; y < this.N; y++) {
       for (let x = 0; x < this.N; x++) {
         if (this.board[y][x] !== player) continue;
         for (const [dx, dy] of dirs) {
-          if (this.countDir(x, y, dx, dy, player) >= 4) return true; // 4 more = 5 total
+          if (this.countDir(x, y, dx, dy, player) >= 4) return true;
         }
       }
     }
     return false;
   }
 
-  // ── Get candidate moves (cells near existing pieces)
+  // ── Get candidate moves near existing pieces ──
   getCandidates(radius) {
-    const candidates = new Set();
-    const r = radius || 2;
-    for (let y = 0; y < this.N; y++) {
-      for (let x = 0; x < this.N; x++) {
-        if (!this.board[y][x]) continue;
-        for (let dy = -r; dy <= r; dy++) {
-          for (let dx = -r; dx <= r; dx++) {
-            const nx = x + dx, ny = y + dy;
-            if (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && !this.board[ny][nx]) {
-              candidates.add(ny * this.N + nx);
-            }
-          }
-        }
+    const set = new Set(), r = radius || 2;
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      if (!this.board[y][x]) continue;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && !this.board[ny][nx])
+          set.add(ny * this.N + nx);
       }
     }
-    return [...candidates].map(v => ({ x: v % this.N, y: Math.floor(v / this.N) }));
+    return [...set].map(v => ({ x: v % this.N, y: (v / this.N) | 0 }));
   }
 
-  // ── Quick threat check: is there an immediate win or must-block?
+  // ── Quick win/block detection ──
   findCriticalMove(player) {
     const opp = player === 1 ? 2 : 1;
-    const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
-    // First: can I win immediately?
-    for (let y = 0; y < this.N; y++) {
-      for (let x = 0; x < this.N; x++) {
-        if (this.board[y][x]) continue;
-        this.board[y][x] = player;
-        if (this.checkWin(player)) { this.board[y][x] = 0; return { x, y }; }
-        this.board[y][x] = 0;
-      }
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      if (this.board[y][x]) continue;
+      this.board[y][x] = player;
+      const win = this.checkWin(player);
+      this.board[y][x] = 0;
+      if (win) return { x, y };
     }
-    // Second: must I block opponent's winning move?
-    for (let y = 0; y < this.N; y++) {
-      for (let x = 0; x < this.N; x++) {
-        if (this.board[y][x]) continue;
-        this.board[y][x] = opp;
-        if (this.checkWin(opp)) { this.board[y][x] = 0; return { x, y }; }
-        this.board[y][x] = 0;
-      }
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      if (this.board[y][x]) continue;
+      this.board[y][x] = opp;
+      const win = this.checkWin(opp);
+      this.board[y][x] = 0;
+      if (win) return { x, y };
     }
     return null;
   }
 
-  // ── AI Level 1: Random
+  // ── Fast pattern count for VCF/VCT (returns [open3, block4, open4]) ──
+  _countPatterns(x, y, player) {
+    const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    let open3 = 0, block4 = 0, open4 = 0;
+    for (const [dx, dy] of dirs) {
+      let count = 1, openEnds = 0;
+      let nx = x + dx, ny = y + dy;
+      while (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === player) { count++; nx += dx; ny += dy; }
+      if (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === 0) openEnds++;
+      nx = x - dx; ny = y - dy;
+      while (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === player) { count++; nx -= dx; ny -= dy; }
+      if (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === 0) openEnds++;
+      if (count >= 5) open4++;
+      else if (count === 4) { if (openEnds === 2) open4++; else if (openEnds === 1) block4++; }
+      else if (count === 3 && openEnds === 2) open3++;
+    }
+    return [open3, block4, open4];
+  }
+
+  // ── Find all moves creating a specific pattern type ──
+  _findThreatMoves(player, type) {
+    const moves = [];
+    const seen = new Set();
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      if (this.board[y][x] !== player) continue;
+      const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+      for (const [dx, dy] of dirs) {
+        for (const sign of [1, -1]) {
+          let nx = x + dx * sign, ny = y + dy * sign;
+          while (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === player) { nx += dx * sign; ny += dy * sign; }
+          if (nx < 0 || nx >= this.N || ny < 0 || ny >= this.N || this.board[ny][nx] !== 0) continue;
+          const key = ny * this.N + nx;
+          if (seen.has(key)) continue;
+          this.board[ny][nx] = player;
+          const [o3, b4, o4] = this._countPatterns(nx, ny, player);
+          const isThreat = (type === 'four' && (o4 > 0 || b4 > 0)) || (type === 'three' && o3 > 0 && o4 === 0 && b4 === 0);
+          this.board[ny][nx] = 0;
+          if (isThreat) { seen.add(key); moves.push({ x: nx, y: ny }); }
+        }
+      }
+    }
+    return moves;
+  }
+
+  // ── VCF: Victory by Continuous Four ──
+  vcfSearch(player, depth) {
+    if (depth <= 0) return null;
+    const opp = player === 1 ? 2 : 1;
+    // Can I win now?
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      if (this.board[y][x]) continue;
+      this.board[y][x] = player;
+      if (this.checkWin(player)) { this.board[y][x] = 0; return { x, y }; }
+      this.board[y][x] = 0;
+    }
+    // Find four-threats
+    const fours = this._findThreatMoves(player, 'four');
+    fours.sort((a, b) => {
+      const sa = this.zobristTable[a.y][a.x][player];
+      const sb = this.zobristTable[b.y][b.x][player];
+      return sa - sb;
+    });
+    for (const move of fours) {
+      this.board[move.y][move.x] = player;
+      this._zobristToggle(move.x, move.y, player);
+      // Opponent must block
+      const mustBlock = this._findForcedBlock(opp);
+      if (mustBlock) {
+        this.board[mustBlock.y][mustBlock.x] = opp;
+        this._zobristToggle(mustBlock.x, mustBlock.y, opp);
+        const result = this.vcfSearch(player, depth - 1);
+        this.board[mustBlock.y][mustBlock.x] = 0;
+        this._zobristToggle(mustBlock.x, mustBlock.y, opp);
+        if (result) { this.board[move.y][move.x] = 0; this._zobristToggle(move.x, move.y, player); return move; }
+      } else {
+        this.board[move.y][move.x] = 0;
+        this._zobristToggle(move.x, move.y, player);
+        return move; // No block possible = win
+      }
+      this.board[move.y][move.x] = 0;
+      this._zobristToggle(move.x, move.y, player);
+    }
+    return null;
+  }
+
+  // ── VCT: Victory by Continuous Three+Four ──
+  vctSearch(player, depth) {
+    if (depth <= 0) return null;
+    const opp = player === 1 ? 2 : 1;
+    // Try VCF first
+    const vcf = this.vcfSearch(player, depth * 2);
+    if (vcf) return vcf;
+    // Find open-three threats
+    const threes = this._findThreatMoves(player, 'three');
+    threes.sort((a, b) => {
+      const sa = this.zobristTable[a.y][a.x][player];
+      const sb = this.zobristTable[b.y][b.x][player];
+      return sa - sb;
+    });
+    for (const move of threes) {
+      this.board[move.y][move.x] = player;
+      this._zobristToggle(move.x, move.y, player);
+      const result = this.vcfSearch(player, depth * 2);
+      this.board[move.y][move.x] = 0;
+      this._zobristToggle(move.x, move.y, player);
+      if (result) return move;
+    }
+    return null;
+  }
+
+  _findForcedBlock(player) {
+    const opp = player === 1 ? 2 : 1;
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      if (this.board[y][x]) continue;
+      this.board[y][x] = opp;
+      if (this.checkWin(opp)) { this.board[y][x] = 0; return { x, y }; }
+      this.board[y][x] = 0;
+    }
+    return null;
+  }
+
+  // ── AI Level 1: Random ──
   aiRandom() {
     const empty = [];
-    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++)
       if (!this.board[y][x]) empty.push({ x, y });
-    }
-    return empty[Math.floor(Math.random() * empty.length)];
+    return empty.length ? empty[Math.floor(Math.random() * empty.length)] : null;
   }
 
-  // ── AI Level 2: Greedy (reference algorithm: max threat score)
+  // ── AI Level 2: Greedy threat scoring ──
   aiGreedy() {
-    this.updateThreats();
-    // Combine both threat tables: prefer own threats, then block opponent
+    const win = this.findCriticalMove(2); if (win) return win;
+    const block = this.findCriticalMove(1); if (block) return block;
     let best = -1, moves = [];
-    for (let y = 0; y < this.N; y++) {
-      for (let x = 0; x < this.N; x++) {
-        if (this.board[y][x]) continue;
-        const s = this.scoreWhite[y][x] * 1.1 + this.scoreBlack[y][x]; // Slightly favor offense
-        if (s > best) { best = s; moves = [{ x, y }]; }
-        else if (s === best) moves.push({ x, y });
+    const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      if (this.board[y][x]) continue;
+      let s = 0;
+      for (const [dx, dy] of dirs) {
+        for (const p of [2, 1]) {
+          const c1 = this.countDir(x, y, dx, dy, p);
+          const c2 = this.countDir(x, y, -dx, -dy, p);
+          const total = c1 + c2 + 1;
+          if (total >= 5) s += 100000;
+          else s += Math.pow(3, total * 2) * (p === 2 ? 1.1 : 1);
+        }
       }
+      if (s > best) { best = s; moves = [{ x, y }]; }
+      else if (s === best) moves.push({ x, y });
     }
     return moves.length ? moves[Math.floor(Math.random() * moves.length)] : this.aiRandom();
   }
 
-  // ── AI Level 3: Greedy with defense priority + critical move detection
+  // ── AI Level 3: Greedy + critical move detection ──
   aiDefend() {
-    const critical = this.findCriticalMove(2); // Check immediate win
-    if (critical) return critical;
-    const block = this.findCriticalMove(1); // Check must-block
-    if (block) return block;
-    // Weighted greedy: defense matters more
-    this.updateThreats();
-    let best = -1, moves = [];
-    for (let y = 0; y < this.N; y++) {
-      for (let x = 0; x < this.N; x++) {
-        if (this.board[y][x]) continue;
-        const s = this.scoreWhite[y][x] + this.scoreBlack[y][x] * 1.3; // Favor defense
-        if (s > best) { best = s; moves = [{ x, y }]; }
-        else if (s === best) moves.push({ x, y });
-      }
-    }
-    return moves.length ? moves[Math.floor(Math.random() * moves.length)] : this.aiRandom();
+    const win = this.findCriticalMove(2); if (win) return win;
+    const block = this.findCriticalMove(1); if (block) return block;
+    return this.aiGreedy();
   }
 
-  // ── Minimax with alpha-beta pruning
-  minimax(depth, alpha, beta, isMaximizing, player) {
-    const opp = player === 1 ? 2 : 1;
-    // Terminal checks
-    if (this.checkWin(player)) return 100000 + depth;
-    if (this.checkWin(opp)) return -100000 - depth;
-    if (depth === 0) return this.evaluateBoard(2); // AI is always player 2
-
-    const candidates = this.getCandidates(1);
-    if (candidates.length === 0) return 0;
-
-    // Sort by quick evaluation for better pruning
-    candidates.sort((a, b) => {
-      const sa = this.scoreWhite[a.y][a.x] + this.scoreBlack[a.y][a.x];
-      const sb = this.scoreWhite[b.y][b.x] + this.scoreBlack[b.y][b.x];
-      return sb - sa;
-    });
-    const limit = Math.min(candidates.length, depth >= 3 ? 12 : 20);
-
-    if (isMaximizing) {
-      let maxEval = -Infinity;
-      for (let i = 0; i < limit; i++) {
-        const { x, y } = candidates[i];
-        this.board[y][x] = 2;
-        const eval_ = this.minimax(depth - 1, alpha, beta, false, player);
-        this.board[y][x] = 0;
-        maxEval = Math.max(maxEval, eval_);
-        alpha = Math.max(alpha, eval_);
-        if (beta <= alpha) break;
-      }
-      return maxEval;
-    } else {
-      let minEval = Infinity;
-      for (let i = 0; i < limit; i++) {
-        const { x, y } = candidates[i];
-        this.board[y][x] = 1;
-        const eval_ = this.minimax(depth - 1, alpha, beta, true, player);
-        this.board[y][x] = 0;
-        minEval = Math.min(minEval, eval_);
-        beta = Math.min(beta, eval_);
-        if (beta <= alpha) break;
-      }
-      return minEval;
-    }
-  }
-
-  // ── AI Level 4: Minimax depth 2
+  // ── AI Level 4: Minimax depth 2 ──
   aiThinker() {
-    const critical = this.findCriticalMove(2);
-    if (critical) return critical;
-    const block = this.findCriticalMove(1);
-    if (block) return block;
-    this.updateThreats();
-    const candidates = this.getCandidates(2);
-    if (!candidates.length) return this.aiRandom();
+    const win = this.findCriticalMove(2); if (win) return win;
+    const block = this.findCriticalMove(1); if (block) return block;
+    const cands = this.getCandidates(2);
+    if (!cands.length) return this.aiRandom();
     let best = -Infinity, moves = [];
-    for (const { x, y } of candidates) {
-      this.board[y][x] = 2;
-      const s = this.minimax(2, -Infinity, Infinity, false, 1);
-      this.board[y][x] = 0;
+    for (const { x, y } of cands) {
+      this.board[y][x] = 2; this._zobristToggle(x, y, 2);
+      const s = this.minimax(2, -Infinity, Infinity, false);
+      this.board[y][x] = 0; this._zobristToggle(x, y, 2);
       if (s > best) { best = s; moves = [{ x, y }]; }
       else if (s === best) moves.push({ x, y });
     }
     return moves.length ? moves[Math.floor(Math.random() * moves.length)] : this.aiRandom();
   }
 
-  // ── AI Level 5: Minimax depth 4 with better eval
+  // ── AI Level 5: Iterative deepening 2s ──
+  aiExpert() {
+    this.tt.clear();
+    return this._iterativeDeepening(2000);
+  }
+
+  // ── AI Level 6: VCF + iterative deepening 3s ──
   aiMaster() {
-    const critical = this.findCriticalMove(2);
-    if (critical) return critical;
-    const block = this.findCriticalMove(1);
-    if (block) return block;
-    this.updateThreats();
-    const candidates = this.getCandidates(2);
-    if (!candidates.length) return this.aiRandom();
-    // Pre-sort by threat score for better pruning
-    candidates.sort((a, b) => {
-      const sa = this.scoreWhite[a.y][a.x] * 1.2 + this.scoreBlack[a.y][a.x];
-      const sb = this.scoreWhite[b.y][b.x] * 1.2 + this.scoreBlack[b.y][b.x];
-      return sb - sa;
-    });
-    let best = -Infinity, moves = [];
-    const limit = Math.min(candidates.length, 20);
-    for (let i = 0; i < limit; i++) {
-      const { x, y } = candidates[i];
-      this.board[y][x] = 2;
-      const s = this.minimax(4, -Infinity, Infinity, false, 1);
-      this.board[y][x] = 0;
-      if (s > best) { best = s; moves = [{ x, y }]; }
-      else if (s === best) moves.push({ x, y });
-    }
-    return moves.length ? moves[Math.floor(Math.random() * moves.length)] : this.aiRandom();
+    const vcf = this.vcfSearch(2, 30);
+    if (vcf) return vcf;
+    this.tt.clear();
+    return this._iterativeDeepening(3000);
   }
 
-  // ── AI move dispatcher
+  // ── AI Level 7: VCF+VCT + iterative deepening 5s ──
+  aiHell() {
+    const vct = this.vctSearch(2, 15);
+    if (vct) return vct;
+    this.tt.clear();
+    return this._iterativeDeepening(5000);
+  }
+
+  // ── Minimax with alpha-beta + transposition table ──
+  minimax(depth, alpha, beta, isMax) {
+    // TT lookup
+    const ttKey = this.zobristHash;
+    const ttEntry = this.tt.get(ttKey);
+    if (ttEntry && ttEntry.depth >= depth) {
+      if (ttEntry.flag === 0) return ttEntry.score;
+      if (ttEntry.flag === 1 && ttEntry.score >= beta) return ttEntry.score;
+      if (ttEntry.flag === -1 && ttEntry.score <= alpha) return ttEntry.score;
+    }
+    if (this.checkWin(2)) return 100000 + depth;
+    if (this.checkWin(1)) return -100000 - depth;
+    if (depth === 0) return this.evaluateBoard();
+
+    const cands = this.getCandidates(2);
+    if (!cands.length) return 0;
+    cands.sort((a, b) => this.historyTable[b.y * 15 + b.x] - this.historyTable[a.y * 15 + a.x]);
+    const limit = Math.min(cands.length, 22);
+    const origAlpha = alpha;
+    let bestMove = null;
+
+    if (isMax) {
+      let val = -Infinity;
+      for (let i = 0; i < limit; i++) {
+        const { x, y } = cands[i];
+        this.board[y][x] = 2; this._zobristToggle(x, y, 2);
+        const s = this.minimax(depth - 1, alpha, beta, false);
+        this.board[y][x] = 0; this._zobristToggle(x, y, 2);
+        if (s > val) { val = s; bestMove = { x, y }; }
+        alpha = Math.max(alpha, s);
+        if (beta <= alpha) {
+          this.historyTable[y * 15 + x] += depth * depth;
+          break;
+        }
+      }
+      this.tt.set(ttKey, { score: val, depth, flag: val >= beta ? 1 : (val <= origAlpha ? -1 : 0), bestMove });
+      return val;
+    } else {
+      let val = Infinity;
+      for (let i = 0; i < limit; i++) {
+        const { x, y } = cands[i];
+        this.board[y][x] = 1; this._zobristToggle(x, y, 1);
+        const s = this.minimax(depth - 1, alpha, beta, true);
+        this.board[y][x] = 0; this._zobristToggle(x, y, 1);
+        if (s < val) { val = s; bestMove = { x, y }; }
+        beta = Math.min(beta, s);
+        if (beta <= alpha) {
+          this.historyTable[y * 15 + x] += depth * depth;
+          break;
+        }
+      }
+      this.tt.set(ttKey, { score: val, depth, flag: val <= origAlpha ? -1 : (val >= beta ? 1 : 0), bestMove });
+      return val;
+    }
+  }
+
+  // ── Iterative deepening search ──
+  _iterativeDeepening(timeLimit) {
+    const cands = this.getCandidates(2);
+    if (!cands.length) return this.aiRandom();
+    // Quick win/block first
+    const win = this.findCriticalMove(2); if (win) return win;
+    const block = this.findCriticalMove(1); if (block) return block;
+    cands.sort((a, b) => this.historyTable[b.y * 15 + b.x] - this.historyTable[a.y * 15 + a.x]);
+    let bestMove = cands[0], limit = Math.min(cands.length, 22);
+    const start = performance.now();
+    for (let d = 1; d <= 30; d++) {
+      if (performance.now() - start > timeLimit) break;
+      let best = -Infinity, dm = bestMove;
+      for (let i = 0; i < limit; i++) {
+        const { x, y } = cands[i];
+        this.board[y][x] = 2; this._zobristToggle(x, y, 2);
+        const s = this.minimax(d, -Infinity, Infinity, false);
+        this.board[y][x] = 0; this._zobristToggle(x, y, 2);
+        if (s > best) { best = s; dm = { x, y }; }
+      }
+      bestMove = dm;
+      if (best >= 100000) break;
+    }
+    return bestMove;
+  }
+
+  // ── AI move dispatcher ──
   aiMove() {
     this.thinking = true;
-    this.draw(); // Show thinking state
+    this.draw();
     setTimeout(() => {
       let move;
       switch (this.difficulty) {
@@ -4924,47 +5060,49 @@ class GameGomoku {
         case 2: move = this.aiGreedy(); break;
         case 3: move = this.aiDefend(); break;
         case 4: move = this.aiThinker(); break;
-        case 5: move = this.aiMaster(); break;
+        case 5: move = this.aiExpert(); break;
+        case 6: move = this.aiMaster(); break;
+        case 7: move = this.aiHell(); break;
         default: move = this.aiGreedy();
       }
       if (move) {
         this.board[move.y][move.x] = 2;
-        this.lastMove = move;
-        this.moveCount++;
+        this._zobristToggle(move.x, move.y, 2);
+        this.lastMove = move; this.moveCount++;
         if (this.checkWin(2)) {
           this.over = true; this.won = 2;
           saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'lose' });
-          clearGameProgress('gomoku');
+          this._recordResult('lose'); clearGameProgress('gomoku');
         } else if (this.moveCount >= this.N * this.N) {
-          this.over = true; this.won = 0; // Draw
-          clearGameProgress('gomoku');
+          this.over = true; this.won = 0;
+          saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'draw' });
+          this._recordResult('draw'); clearGameProgress('gomoku');
         }
       }
-      this.turn = 1;
-      this.thinking = false;
+      this.turn = 1; this.thinking = false;
       this.saveProgress();
-    }, 100);
+    }, 50);
   }
 
-  // ── Place stone at (x,y) for current turn — shared by key and click
+  // ── Place stone at (x,y) for current turn ──
   placeStone(x, y) {
-    if (this.board[y][x]) return false; // Occupied
+    if (this.board[y][x]) return false;
     this.board[y][x] = 1;
-    this.lastMove = { x, y };
-    this.moveCount++;
+    this._zobristToggle(x, y, 1);
+    this.lastMove = { x, y }; this.moveCount++;
     if (this.checkWin(1)) {
       this.over = true; this.won = 1;
       saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'win' });
-      clearGameProgress('gomoku');
+      this._recordResult('win'); clearGameProgress('gomoku');
       return true;
     }
     if (this.moveCount >= this.N * this.N) {
       this.over = true; this.won = 0;
-      clearGameProgress('gomoku');
+      saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'draw' });
+      this._recordResult('draw'); clearGameProgress('gomoku');
       return true;
     }
-    this.turn = 2;
-    this.aiMove();
+    this.turn = 2; this.aiMove();
     return true;
   }
 
@@ -5000,7 +5138,7 @@ class GameGomoku {
     if (this.showHelp) {
       if (e.key === 'Escape') { backToMenu(); return; }
       if (e.key === 'd' || e.key === 'D') {
-        this.difficulty = this.difficulty % 5 + 1;
+        this.difficulty = this.difficulty % 7 + 1;
         this.drawHelp(); return;
       }
       this.showHelp = false;
@@ -5045,32 +5183,54 @@ class GameGomoku {
     ctx.textAlign = 'center';
     ctx.fillStyle = C.green; ctx.font = '28px Consolas, monospace';
     ctx.shadowColor = C.green; ctx.shadowBlur = 12;
-    ctx.fillText('G O M O K U', W / 2, 80); ctx.shadowBlur = 0;
+    ctx.fillText('G O M O K U', W / 2, 45); ctx.shadowBlur = 0;
     ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
-    ctx.fillText('FIVE IN A ROW', W / 2, 110);
+    ctx.fillText('FIVE IN A ROW', W / 2, 68);
     // Difficulty selector
     ctx.fillStyle = C.cyan; ctx.font = '16px Consolas, monospace';
-    ctx.fillText('[ ' + this.diffNames[this.difficulty] + ' ]', W / 2, 145);
-    const lines = [
-      ['↑ ↓ ← → / WASD', 'Move cursor'],
-      ['SPACE / ENTER', 'Place stone'],
-      ['P', 'Pause'],
-      ['', ''],
-      ['You are BLACK (●)', 'AI is WHITE (○)'],
-      ['First to get 5', 'in a row wins!'],
-      ['', ''],
-      ['D key', 'Change difficulty'],
+    ctx.fillText('[ ' + this.diffNames[this.difficulty] + ' ]', W / 2, 92);
+    ctx.fillStyle = C.dim; ctx.font = '11px Consolas, monospace';
+    ctx.fillText(this.diffDescs[this.difficulty] || '', W / 2, 108);
+    // All difficulty levels
+    ctx.textAlign = 'left'; let ly = 128;
+    for (let i = 1; i <= 7; i++) {
+      const sel = i === this.difficulty;
+      ctx.fillStyle = sel ? C.cyan : C.dim;
+      ctx.font = (sel ? 'bold ' : '') + '11px Consolas, monospace';
+      ctx.fillText((sel ? '▸ ' : '  ') + this.diffNames[i], W / 2 - 130, ly);
+      ctx.fillStyle = sel ? C.white : C.dim;
+      ctx.fillText(this.diffDescs[i] || '', W / 2 + 20, ly);
+      ly += 16;
+    }
+    // Controls
+    ly += 8;
+    ctx.fillStyle = C.amber; ctx.font = '12px Consolas, monospace';
+    ctx.fillText('Controls:', W / 2 - 130, ly); ly += 18;
+    const controls = [
+      ['↑↓←→/WASD', 'Move'], ['SPACE/ENTER', 'Place'], ['D', 'Difficulty'], ['P', 'Pause']
     ];
-    ctx.textAlign = 'left'; let ly = 175;
-    lines.forEach(l => {
-      if (l[0] && l[1]) {
-        ctx.fillStyle = C.cyan; ctx.font = '13px Consolas, monospace'; ctx.fillText(l[0], W / 2 - 120, ly);
-        ctx.fillStyle = C.white; ctx.fillText(l[1], W / 2 + 30, ly);
-      }
-      ly += 26;
+    controls.forEach(c => {
+      ctx.fillStyle = C.cyan; ctx.font = '11px Consolas, monospace'; ctx.fillText(c[0], W / 2 - 130, ly);
+      ctx.fillStyle = C.white; ctx.fillText(c[1], W / 2 + 10, ly);
+      ly += 15;
     });
+    // Win rate stats
+    const stats = this._getStats();
+    const hasStats = Object.keys(stats).length > 0;
+    if (hasStats) {
+      ly += 8;
+      ctx.fillStyle = C.green; ctx.font = '12px Consolas, monospace'; ctx.fillText('Win Rate:', W / 2 - 130, ly); ly += 18;
+      for (let i = 1; i <= 7; i++) {
+        const s = stats[String(i)];
+        if (!s || !s.played) continue;
+        const wr = ((s.won / s.played) * 100).toFixed(0);
+        ctx.fillStyle = C.dim; ctx.font = '10px Consolas, monospace';
+        ctx.fillText(this.diffNames[i] + ': ' + s.won + 'W/' + s.lost + 'L/' + s.draw + 'D (' + wr + '%)', W / 2 - 130, ly);
+        ly += 14;
+      }
+    }
     ctx.textAlign = 'center'; ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
-    if (Math.floor(Date.now() / 600) % 2 === 0) ctx.fillText('Press any key to start...', W / 2, H - 50);
+    if (Math.floor(Date.now() / 600) % 2 === 0) ctx.fillText('Press any key to start...', W / 2, H - 20);
   }
 
   draw() {
@@ -5149,22 +5309,30 @@ class GameGomoku {
       ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
       ctx.textAlign = 'center';
       if (this.won === 1) {
-        ctx.fillStyle = C.green; ctx.font = '28px Consolas, monospace'; ctx.fillText('YOU WIN!', W / 2, H / 2 - 40);
+        ctx.fillStyle = C.green; ctx.font = '28px Consolas, monospace'; ctx.fillText('YOU WIN!', W / 2, H / 2 - 55);
       } else if (this.won === 2) {
-        ctx.fillStyle = C.red; ctx.font = '28px Consolas, monospace'; ctx.fillText('AI WINS', W / 2, H / 2 - 40);
+        ctx.fillStyle = C.red; ctx.font = '28px Consolas, monospace'; ctx.fillText('AI WINS', W / 2, H / 2 - 55);
       } else {
-        ctx.fillStyle = C.amber; ctx.font = '28px Consolas, monospace'; ctx.fillText('DRAW', W / 2, H / 2 - 40);
+        ctx.fillStyle = C.amber; ctx.font = '28px Consolas, monospace'; ctx.fillText('DRAW', W / 2, H / 2 - 55);
       }
       ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
-      ctx.fillText('Moves: ' + this.moveCount + '  Difficulty: ' + this.diffNames[this.difficulty], W / 2, H / 2 - 10);
+      ctx.fillText('Moves: ' + this.moveCount + '  ' + this.diffNames[this.difficulty], W / 2, H / 2 - 25);
+      // Win rate for this difficulty
+      const stats = this._getStats();
+      const s = stats[String(this.difficulty)];
+      if (s && s.played) {
+        const wr = ((s.won / s.played) * 100).toFixed(0);
+        ctx.fillStyle = C.dim; ctx.font = '11px Consolas, monospace';
+        ctx.fillText('Record: ' + s.won + 'W/' + s.lost + 'L/' + s.draw + 'D  Win Rate: ' + wr + '%', W / 2, H / 2 - 5);
+      }
       // Retry button
-      const btnX = W / 2 - 80, btnY = H / 2 + 25, btnW = 160, btnH = 40;
+      const btnX = W / 2 - 80, btnY = H / 2 + 15, btnW = 160, btnH = 40;
       ctx.strokeStyle = C.amber; ctx.lineWidth = 2; ctx.strokeRect(btnX, btnY, btnW, btnH);
       ctx.fillStyle = 'rgba(255,176,0,0.1)'; ctx.fillRect(btnX + 1, btnY + 1, btnW - 2, btnH - 2);
       ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
-      ctx.fillText('RESTART', W / 2, H / 2 + 50);
+      ctx.fillText('RESTART', W / 2, H / 2 + 40);
       ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
-      ctx.fillText('R restart · ESC menu · H scores', W / 2, H / 2 + 85);
+      ctx.fillText('R restart · ESC menu · H scores', W / 2, H / 2 + 75);
     }
   }
 }

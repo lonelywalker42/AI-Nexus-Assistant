@@ -14,6 +14,7 @@ import BookshelfPage from "./pages/BookshelfPage";
 import WritingPage from "./pages/WritingPage";
 import ResearchAgentPage from "./pages/ResearchAgentPage";
 import GameConsolePage from "./pages/GameConsolePage";
+import ArchivePage from "./pages/ArchivePage";
 import { dashboardApi, isLoggedIn, API_BASE } from "./api/client";
 import LoginPage from "./pages/LoginPage";
 import { usePlatform } from "./hooks/usePlatform";
@@ -21,7 +22,7 @@ import MobileLayout from "./layouts/MobileLayout";
 import {
   IconChart, IconClipboard, IconBook, IconSearch, IconFlask, IconBrain, IconChat,
   IconGear, IconX, IconMinus, IconMaximize, IconCalendar, IconLightbulb, IconImage,
-  IconMusic, IconBookOpen, IconGamepad,
+  IconMusic, IconBookOpen, IconGamepad, IconArchive,
 } from "./components/Icons";
 import { useAppName } from "./hooks/useAppName";
 
@@ -31,6 +32,7 @@ const PAGES = [
   { id: "dashboard", label: "仪表盘", icon: "chart", group: "overview" },
   { id: "tasks", label: "任务与日程", icon: "clipboard", group: "overview" },
   { id: "today", label: "今日工作", icon: "calendar", group: "overview" },
+  { id: "archive", label: "工作归档", icon: "archive", group: "overview" },
   // 科研助手
   { id: "literature", label: "文献检索", icon: "search", group: "research" },
   { id: "paper-library", label: "文献库", icon: "book", group: "research" },
@@ -53,6 +55,7 @@ const ICON_MAP: Record<string, React.FC<{ size?: number }>> = {
   flask: IconFlask, brain: IconBrain, chat: IconChat, gear: IconGear,
   calendar: IconCalendar, lightbulb: IconLightbulb, image: IconImage,
   music: IconMusic, bookOpen: IconBookOpen, gamepad: IconGamepad,
+  archive: IconArchive,
 };
 
 export function getPageIcon(iconKey: string, size = 18) {
@@ -171,6 +174,7 @@ function App() {
       case "dashboard": return <Dashboard onNavigate={setActivePage} />;
       case "tasks": return <TaskPage />;
       case "today": return <TodayPage onNavigate={setActivePage} />;
+      case "archive": return <ArchivePage />;
       case "literature": return <LiteraturePage />;
       case "paper-library": return <PaperLibraryPage />;
       case "experiments": return <ExperimentPage />;

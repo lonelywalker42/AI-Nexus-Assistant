@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v4.5.0**.
+AI Nexus Assistant is a personal research assistant desktop application that integrates six independent tools (todo, literature search, experiment management, knowledge base, clock, AI chat) into a unified platform. It targets aerospace/control researchers. Current version: **v4.5.1**.
 
 ## v4.0.0 Features (Multi-platform + Auto-update)
 
@@ -265,8 +265,10 @@ Pure functions accepting a `Session`, hardcoding `USER_ID = "default"`. Each ser
 - `public/todo-calendar.html` — Glass-style todo calendar with real-time clock, drag, task toggle
 
 ### Game Console Mode (游戏机模式)
-- `public/games.html` — Self-contained retro arcade with 16 pixel games on a single Canvas
-- **Games**: 2048, Tetris, Shooter (fighter jet), Word Hopper (CET-6 typing), Snake, Breakout, Minesweeper, Flappy Bird, Pac-Man, Pong, Frogger, Bomberman, Space Invaders, Hextris, Tower Stacking, Pseudo-3D Racer
+- `public/games.html` — Self-contained retro arcade with 18 pixel games on a single Canvas
+- **Games**: 2048, Tetris, Shooter (fighter jet), Word Hopper (CET-6 typing), Snake, Breakout, Minesweeper, Flappy Bird, Pac-Man, Pong, Frogger, Bomberman, Space Invaders, Hextris, Tower Stacking, Pseudo-3D Racer, Gomoku, Maze
+- **Gomoku AI Engine**: 7-level difficulty with Minimax+Alpha-Beta, Iterative Deepening, Zobrist TT, History Heuristic, VCF/VCT threat-space search
+- **Win Rate Stats**: Per-difficulty win/loss/draw tracking in localStorage (`nexus-gomoku-stats`)
 - **UI**: CRT scanline overlay, neon green (#00ff41) retro aesthetic, 2-column grid menu, pixel font support (Press Start 2P / VT323)
 - **GameConsolePage**: CRT monitor frame with scanlines, LED indicator, glow effects
 - **Persistence**: `localStorage` for high scores (`nexus-game-scores`) and save/resume progress (`nexus-game-progress`)
