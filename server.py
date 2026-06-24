@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.4.4")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.4.5")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -1282,6 +1282,17 @@ def get_tag_tree():
     db = get_session()
     try:
         return knowledge_service.get_tag_tree(db)
+    finally:
+        db.close()
+
+
+@app.post("/api/knowledge/tags/cleanup")
+def cleanup_tags():
+    """清理孤立标签（重新计算 usage_count，删除无引用标签）"""
+    db = get_session()
+    try:
+        result = knowledge_service.cleanup_orphan_tags(db)
+        return result
     finally:
         db.close()
 
@@ -3466,11 +3477,24 @@ def delete_import_group(group_id: str):
         if not g:
             raise HTTPException(404, "导入分组不存在")
 
-        # 删除该分组下的所有卡片和标签关联
+        # 删除该分组下的所有卡片和标签关联（同步更新标签计数）
         cards = db.query(KnowledgeCard).filter(KnowledgeCard.import_group_id == group_id).all()
+        affected_tag_names: set[str] = set()
         for card in cards:
+            for ct in db.query(CardTag).filter(CardTag.card_id == card.id).all():
+                affected_tag_names.add(ct.tag_name)
             db.query(CardTag).filter(CardTag.card_id == card.id).delete()
         db.query(KnowledgeCard).filter(KnowledgeCard.import_group_id == group_id).delete()
+        # 递减标签 usage_count，归零则删除标签
+        for tname in affected_tag_names:
+            tag = db.get(Tag, tname)
+            if tag:
+                # 重新计算实际引用数（精确修正）
+                real_count = db.query(CardTag).filter(CardTag.tag_name == tname).count()
+                if real_count == 0:
+                    db.delete(tag)
+                else:
+                    tag.usage_count = real_count
 
         # 删除关联的 chat session（如果有）
         if g.chat_session_id:

@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.4.5 (2026-06-24) — Bug 修复
+
+### Bug 修复
+- **删除卡片后标签计数未同步**: `delete_card` 和 `delete_import_group` 删除卡片时仅删除 `CardTag` 关联，未递减 `Tag.usage_count`，导致已删除卡片的标签仍然存在且计数不准确
+- **孤立标签清理**: 新增 `cleanup_orphan_tags` 服务 + `/api/knowledge/tags/cleanup` 端点，IDEA 页面加载时自动重新计算标签引用数，删除无引用标签
+- **导入分组删除精确计数**: `delete_import_group` 改为先收集受影响标签再删除，最后按实际引用数精确修正 `usage_count`
+
 ## v4.4.4 (2026-06-24) — 性能优化 + 稳定性修复
 
 ### 性能优化

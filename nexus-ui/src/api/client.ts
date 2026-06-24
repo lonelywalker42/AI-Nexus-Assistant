@@ -5,7 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
-export const APP_VERSION = "4.4.4";
+export const APP_VERSION = "4.4.5";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
@@ -445,6 +445,7 @@ export const knowledgeApi = {
       `/api/knowledge/cards/${id}/regenerate-summary`, { method: "POST" }
     ),
   listTags: () => request<{ name: string; usage_count: number; status: string }[]>("/api/knowledge/tags"),
+  cleanupTags: () => request<{ updated: number; deleted: number }>("/api/knowledge/tags/cleanup", { method: "POST" }),
 };
 
 // ── Import Groups ──────────────────────────────────────────

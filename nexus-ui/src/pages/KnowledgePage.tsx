@@ -206,8 +206,12 @@ export default function KnowledgePage() {
   };
   useEffect(() => { loadCards(); }, [debouncedSearch, sortBy, sortOrder, starMin, tagFilter]);
 
-  // 加载标签
-  useEffect(() => { knowledgeApi.listTags().then(setAllTags).catch(() => {}); }, []);
+  // 加载标签（首次加载时自动清理孤立标签）
+  useEffect(() => {
+    knowledgeApi.cleanupTags().catch(() => {}).finally(() => {
+      knowledgeApi.listTags().then(setAllTags).catch(() => {});
+    });
+  }, []);
 
   // 加载导入分组
   const loadImportGroups = () => importGroupApi.list().then(setImportGroups).catch(console.error);

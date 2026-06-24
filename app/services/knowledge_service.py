@@ -76,10 +76,18 @@ def update_card(db: Session, card_id: str, **kwargs) -> Optional[KnowledgeCard]:
 
 
 def delete_card(db: Session, card_id: str) -> bool:
-    """删除知识卡片"""
+    """删除知识卡片（同步更新标签计数）"""
     card = db.get(KnowledgeCard, card_id)
     if not card:
         return False
+    # 递减关联标签的 usage_count，归零则删除标签
+    tag_names = [ct.tag_name for ct in db.query(CardTag).filter(CardTag.card_id == card_id).all()]
+    for tname in tag_names:
+        tag = db.get(Tag, tname)
+        if tag:
+            tag.usage_count = max(0, (tag.usage_count or 0) - 1)
+            if tag.usage_count == 0:
+                db.delete(tag)
     # Delete tag associations
     db.query(CardTag).filter(CardTag.card_id == card_id).delete()
     db.delete(card)
@@ -125,6 +133,27 @@ def get_tags(db: Session, status: str = "") -> list[Tag]:
     if status:
         q = q.filter(Tag.status == status)
     return q.order_by(Tag.usage_count.desc()).all()
+
+
+def cleanup_orphan_tags(db: Session) -> dict:
+    """清理孤立标签：重新计算所有标签的 usage_count，删除无引用标签
+
+    用于修复删除卡片后标签计数未同步的历史数据。
+    返回: {"updated": int, "deleted": int}
+    """
+    updated = 0
+    deleted = 0
+    all_tags = db.query(Tag).all()
+    for tag in all_tags:
+        real_count = db.query(CardTag).filter(CardTag.tag_name == tag.name).count()
+        if real_count == 0:
+            db.delete(tag)
+            deleted += 1
+        elif tag.usage_count != real_count:
+            tag.usage_count = real_count
+            updated += 1
+    db.commit()
+    return {"updated": updated, "deleted": deleted}
 
 
 def get_tag_tree(db: Session) -> dict:
