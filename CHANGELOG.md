@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.4.3 (2026-06-24) — Bug 修复
+
+### Bug 修复
+- **IDEA 页面 DeepSeek 导入后所有卡片不显示**: 修复导入完成后未显式调用 `loadCards()` 刷新卡片列表的 Bug — useEffect 依赖数组不含 `activeCategory`，且 filter 值若已是默认值则不触发重载，导致 `allCards` 停留在旧数据，新导入的 DeepSeek 卡片不在 AI 对话分类中显示
+- **请求无超时导致"网络连接失败"**: `request()` 函数的 `fetch()` 调用无超时机制，324+ 卡片 × N+1 标签查询可导致响应缓慢，请求挂起后前端误报网络错误；添加 30 秒 `AbortSignal.timeout` 防挂起
+- **GET 请求多余的 Content-Type 头**: `request()` 对所有请求统一设置 `Content-Type: application/json`，GET 请求无需此头，可能触发代理兼容问题
+
 ## v4.4.2 (2026-06-24) — Bug 修复
 
 ### Bug 修复
