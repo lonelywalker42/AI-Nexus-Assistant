@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.4.1")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.4.2")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback

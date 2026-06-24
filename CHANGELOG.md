@@ -1,5 +1,11 @@
 # Changelog
 
+## v4.4.2 (2026-06-24) — Bug 修复
+
+### Bug 修复
+- **IDEA 页面卡片加载 500 错误**: 修复 `server.py` 中 `list_cards` 端点使用 `t.tag_name` 访问 `Tag` 对象导致 `AttributeError`，所有知识卡片（文献/AI对话/手动/随手记/网页）无法加载，前端误显示为"网络连接失败"
+- **游戏机键盘事件监听器累积**: 修复 Game2048/Invaders/Hextris/Tower/Racer 等游戏按 R 重启时 `init()` 被多次调用但未移除旧的 keydown 监听器，导致单次按键触发多个方块/操作
+
 ## v4.4.1 (2026-06-24) — Bug 修复 + 开发者文档
 
 ### Bug 修复
