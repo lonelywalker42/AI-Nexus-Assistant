@@ -84,7 +84,7 @@ function getHighScore(gameKey) {
 
 function showHighScores(gameKey) {
   const scores = getHighScores(gameKey);
-  const gameNames = { '2048': '2 0 4 8', 'tetris': 'TETRIS', 'shooter': 'SHOOTER', 'wordhopper': 'WORD HOP', 'snake': 'SNAKE', 'breakout': 'BREAKOUT', 'minesweeper': 'MINES', 'flappy': 'FLAPPY', 'pacman': 'PAC-MAN', 'pong': 'PONG', 'frogger': 'FROGGER', 'bomberman': 'BOMBER', 'invaders': 'INVADERS', 'hextris': 'HEXTRIS', 'tower': 'TOWER', 'racer': 'RACER' };
+  const gameNames = { '2048': '2 0 4 8', 'tetris': 'TETRIS', 'shooter': 'SHOOTER', 'wordhopper': 'WORD HOP', 'snake': 'SNAKE', 'breakout': 'BREAKOUT', 'minesweeper': 'MINES', 'flappy': 'FLAPPY', 'pacman': 'PAC-MAN', 'pong': 'PONG', 'frogger': 'FROGGER', 'bomberman': 'BOMBER', 'invaders': 'INVADERS', 'hextris': 'HEXTRIS', 'tower': 'TOWER', 'racer': 'RACER', 'gomoku': 'GOMOKU', 'maze': 'MAZE' };
   let selected = -1; // -1 = back button
 
   function drawScores() {
@@ -4563,13 +4563,871 @@ class GameRacer {
   }
 }
 
+// ══════════════════════════════════════════════
+//  GOMOKU — Five-in-a-row with 5-level AI
+// ══════════════════════════════════════════════
+// AI algorithm reference: RainbowRoad1/Cgame/Five-in-a-row
+// Core idea: pattern scoring (1<<k for k consecutive) + threat accumulation
+// Extended with minimax + alpha-beta for higher difficulties
+class GameGomoku {
+  constructor() {
+    this.N = 15; // board size
+    this.cellSize = 28;
+    this.ox = (W - this.N * this.cellSize) / 2;
+    this.oy = 70;
+    this.board = []; // 0=empty, 1=black(player), 2=white(AI)
+    this.cursor = { x: 7, y: 7 };
+    this.turn = 1; // 1=black(player), 2=white(AI)
+    this.over = false; this.won = 0; this.showHelp = true;
+    this.difficulty = 2; // 1-5
+    this.diffNames = ['', 'LV.1 RANDOM', 'LV.2 GREEDY', 'LV.3 DEFEND', 'LV.4 THINKER', 'LV.5 MASTER'];
+    this.thinking = false; // AI is computing
+    this.moveCount = 0;
+    this.lastMove = null;
+    // Threat score tables (per-player, per-cell) — inspired by reference m[S..3S-1]
+    this.scoreBlack = []; this.scoreWhite = [];
+  }
+
+  init(savedState) {
+    if (savedState) {
+      this.board = savedState.board; this.cursor = savedState.cursor;
+      this.turn = savedState.turn; this.over = savedState.over;
+      this.won = savedState.won || 0; this.difficulty = savedState.difficulty;
+      this.moveCount = savedState.moveCount || 0; this.lastMove = savedState.lastMove;
+      this.showHelp = false;
+    } else {
+      this.board = Array.from({ length: this.N }, () => Array(this.N).fill(0));
+      this.cursor = { x: 7, y: 7 }; this.turn = 1;
+      this.over = false; this.won = 0; this.moveCount = 0; this.lastMove = null;
+      this.showHelp = true;
+    }
+    this.scoreBlack = Array.from({ length: this.N }, () => Array(this.N).fill(0));
+    this.scoreWhite = Array.from({ length: this.N }, () => Array(this.N).fill(0));
+    this._keyD = (e) => this.handleKey(e);
+    this._clickH = (e) => this.handleClick(e);
+    document.addEventListener('keydown', this._keyD);
+    canvas.addEventListener('click', this._clickH);
+    this.loop();
+  }
+
+  saveProgress() {
+    saveGameProgress('gomoku', {
+      board: this.board, cursor: this.cursor, turn: this.turn,
+      over: this.over, won: this.won, difficulty: this.difficulty,
+      moveCount: this.moveCount, lastMove: this.lastMove
+    });
+  }
+
+  destroy() {
+    document.removeEventListener('keydown', this._keyD);
+    canvas.removeEventListener('click', this._clickH);
+    if (this._raf) cancelAnimationFrame(this._raf);
+    if (this._helpRaf) cancelAnimationFrame(this._helpRaf);
+  }
+
+  // ── Core: count consecutive same-color pieces from (x,y) in direction (dx,dy)
+  // Direct port of reference's sum(v, l) recursive logic
+  countDir(x, y, dx, dy, player) {
+    let count = 0, nx = x + dx, ny = y + dy;
+    while (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === player) {
+      count++; nx += dx; ny += dy;
+    }
+    return count;
+  }
+
+  // ── Core: evaluate threat scores for all empty cells (reference: down() function)
+  // For each placed piece, scan 4 directions, compute consecutive length k,
+  // add (1<<k) to the empty cell at each end of the line
+  updateThreats() {
+    this.scoreBlack = Array.from({ length: this.N }, () => Array(this.N).fill(0));
+    this.scoreWhite = Array.from({ length: this.N }, () => Array(this.N).fill(0));
+    const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    for (let y = 0; y < this.N; y++) {
+      for (let x = 0; x < this.N; x++) {
+        const p = this.board[y][x];
+        if (!p) continue;
+        const scores = p === 1 ? this.scoreBlack : this.scoreWhite;
+        for (const [dx, dy] of dirs) {
+          // Only count in positive direction to avoid double-counting
+          const k = this.countDir(x, y, dx, dy, p);
+          if (k < 2) continue; // single piece doesn't create threats via this method
+          // Check both ends
+          const ends = [
+            { ex: x - dx, ey: y - dy }, // negative end
+            { ex: x + dx * k, ey: y + dy * k } // positive end
+          ];
+          for (const { ex, ey } of ends) {
+            if (ex >= 0 && ex < this.N && ey >= 0 && ey < this.N && this.board[ey][ex] === 0) {
+              scores[ey][ex] += (1 << k);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── Pattern-based evaluation for a single line segment
+  // Returns score for `player` on a line segment of cells
+  evalLine(cells, player) {
+    const opp = player === 1 ? 2 : 1;
+    let score = 0;
+    let i = 0;
+    while (i < cells.length) {
+      if (cells[i] === player) {
+        let count = 0, openEnds = 0;
+        while (i < cells.length && cells[i] === player) { count++; i++; }
+        // Check open ends
+        if (i - count > 0 && cells[i - count - 1] === 0) openEnds++;
+        if (i < cells.length && cells[i] === 0) openEnds++;
+        if (count >= 5) score += 100000;
+        else if (count === 4) score += openEnds === 2 ? 10000 : (openEnds === 1 ? 1000 : 0);
+        else if (count === 3) score += openEnds === 2 ? 1000 : (openEnds === 1 ? 100 : 0);
+        else if (count === 2) score += openEnds === 2 ? 100 : (openEnds === 1 ? 10 : 0);
+        else if (count === 1) score += openEnds === 2 ? 10 : (openEnds === 1 ? 1 : 0);
+      } else {
+        i++;
+      }
+    }
+    return score;
+  }
+
+  // ── Full board evaluation for minimax
+  evaluateBoard(player) {
+    const opp = player === 1 ? 2 : 1;
+    let myScore = 0, oppScore = 0;
+    const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    // Evaluate all lines of length 5+ that pass through each cell
+    for (let y = 0; y < this.N; y++) {
+      for (let x = 0; x < this.N; x++) {
+        for (const [dx, dy] of dirs) {
+          // Extract line segment of up to 9 cells centered on (x,y)
+          const cells = [];
+          for (let step = -4; step <= 4; step++) {
+            const nx = x + dx * step, ny = y + dy * step;
+            if (nx < 0 || nx >= this.N || ny < 0 || ny >= this.N) { cells.push(-1); continue; }
+            cells.push(this.board[ny][nx]);
+          }
+          myScore += this.evalLine(cells, player);
+          oppScore += this.evalLine(cells, opp);
+        }
+      }
+    }
+    return myScore - oppScore * 1.1; // Slightly weight defense
+  }
+
+  // ── Check if player has won (5+ consecutive)
+  checkWin(player) {
+    const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    for (let y = 0; y < this.N; y++) {
+      for (let x = 0; x < this.N; x++) {
+        if (this.board[y][x] !== player) continue;
+        for (const [dx, dy] of dirs) {
+          if (this.countDir(x, y, dx, dy, player) >= 4) return true; // 4 more = 5 total
+        }
+      }
+    }
+    return false;
+  }
+
+  // ── Get candidate moves (cells near existing pieces)
+  getCandidates(radius) {
+    const candidates = new Set();
+    const r = radius || 2;
+    for (let y = 0; y < this.N; y++) {
+      for (let x = 0; x < this.N; x++) {
+        if (!this.board[y][x]) continue;
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && !this.board[ny][nx]) {
+              candidates.add(ny * this.N + nx);
+            }
+          }
+        }
+      }
+    }
+    return [...candidates].map(v => ({ x: v % this.N, y: Math.floor(v / this.N) }));
+  }
+
+  // ── Quick threat check: is there an immediate win or must-block?
+  findCriticalMove(player) {
+    const opp = player === 1 ? 2 : 1;
+    const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    // First: can I win immediately?
+    for (let y = 0; y < this.N; y++) {
+      for (let x = 0; x < this.N; x++) {
+        if (this.board[y][x]) continue;
+        this.board[y][x] = player;
+        if (this.checkWin(player)) { this.board[y][x] = 0; return { x, y }; }
+        this.board[y][x] = 0;
+      }
+    }
+    // Second: must I block opponent's winning move?
+    for (let y = 0; y < this.N; y++) {
+      for (let x = 0; x < this.N; x++) {
+        if (this.board[y][x]) continue;
+        this.board[y][x] = opp;
+        if (this.checkWin(opp)) { this.board[y][x] = 0; return { x, y }; }
+        this.board[y][x] = 0;
+      }
+    }
+    return null;
+  }
+
+  // ── AI Level 1: Random
+  aiRandom() {
+    const empty = [];
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      if (!this.board[y][x]) empty.push({ x, y });
+    }
+    return empty[Math.floor(Math.random() * empty.length)];
+  }
+
+  // ── AI Level 2: Greedy (reference algorithm: max threat score)
+  aiGreedy() {
+    this.updateThreats();
+    // Combine both threat tables: prefer own threats, then block opponent
+    let best = -1, moves = [];
+    for (let y = 0; y < this.N; y++) {
+      for (let x = 0; x < this.N; x++) {
+        if (this.board[y][x]) continue;
+        const s = this.scoreWhite[y][x] * 1.1 + this.scoreBlack[y][x]; // Slightly favor offense
+        if (s > best) { best = s; moves = [{ x, y }]; }
+        else if (s === best) moves.push({ x, y });
+      }
+    }
+    return moves.length ? moves[Math.floor(Math.random() * moves.length)] : this.aiRandom();
+  }
+
+  // ── AI Level 3: Greedy with defense priority + critical move detection
+  aiDefend() {
+    const critical = this.findCriticalMove(2); // Check immediate win
+    if (critical) return critical;
+    const block = this.findCriticalMove(1); // Check must-block
+    if (block) return block;
+    // Weighted greedy: defense matters more
+    this.updateThreats();
+    let best = -1, moves = [];
+    for (let y = 0; y < this.N; y++) {
+      for (let x = 0; x < this.N; x++) {
+        if (this.board[y][x]) continue;
+        const s = this.scoreWhite[y][x] + this.scoreBlack[y][x] * 1.3; // Favor defense
+        if (s > best) { best = s; moves = [{ x, y }]; }
+        else if (s === best) moves.push({ x, y });
+      }
+    }
+    return moves.length ? moves[Math.floor(Math.random() * moves.length)] : this.aiRandom();
+  }
+
+  // ── Minimax with alpha-beta pruning
+  minimax(depth, alpha, beta, isMaximizing, player) {
+    const opp = player === 1 ? 2 : 1;
+    // Terminal checks
+    if (this.checkWin(player)) return 100000 + depth;
+    if (this.checkWin(opp)) return -100000 - depth;
+    if (depth === 0) return this.evaluateBoard(2); // AI is always player 2
+
+    const candidates = this.getCandidates(1);
+    if (candidates.length === 0) return 0;
+
+    // Sort by quick evaluation for better pruning
+    candidates.sort((a, b) => {
+      const sa = this.scoreWhite[a.y][a.x] + this.scoreBlack[a.y][a.x];
+      const sb = this.scoreWhite[b.y][b.x] + this.scoreBlack[b.y][b.x];
+      return sb - sa;
+    });
+    const limit = Math.min(candidates.length, depth >= 3 ? 12 : 20);
+
+    if (isMaximizing) {
+      let maxEval = -Infinity;
+      for (let i = 0; i < limit; i++) {
+        const { x, y } = candidates[i];
+        this.board[y][x] = 2;
+        const eval_ = this.minimax(depth - 1, alpha, beta, false, player);
+        this.board[y][x] = 0;
+        maxEval = Math.max(maxEval, eval_);
+        alpha = Math.max(alpha, eval_);
+        if (beta <= alpha) break;
+      }
+      return maxEval;
+    } else {
+      let minEval = Infinity;
+      for (let i = 0; i < limit; i++) {
+        const { x, y } = candidates[i];
+        this.board[y][x] = 1;
+        const eval_ = this.minimax(depth - 1, alpha, beta, true, player);
+        this.board[y][x] = 0;
+        minEval = Math.min(minEval, eval_);
+        beta = Math.min(beta, eval_);
+        if (beta <= alpha) break;
+      }
+      return minEval;
+    }
+  }
+
+  // ── AI Level 4: Minimax depth 2
+  aiThinker() {
+    const critical = this.findCriticalMove(2);
+    if (critical) return critical;
+    const block = this.findCriticalMove(1);
+    if (block) return block;
+    this.updateThreats();
+    const candidates = this.getCandidates(2);
+    if (!candidates.length) return this.aiRandom();
+    let best = -Infinity, moves = [];
+    for (const { x, y } of candidates) {
+      this.board[y][x] = 2;
+      const s = this.minimax(2, -Infinity, Infinity, false, 1);
+      this.board[y][x] = 0;
+      if (s > best) { best = s; moves = [{ x, y }]; }
+      else if (s === best) moves.push({ x, y });
+    }
+    return moves.length ? moves[Math.floor(Math.random() * moves.length)] : this.aiRandom();
+  }
+
+  // ── AI Level 5: Minimax depth 4 with better eval
+  aiMaster() {
+    const critical = this.findCriticalMove(2);
+    if (critical) return critical;
+    const block = this.findCriticalMove(1);
+    if (block) return block;
+    this.updateThreats();
+    const candidates = this.getCandidates(2);
+    if (!candidates.length) return this.aiRandom();
+    // Pre-sort by threat score for better pruning
+    candidates.sort((a, b) => {
+      const sa = this.scoreWhite[a.y][a.x] * 1.2 + this.scoreBlack[a.y][a.x];
+      const sb = this.scoreWhite[b.y][b.x] * 1.2 + this.scoreBlack[b.y][b.x];
+      return sb - sa;
+    });
+    let best = -Infinity, moves = [];
+    const limit = Math.min(candidates.length, 20);
+    for (let i = 0; i < limit; i++) {
+      const { x, y } = candidates[i];
+      this.board[y][x] = 2;
+      const s = this.minimax(4, -Infinity, Infinity, false, 1);
+      this.board[y][x] = 0;
+      if (s > best) { best = s; moves = [{ x, y }]; }
+      else if (s === best) moves.push({ x, y });
+    }
+    return moves.length ? moves[Math.floor(Math.random() * moves.length)] : this.aiRandom();
+  }
+
+  // ── AI move dispatcher
+  aiMove() {
+    this.thinking = true;
+    this.draw(); // Show thinking state
+    setTimeout(() => {
+      let move;
+      switch (this.difficulty) {
+        case 1: move = this.aiRandom(); break;
+        case 2: move = this.aiGreedy(); break;
+        case 3: move = this.aiDefend(); break;
+        case 4: move = this.aiThinker(); break;
+        case 5: move = this.aiMaster(); break;
+        default: move = this.aiGreedy();
+      }
+      if (move) {
+        this.board[move.y][move.x] = 2;
+        this.lastMove = move;
+        this.moveCount++;
+        if (this.checkWin(2)) {
+          this.over = true; this.won = 2;
+          saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'lose' });
+          clearGameProgress('gomoku');
+        } else if (this.moveCount >= this.N * this.N) {
+          this.over = true; this.won = 0; // Draw
+          clearGameProgress('gomoku');
+        }
+      }
+      this.turn = 1;
+      this.thinking = false;
+      this.saveProgress();
+    }, 100);
+  }
+
+  // ── Place stone at (x,y) for current turn — shared by key and click
+  placeStone(x, y) {
+    if (this.board[y][x]) return false; // Occupied
+    this.board[y][x] = 1;
+    this.lastMove = { x, y };
+    this.moveCount++;
+    if (this.checkWin(1)) {
+      this.over = true; this.won = 1;
+      saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'win' });
+      clearGameProgress('gomoku');
+      return true;
+    }
+    if (this.moveCount >= this.N * this.N) {
+      this.over = true; this.won = 0;
+      clearGameProgress('gomoku');
+      return true;
+    }
+    this.turn = 2;
+    this.aiMove();
+    return true;
+  }
+
+  handleClick(e) {
+    if (this.showHelp) {
+      this.showHelp = false;
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      this.loop(); return;
+    }
+    if (this.over) {
+      const rect = canvas.getBoundingClientRect();
+      const my = (e.clientY - rect.top) * (H / rect.height);
+      const mx = (e.clientX - rect.left) * (W / rect.width);
+      if (mx > W / 2 - 80 && mx < W / 2 + 80 && my > H / 2 + 25 && my < H / 2 + 65) {
+        this.destroy(); gameInstance = new GameGomoku(); gameInstance.init();
+      }
+      return;
+    }
+    if (this.thinking || this.turn !== 1) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const my = (e.clientY - rect.top) * (H / rect.height);
+    const cs = this.cellSize;
+    const bx = Math.floor((mx - this.ox) / cs);
+    const by = Math.floor((my - this.oy) / cs);
+    if (bx >= 0 && bx < this.N && by >= 0 && by < this.N) {
+      this.cursor.x = bx; this.cursor.y = by;
+      this.placeStone(bx, by);
+    }
+  }
+
+  handleKey(e) {
+    if (this.showHelp) {
+      if (e.key === 'Escape') { backToMenu(); return; }
+      if (e.key === 'd' || e.key === 'D') {
+        this.difficulty = this.difficulty % 5 + 1;
+        this.drawHelp(); return;
+      }
+      this.showHelp = false;
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      this.loop(); return;
+    }
+    if (this.over) {
+      if (e.key === 'r' || e.key === 'R') { this.destroy(); gameInstance = new GameGomoku(); gameInstance.init(); return; }
+      if (e.key === 'h' || e.key === 'H') { showHighScores('gomoku'); return; }
+      if (e.key === 'Escape') { backToMenu(); return; }
+      return;
+    }
+    if (this.thinking) return; // Block input during AI turn
+    if (e.key === 'Escape') { backToMenu(); return; }
+    if (e.key === 'p' || e.key === 'P') { this.paused = !this.paused; return; }
+    // Cursor movement
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { this.cursor.x = Math.max(0, this.cursor.x - 1); }
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { this.cursor.x = Math.min(this.N - 1, this.cursor.x + 1); }
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') { this.cursor.y = Math.max(0, this.cursor.y - 1); }
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') { this.cursor.y = Math.min(this.N - 1, this.cursor.y + 1); }
+    // Place piece
+    if (e.key === ' ' || e.key === 'Enter') {
+      this.placeStone(this.cursor.x, this.cursor.y);
+    }
+  }
+
+  loop() {
+    if (!this.showHelp) {
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
+    }
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
+  }
+
+  drawHelp() {
+    if (!this.showHelp) return;
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.green; ctx.font = '28px Consolas, monospace';
+    ctx.shadowColor = C.green; ctx.shadowBlur = 12;
+    ctx.fillText('G O M O K U', W / 2, 80); ctx.shadowBlur = 0;
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    ctx.fillText('FIVE IN A ROW', W / 2, 110);
+    // Difficulty selector
+    ctx.fillStyle = C.cyan; ctx.font = '16px Consolas, monospace';
+    ctx.fillText('[ ' + this.diffNames[this.difficulty] + ' ]', W / 2, 145);
+    const lines = [
+      ['↑ ↓ ← → / WASD', 'Move cursor'],
+      ['SPACE / ENTER', 'Place stone'],
+      ['P', 'Pause'],
+      ['', ''],
+      ['You are BLACK (●)', 'AI is WHITE (○)'],
+      ['First to get 5', 'in a row wins!'],
+      ['', ''],
+      ['D key', 'Change difficulty'],
+    ];
+    ctx.textAlign = 'left'; let ly = 175;
+    lines.forEach(l => {
+      if (l[0] && l[1]) {
+        ctx.fillStyle = C.cyan; ctx.font = '13px Consolas, monospace'; ctx.fillText(l[0], W / 2 - 120, ly);
+        ctx.fillStyle = C.white; ctx.fillText(l[1], W / 2 + 30, ly);
+      }
+      ly += 26;
+    });
+    ctx.textAlign = 'center'; ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    if (Math.floor(Date.now() / 600) % 2 === 0) ctx.fillText('Press any key to start...', W / 2, H - 50);
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    // Title
+    ctx.fillStyle = C.green; ctx.font = '16px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.fillText('G O M O K U  ·  ' + this.diffNames[this.difficulty], W / 2, 22);
+    // Turn indicator
+    if (!this.over) {
+      ctx.fillStyle = this.thinking ? C.amber : (this.turn === 1 ? C.white : C.dim);
+      ctx.font = '12px Consolas, monospace';
+      ctx.fillText(this.thinking ? 'AI THINKING...' : (this.turn === 1 ? 'YOUR TURN (●)' : 'AI TURN (○)'), W / 2, 45);
+    }
+    // Move count
+    ctx.fillStyle = C.dim; ctx.font = '11px Consolas, monospace'; ctx.textAlign = 'left';
+    ctx.fillText('MOVES: ' + this.moveCount, 15, 60);
+    // Board background
+    const cs = this.cellSize;
+    ctx.fillStyle = '#1a1508';
+    ctx.fillRect(this.ox - 2, this.oy - 2, this.N * cs + 4, this.N * cs + 4);
+    // Grid lines
+    ctx.strokeStyle = '#3a3520'; ctx.lineWidth = 0.5;
+    for (let i = 0; i < this.N; i++) {
+      ctx.beginPath(); ctx.moveTo(this.ox + cs / 2, this.oy + i * cs + cs / 2);
+      ctx.lineTo(this.ox + (this.N - 1) * cs + cs / 2, this.oy + i * cs + cs / 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(this.ox + i * cs + cs / 2, this.oy + cs / 2);
+      ctx.lineTo(this.ox + i * cs + cs / 2, this.oy + (this.N - 1) * cs + cs / 2); ctx.stroke();
+    }
+    // Star points (standard gomoku markings)
+    const stars = [3, 7, 11];
+    ctx.fillStyle = '#3a3520';
+    stars.forEach(sy => stars.forEach(sx => {
+      ctx.beginPath(); ctx.arc(this.ox + sx * cs + cs / 2, this.oy + sy * cs + cs / 2, 3, 0, Math.PI * 2); ctx.fill();
+    }));
+    // Pieces
+    for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
+      const p = this.board[y][x];
+      if (!p) continue;
+      const cx = this.ox + x * cs + cs / 2, cy = this.oy + y * cs + cs / 2;
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath(); ctx.arc(cx + 1, cy + 1, cs / 2 - 3, 0, Math.PI * 2); ctx.fill();
+      // Stone
+      if (p === 1) {
+        const grad = ctx.createRadialGradient(cx - 3, cy - 3, 2, cx, cy, cs / 2 - 3);
+        grad.addColorStop(0, '#555'); grad.addColorStop(1, '#111');
+        ctx.fillStyle = grad;
+      } else {
+        const grad = ctx.createRadialGradient(cx - 3, cy - 3, 2, cx, cy, cs / 2 - 3);
+        grad.addColorStop(0, '#fff'); grad.addColorStop(1, '#bbb');
+        ctx.fillStyle = grad;
+      }
+      ctx.beginPath(); ctx.arc(cx, cy, cs / 2 - 3, 0, Math.PI * 2); ctx.fill();
+      // Last move marker
+      if (this.lastMove && this.lastMove.x === x && this.lastMove.y === y) {
+        ctx.fillStyle = p === 1 ? C.red : C.red;
+        ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // Cursor
+    if (!this.over && !this.thinking && this.turn === 1 && !this.paused) {
+      const cx = this.ox + this.cursor.x * cs, cy = this.oy + this.cursor.y * cs;
+      ctx.strokeStyle = C.amber; ctx.lineWidth = 2;
+      ctx.strokeRect(cx + 1, cy + 1, cs - 2, cs - 2);
+    }
+    // Paused overlay
+    if (this.paused && !this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = C.amber; ctx.font = '28px Consolas, monospace'; ctx.textAlign = 'center';
+      ctx.fillText('PAUSED', W / 2, H / 2);
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
+      ctx.fillText('P to resume · ESC menu', W / 2, H / 2 + 30);
+    }
+    // Game over overlay
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      if (this.won === 1) {
+        ctx.fillStyle = C.green; ctx.font = '28px Consolas, monospace'; ctx.fillText('YOU WIN!', W / 2, H / 2 - 40);
+      } else if (this.won === 2) {
+        ctx.fillStyle = C.red; ctx.font = '28px Consolas, monospace'; ctx.fillText('AI WINS', W / 2, H / 2 - 40);
+      } else {
+        ctx.fillStyle = C.amber; ctx.font = '28px Consolas, monospace'; ctx.fillText('DRAW', W / 2, H / 2 - 40);
+      }
+      ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+      ctx.fillText('Moves: ' + this.moveCount + '  Difficulty: ' + this.diffNames[this.difficulty], W / 2, H / 2 - 10);
+      // Retry button
+      const btnX = W / 2 - 80, btnY = H / 2 + 25, btnW = 160, btnH = 40;
+      ctx.strokeStyle = C.amber; ctx.lineWidth = 2; ctx.strokeRect(btnX, btnY, btnW, btnH);
+      ctx.fillStyle = 'rgba(255,176,0,0.1)'; ctx.fillRect(btnX + 1, btnY + 1, btnW - 2, btnH - 2);
+      ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+      ctx.fillText('RESTART', W / 2, H / 2 + 50);
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
+      ctx.fillText('R restart · ESC menu · H scores', W / 2, H / 2 + 85);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  MAZE — Recursive backtracking maze runner
+// ══════════════════════════════════════════════
+// Algorithm reference: RainbowRoad1/Cgame/Maze/1_tiny_26lines.c
+// Recursive backtracking: dig(v) carves passages by stepping ±2 cells
+class GameMaze {
+  constructor() {
+    this.level = 1;
+    this.baseSize = 11; // Starting maze dimension (must be odd)
+    this.maze = []; // 0=wall, 1=path
+    this.cols = 0; this.rows = 0;
+    this.cellSize = 0;
+    this.ox = 0; this.oy = 0;
+    this.player = { x: 1, y: 1 };
+    this.exit = { x: 0, y: 0 };
+    this.over = false; this.won = false; this.showHelp = true;
+    this.startTime = 0; this.elapsed = 0; this.steps = 0;
+    this.bestTimes = {}; // level -> best time
+  }
+
+  getMazeSize() {
+    // Increase maze size every 2 levels
+    const add = Math.floor((this.level - 1) / 2) * 4;
+    const size = Math.min(this.baseSize + add, 31); // Cap at 31x31
+    return size;
+  }
+
+  generateMaze() {
+    const size = this.getMazeSize();
+    this.cols = size; this.rows = size;
+    // Initialize: all walls
+    this.maze = Array.from({ length: this.rows }, () => Array(this.cols).fill(0));
+    // Recursive backtracking (from reference: dig() function)
+    const dirs = [
+      { dx: 0, dy: -2 }, // up
+      { dx: 0, dy: 2 },  // down
+      { dx: -2, dy: 0 }, // left
+      { dx: 2, dy: 0 },  // right
+    ];
+    const dig = (x, y) => {
+      this.maze[y][x] = 1;
+      // Shuffle directions
+      for (let i = dirs.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+      }
+      for (const { dx, dy } of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx > 0 && nx < this.cols - 1 && ny > 0 && ny < this.rows - 1 && !this.maze[ny][nx]) {
+          this.maze[y + dy / 2][x + dx / 2] = 1; // Carve wall between
+          dig(nx, ny);
+        }
+      }
+    };
+    dig(1, 1);
+    // Set entrance and exit
+    this.player = { x: 1, y: 1 };
+    // Find farthest reachable cell for exit (bottom-right area)
+    this.exit = { x: this.cols - 2, y: this.rows - 2 };
+    if (this.maze[this.exit.y][this.exit.x] === 0) {
+      // Find nearest path cell
+      for (let r = this.rows - 2; r >= 1; r--) {
+        for (let c = this.cols - 2; c >= 1; c--) {
+          if (this.maze[r][c] === 1) { this.exit = { x: c, y: r }; r = 0; break; }
+        }
+      }
+    }
+    // Calculate cell size to fit canvas
+    this.cellSize = Math.floor(Math.min((W - 20) / this.cols, (H - 100) / this.rows));
+    this.ox = (W - this.cols * this.cellSize) / 2;
+    this.oy = 70;
+  }
+
+  init(savedState) {
+    if (savedState) {
+      this.level = savedState.level || 1;
+      this.maze = savedState.maze; this.cols = savedState.cols; this.rows = savedState.rows;
+      this.player = savedState.player; this.exit = savedState.exit;
+      this.over = savedState.over || false; this.won = savedState.won || false;
+      this.startTime = savedState.startTime || 0; this.steps = savedState.steps || 0;
+      this.showHelp = false;
+      this.cellSize = Math.floor(Math.min((W - 20) / this.cols, (H - 100) / this.rows));
+      this.ox = (W - this.cols * this.cellSize) / 2;
+      this.oy = 70;
+    } else {
+      this.level = 1; this.over = false; this.won = false;
+      this.startTime = 0; this.steps = 0; this.showHelp = true;
+      this.generateMaze();
+    }
+    this._keyD = (e) => this.handleKey(e);
+    document.addEventListener('keydown', this._keyD);
+    this.loop();
+  }
+
+  saveProgress() {
+    saveGameProgress('maze', {
+      level: this.level, maze: this.maze, cols: this.cols, rows: this.rows,
+      player: this.player, exit: this.exit, over: this.over, won: this.won,
+      startTime: this.startTime, steps: this.steps
+    });
+  }
+
+  destroy() {
+    document.removeEventListener('keydown', this._keyD);
+    if (this._raf) cancelAnimationFrame(this._raf);
+    if (this._helpRaf) cancelAnimationFrame(this._helpRaf);
+  }
+
+  handleKey(e) {
+    if (this.showHelp) {
+      if (e.key === 'Escape') { backToMenu(); return; }
+      this.showHelp = false;
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      this.startTime = performance.now();
+      this.loop(); return;
+    }
+    if (this.over) {
+      if (e.key === 'r' || e.key === 'R') {
+        this.destroy();
+        const g = new GameMaze();
+        g.level = this.won ? this.level + 1 : this.level;
+        gameInstance = g; g.init();
+        return;
+      }
+      if (e.key === 'h' || e.key === 'H') { showHighScores('maze'); return; }
+      if (e.key === 'Escape') { backToMenu(); return; }
+      return;
+    }
+    if (e.key === 'Escape') { backToMenu(); return; }
+    // Movement (reference: check if destination cell is path)
+    let nx = this.player.x, ny = this.player.y;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') nx--;
+    else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') nx++;
+    else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') ny--;
+    else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') ny++;
+    else return;
+    if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows && this.maze[ny][nx]) {
+      this.player.x = nx; this.player.y = ny; this.steps++;
+      // Check win
+      if (nx === this.exit.x && ny === this.exit.y) {
+        this.over = true; this.won = true;
+        this.elapsed = (performance.now() - this.startTime) / 1000;
+        const score = Math.max(1000 - Math.floor(this.elapsed * 10) - this.steps, 100);
+        saveHighScore('maze', score, { level: this.level, time: this.elapsed.toFixed(1) });
+        clearGameProgress('maze');
+      }
+      this.saveProgress();
+    }
+  }
+
+  loop() {
+    if (!this.showHelp) {
+      if (this._helpRaf) { cancelAnimationFrame(this._helpRaf); this._helpRaf = null; }
+      this.draw();
+      this._raf = requestAnimationFrame(() => this.loop());
+      return;
+    }
+    if (!this.showHelp) return;
+    this.drawHelp();
+    this._helpRaf = requestAnimationFrame(() => this.loop());
+  }
+
+  drawHelp() {
+    if (!this.showHelp) return;
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.green; ctx.font = '28px Consolas, monospace';
+    ctx.shadowColor = C.green; ctx.shadowBlur = 12;
+    ctx.fillText('M A Z E', W / 2, 100); ctx.shadowBlur = 0;
+    ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    ctx.fillText('ESCAPE THE LABYRINTH', W / 2, 140);
+    ctx.fillStyle = C.cyan; ctx.font = '13px Consolas, monospace';
+    const size = this.getMazeSize();
+    ctx.fillText('[ LEVEL ' + this.level + '  ·  ' + size + '×' + size + ' ]', W / 2, 165);
+    const lines = [
+      ['↑ ↓ ← → / WASD', 'Move through maze'],
+      ['', ''],
+      ['Start at top-left', 'Reach ◆ at exit'],
+      ['Faster + fewer steps', '= higher score'],
+      ['', ''],
+      ['Clear a level to', 'unlock the next one'],
+    ];
+    ctx.textAlign = 'left'; let ly = 195;
+    lines.forEach(l => {
+      if (l[0] && l[1]) {
+        ctx.fillStyle = C.cyan; ctx.font = '13px Consolas, monospace'; ctx.fillText(l[0], W / 2 - 120, ly);
+        ctx.fillStyle = C.white; ctx.fillText(l[1], W / 2 + 30, ly);
+      }
+      ly += 26;
+    });
+    ctx.textAlign = 'center'; ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+    if (Math.floor(Date.now() / 600) % 2 === 0) ctx.fillText('Press any key to start...', W / 2, H - 50);
+  }
+
+  draw() {
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    // Title
+    ctx.fillStyle = C.green; ctx.font = '16px Consolas, monospace'; ctx.textAlign = 'center';
+    ctx.fillText('M A Z E  ·  LEVEL ' + this.level, W / 2, 22);
+    // Stats
+    ctx.fillStyle = C.amber; ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'left';
+    const elapsed = this.startTime > 0 ? (performance.now() - this.startTime) / 1000 : 0;
+    ctx.fillText('TIME: ' + elapsed.toFixed(1) + 's', 15, 48);
+    ctx.fillStyle = C.cyan; ctx.textAlign = 'center';
+    ctx.fillText('STEPS: ' + this.steps, W / 2, 48);
+    ctx.fillStyle = C.dim; ctx.textAlign = 'right';
+    ctx.fillText('SIZE: ' + this.cols + '×' + this.rows, W - 15, 48);
+    // Maze
+    const cs = this.cellSize;
+    for (let y = 0; y < this.rows; y++) for (let x = 0; x < this.cols; x++) {
+      const px = this.ox + x * cs, py = this.oy + y * cs;
+      if (this.maze[y][x]) {
+        ctx.fillStyle = '#0a0a12'; ctx.fillRect(px, py, cs, cs);
+      } else {
+        ctx.fillStyle = '#2a2a3a'; ctx.fillRect(px, py, cs, cs);
+        // Wall edges for depth
+        ctx.strokeStyle = '#1a1a2a'; ctx.lineWidth = 0.5;
+        ctx.strokeRect(px, py, cs, cs);
+      }
+    }
+    // Exit marker
+    const ex = this.ox + this.exit.x * cs + cs / 2, ey = this.oy + this.exit.y * cs + cs / 2;
+    ctx.fillStyle = C.green;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey - cs / 2 + 3); ctx.lineTo(ex + cs / 2 - 3, ey + cs / 2 - 3);
+    ctx.lineTo(ex - cs / 2 + 3, ey + cs / 2 - 3); ctx.closePath(); ctx.fill();
+    // Player
+    const px = this.ox + this.player.x * cs + cs / 2, py = this.oy + this.player.y * cs + cs / 2;
+    ctx.fillStyle = C.amber;
+    ctx.beginPath(); ctx.arc(px, py, cs / 2 - 2, 0, Math.PI * 2); ctx.fill();
+    // Glow effect
+    ctx.shadowColor = C.amber; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(px, py, cs / 2 - 4, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    // Game over
+    if (this.over) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.green; ctx.font = '28px Consolas, monospace'; ctx.fillText('ESCAPED!', W / 2, H / 2 - 50);
+      ctx.fillStyle = C.amber; ctx.font = '14px Consolas, monospace';
+      ctx.fillText('Level ' + this.level + '  ·  ' + this.elapsed.toFixed(1) + 's  ·  ' + this.steps + ' steps', W / 2, H / 2 - 20);
+      const score = Math.max(1000 - Math.floor(this.elapsed * 10) - this.steps, 100);
+      ctx.fillStyle = C.yellow; ctx.font = '16px Consolas, monospace';
+      ctx.fillText('SCORE: ' + score, W / 2, H / 2 + 10);
+      ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
+      ctx.fillText('R next level · ESC menu · H scores', W / 2, H / 2 + 40);
+    }
+  }
+}
+
 // ── Update game registry ──
-GAME_KEYS.push('invaders', 'hextris', 'tower', 'racer');
+GAME_KEYS.push('invaders', 'hextris', 'tower', 'racer', 'gomoku', 'maze');
 const NEW_GAMES = [
   { name: 'INVADERS', key: 'invaders', desc: 'ALIEN ATTACK' },
   { name: 'HEXTRIS', key: 'hextris', desc: 'HEX PUZZLE' },
   { name: 'TOWER', key: 'tower', desc: 'STACK BLOCKS' },
   { name: 'RACER', key: 'racer', desc: 'SPEED RACE' },
+  { name: 'GOMOKU', key: 'gomoku', desc: 'FIVE IN A ROW' },
+  { name: 'MAZE', key: 'maze', desc: 'LABYRINTH' },
 ];
 // Update menu to include new games
 const origDrawMenu = drawMenu;
@@ -4591,6 +5449,8 @@ drawMenu = function() {
     { name: 'HEXTRIS', key: 'hextris', desc: 'HEX PUZZLE' },
     { name: 'TOWER', key: 'tower', desc: 'STACK BLOCKS' },
     { name: 'RACER', key: 'racer', desc: 'SPEED RACE' },
+    { name: 'GOMOKU', key: 'gomoku', desc: 'FIVE IN A ROW' },
+    { name: 'MAZE', key: 'maze', desc: 'LABYRINTH' },
   ];
 
   ctx.fillStyle = C.bg;
@@ -4608,7 +5468,7 @@ drawMenu = function() {
   // Subtitle
   ctx.fillStyle = C.dim;
   ctx.font = '12px Consolas, monospace';
-  ctx.fillText('SELECT A GAME  ·  16 GAMES', W / 2, 80);
+  ctx.fillText('SELECT A GAME  ·  18 GAMES', W / 2, 80);
 
   // Game buttons — 2-column grid
   const COLS = 2, bw = 200, bh = 48, gap = 6;
@@ -4680,6 +5540,8 @@ startGame = function(key) {
   else if (key === 'hextris') gameInstance = new GameHextris();
   else if (key === 'tower') gameInstance = new GameTower();
   else if (key === 'racer') gameInstance = new GameRacer();
+  else if (key === 'gomoku') gameInstance = new GameGomoku();
+  else if (key === 'maze') gameInstance = new GameMaze();
 
   // Check for saved progress
   const saved = loadGameProgress(key);

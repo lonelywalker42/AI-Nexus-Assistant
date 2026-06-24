@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.5.0 (2026-06-24) — 新增两款游戏
+
+### 新功能
+- **五子棋 (GOMOKU)**: 15×15 棋盘，玩家(黑) vs AI(白)，支持鼠标点击和键盘操作
+  - **5 档 AI 难度**:
+    - LV.1 RANDOM — 随机落子
+    - LV.2 GREEDY — 贪心威胁评估（移植参考项目 `1<<k` 威胁评分算法）
+    - LV.3 DEFEND — 贪心 + 即时胜负检测 + 防守优先
+    - LV.4 THINKER — Minimax 深度 2 + alpha-beta 剪枝
+    - LV.5 MASTER — Minimax 深度 4 + 完整 pattern 评估（活四/冲四/活三等）
+  - 帮助界面按 D 键切换难度，棋盘星位标记，最后落子红点标记，AI 思考动画
+  - 参考算法: [RainbowRoad1/Cgame/Five-in-a-row](https://github.com/RainbowRoad1/Cgame/tree/master/Five-in-a-row)
+- **走迷宫 (MAZE)**: 递归回溯法生成迷宫，从入口走到 ◆ 出口
+  - 关卡递进: 每通关一关迷宫尺寸增大（11×11 → 31×31），计时+步数双重评分
+  - 参考算法: [RainbowRoad1/Cgame/Maze](https://github.com/RainbowRoad1/Cgame/tree/master/Maze)
+- **游戏总数从 16 增至 18**，主窗口个人助手-游戏机 + 时钟窗口右键菜单均可访问
+
 ## v4.4.5 (2026-06-24) — Bug 修复
 
 ### Bug 修复
