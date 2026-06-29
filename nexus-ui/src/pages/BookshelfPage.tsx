@@ -884,15 +884,12 @@ export default function BookshelfPage() {
               {pdfFile ? (
                 <PdfViewer file={pdfFile} pageNum={chapterIdx} onTotalPages={setPdfTotalPages} />
               ) : (
-                <div ref={contentRef} className="p-8 mx-auto w-full"
+                <div ref={contentRef} className="p-8 max-w-3xl mx-auto w-full"
                   dangerouslySetInnerHTML={epubData ? { __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" } : undefined}
                   style={{
                     fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
                     wordWrap: "break-word",
                     overflowWrap: "break-word",
-                    columnCount: 2,
-                    columnGap: "36px",
-                    columnRule: "1px solid rgba(0,0,0,0.06)",
                     transition: "transform 0.3s ease",
                     transform: flipDirection === "right" ? "translateX(-5px)" : flipDirection === "left" ? "translateX(5px)" : "none",
                   }}>
