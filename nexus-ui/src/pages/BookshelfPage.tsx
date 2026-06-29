@@ -181,6 +181,40 @@ interface Book {
   coverUrl?: string;
 }
 
+// ── 阅读进度持久化 ──
+
+interface ReadingProgress {
+  bookName: string;
+  chapterIdx: number;
+  pageIdx: number;
+  pdfPage: number;
+  pdfTotalPages: number;
+  epubChapter: number;
+  lastReadTime: string;
+}
+
+const PROGRESS_KEY_PREFIX = "nexus-reading-progress-";
+
+function saveProgress(bookName: string, progress: Omit<ReadingProgress, "bookName" | "lastReadTime">) {
+  try {
+    const data: ReadingProgress = {
+      ...progress,
+      bookName,
+      lastReadTime: new Date().toISOString(),
+    };
+    localStorage.setItem(PROGRESS_KEY_PREFIX + bookName, JSON.stringify(data));
+  } catch {}
+}
+
+function loadProgress(bookName: string): ReadingProgress | null {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY_PREFIX + bookName);
+    if (raw) return JSON.parse(raw) as ReadingProgress;
+  } catch {}
+  return null;
+}
+
+
 type ViewMode = "shelf" | "detail" | "reader";
 
 // Text/Markdown file data for reader
@@ -289,11 +323,12 @@ function BookSpine({ book, index, onClick }: { book: Book; index: number; onClic
   );
 }
 
-// PDF Viewer Component — renders PDF pages directly using canvas
+// PDF Viewer Component — renders two pages side by side (book spread)
 function PdfViewer({ file, pageNum, onTotalPages }: { file: File; pageNum: number; onTotalPages: (n: number) => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const leftCanvasRef = useRef<HTMLCanvasElement>(null);
+  const rightCanvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
-  const [rendering, setRendering] = useState(false);
+  const renderIdRef = useRef(0);
 
   // Load PDF document
   useEffect(() => {
@@ -314,26 +349,28 @@ function PdfViewer({ file, pageNum, onTotalPages }: { file: File; pageNum: numbe
     return () => { cancelled = true; };
   }, [file]);
 
-  // Render current page
+  // Render current spread (pageNum = left page index, 0-indexed)
   useEffect(() => {
-    if (!pdfDoc || !canvasRef.current || rendering) return;
-    let cancelled = false;
+    if (!pdfDoc) return;
+    const renderId = ++renderIdRef.current;
 
-    const renderPage = async () => {
-      setRendering(true);
+    const leftPageNum = pageNum + 1; // 1-indexed
+    const rightPageNum = leftPageNum + 1;
+    const hasRightPage = rightPageNum <= pdfDoc.numPages;
+
+    const renderPage = async (canvas: HTMLCanvasElement | null, pageNumber: number) => {
+      if (!canvas) return;
       try {
-        const page = await pdfDoc.getPage(pageNum + 1); // 1-indexed
-        if (cancelled) return;
+        const page = await pdfDoc.getPage(pageNumber);
+        if (renderId !== renderIdRef.current) return;
 
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+        const container = canvas.parentElement?.parentElement;
+        const containerWidth = container?.clientWidth || 800;
+        // Each page takes half the container
+        const pageWidth = (containerWidth - 24) / 2; // 24px for gap
 
-        const container = canvas.parentElement;
-        if (!container) return;
-
-        const containerWidth = container.clientWidth;
         const viewport = page.getViewport({ scale: 1 });
-        const scale = containerWidth / viewport.width;
+        const scale = pageWidth / viewport.width;
         const scaledViewport = page.getViewport({ scale });
 
         canvas.width = scaledViewport.width;
@@ -346,16 +383,52 @@ function PdfViewer({ file, pageNum, onTotalPages }: { file: File; pageNum: numbe
       } catch (err) {
         console.error("Failed to render PDF page:", err);
       }
-      setRendering(false);
     };
 
-    renderPage();
-    return () => { cancelled = true; };
+    Promise.all([
+      renderPage(leftCanvasRef.current, leftPageNum),
+      hasRightPage ? renderPage(rightCanvasRef.current, rightPageNum) : Promise.resolve(),
+    ]).finally(() => {
+      // rendered successfully
+    });
+
+    // Clear right canvas if no right page
+    if (!hasRightPage && rightCanvasRef.current) {
+      const ctx = rightCanvasRef.current.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, rightCanvasRef.current.width, rightCanvasRef.current.height);
+    }
+
+    return () => { renderIdRef.current++; };
   }, [pdfDoc, pageNum]);
 
+  const leftPageNum = pageNum + 1;
+  const rightPageNum = leftPageNum + 1;
+  const hasRightPage = rightPageNum <= (pdfDoc?.numPages || 0);
+
   return (
-    <div className="w-full h-full flex items-center justify-center overflow-auto">
-      <canvas ref={canvasRef} style={{ maxWidth: "100%", height: "auto" }} />
+    <div className="w-full h-full flex items-center justify-center overflow-auto p-2">
+      <div className="flex gap-6 items-start justify-center w-full h-full" style={{ maxWidth: "100%" }}>
+        {/* Left page */}
+        <div className="flex-1 flex flex-col items-center min-w-0">
+          <canvas ref={leftCanvasRef} style={{ maxWidth: "100%", height: "auto" }} />
+          <span className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>{leftPageNum}</span>
+        </div>
+        {/* Center fold */}
+        <div className="w-px self-stretch flex-shrink-0" style={{ background: "rgba(0,0,0,0.08)" }} />
+        {/* Right page */}
+        <div className="flex-1 flex flex-col items-center min-w-0">
+          {hasRightPage ? (
+            <>
+              <canvas ref={rightCanvasRef} style={{ maxWidth: "100%", height: "auto" }} />
+              <span className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>{rightPageNum}</span>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-full w-full" style={{ minHeight: 200 }}>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>— 末页 —</span>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -409,6 +482,23 @@ export default function BookshelfPage() {
     localStorage.setItem("nexus-reader-eye-protect", String(eyeProtection));
   }, [eyeProtection]);
 
+  // Auto-save reading progress on position change (debounced)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (viewMode !== "reader" || !selectedBook) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (pdfFile) {
+        saveProgress(selectedBook.name, { chapterIdx: 0, pageIdx: 0, pdfPage: chapterIdx, pdfTotalPages, epubChapter: 0 });
+      } else if (epubData) {
+        saveProgress(selectedBook.name, { chapterIdx: 0, pageIdx, pdfPage: 0, pdfTotalPages: 0, epubChapter: chapterIdx });
+      } else if (textFileData) {
+        saveProgress(selectedBook.name, { chapterIdx: 0, pageIdx, pdfPage: 0, pdfTotalPages: 0, epubChapter: 0 });
+      }
+    }, 500);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [chapterIdx, pageIdx, viewMode, selectedBook, pdfFile, epubData, textFileData, pdfTotalPages]);
+
   // Page flip animation handler
   const flipPage = useCallback((direction: "left" | "right") => {
     if (direction === "right" && pageIdx >= totalPages - 1) return;
@@ -425,12 +515,26 @@ export default function BookshelfPage() {
   useEffect(() => {
     if (viewMode !== "reader") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); flipPage("left"); }
-      if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === " ") { e.preventDefault(); flipPage("right"); }
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (pdfFile) {
+          setChapterIdx(prev => Math.max(0, prev - 2));
+        } else {
+          flipPage("left");
+        }
+      }
+      if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === " ") {
+        e.preventDefault();
+        if (pdfFile) {
+          setChapterIdx(prev => Math.min(Math.max((pdfTotalPages || 1) - 2, 0), prev + 2));
+        } else {
+          flipPage("right");
+        }
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [viewMode, pageIdx, totalPages, flipPage]);
+  }, [viewMode, pageIdx, totalPages, flipPage, pdfFile, pdfTotalPages]);
 
   // Load book metadata from localStorage on mount (fast)
   useEffect(() => {
@@ -493,6 +597,9 @@ export default function BookshelfPage() {
 
     const nameLower = book.name.toLowerCase();
 
+    // Check for saved reading progress
+    const savedProgress = loadProgress(book.name);
+
     if (nameLower.endsWith(".epub")) {
       // Parse EPUB using JSZip
       try {
@@ -504,7 +611,10 @@ export default function BookshelfPage() {
         setEpubData(data);
         setTextFileData(null);
         setPdfFile(null);
-        setChapterIdx(0);
+        // Restore progress: chapter and page
+        const startChapter = savedProgress?.epubChapter ?? 0;
+        setChapterIdx(Math.min(startChapter, data.chapters.length - 1));
+        setPageIdx(savedProgress?.pageIdx ?? 0);
         setViewMode("reader");
       } catch (err) {
         console.error("EPUB parse error:", err);
@@ -516,7 +626,8 @@ export default function BookshelfPage() {
       setPdfTotalPages(0);
       setEpubData(null);
       setTextFileData(null);
-      setChapterIdx(0);
+      // Restore progress: PDF page (in spread units)
+      setChapterIdx(savedProgress?.pdfPage ?? 0);
       setViewMode("reader");
     } else if (nameLower.endsWith(".txt") || nameLower.endsWith(".md")) {
       // Read text/markdown file
@@ -525,6 +636,8 @@ export default function BookshelfPage() {
         setTextFileData({ content, isMarkdown: nameLower.endsWith(".md") });
         setEpubData(null);
         setPdfFile(null);
+        // Restore progress: page
+        setPageIdx(savedProgress?.pageIdx ?? 0);
         setViewMode("reader");
       } catch (err) {
         console.error("Text file read error:", err);
@@ -536,6 +649,16 @@ export default function BookshelfPage() {
   };
 
   const closeReader = () => {
+    // Save reading progress
+    if (selectedBook) {
+      if (pdfFile) {
+        saveProgress(selectedBook.name, { chapterIdx: 0, pageIdx: 0, pdfPage: chapterIdx, pdfTotalPages, epubChapter: 0 });
+      } else if (epubData) {
+        saveProgress(selectedBook.name, { chapterIdx: 0, pageIdx, pdfPage: 0, pdfTotalPages: 0, epubChapter: chapterIdx });
+      } else if (textFileData) {
+        saveProgress(selectedBook.name, { chapterIdx: 0, pageIdx, pdfPage: 0, pdfTotalPages: 0, epubChapter: 0 });
+      }
+    }
     setEpubData(null);
     setTextFileData(null);
     setPdfFile(null);
@@ -702,16 +825,18 @@ export default function BookshelfPage() {
             ) : pdfFile ? (
               <>
                 <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
-                  onClick={() => setChapterIdx(Math.max(0, chapterIdx - 1))}
+                  onClick={() => setChapterIdx(Math.max(0, chapterIdx - 2))}
                   style={{ opacity: chapterIdx === 0 ? 0.3 : 1, pointerEvents: chapterIdx === 0 ? "none" : "auto" }}>
                   <IconChevronLeft size={14} /> 上一页
                 </button>
                 <span className="text-xs font-medium truncate max-w-[200px]" style={{ color: "var(--text-primary)" }}>
-                  第 {chapterIdx + 1} 页 {pdfTotalPages > 0 ? `/ 共 ${pdfTotalPages} 页` : ""}
+                  {pdfTotalPages > 0
+                    ? `第 ${chapterIdx + 1}-${Math.min(chapterIdx + 2, pdfTotalPages)} 页 / 共 ${pdfTotalPages} 页`
+                    : `第 ${chapterIdx + 1} 页`}
                 </span>
                 <button className="btn-ghost text-xs py-1.5 flex items-center gap-1"
-                  onClick={() => setChapterIdx(Math.min((pdfTotalPages || 1) - 1, chapterIdx + 1))}
-                  style={{ opacity: chapterIdx >= (pdfTotalPages || 1) - 1 ? 0.3 : 1, pointerEvents: chapterIdx >= (pdfTotalPages || 1) - 1 ? "none" : "auto" }}>
+                  onClick={() => setChapterIdx(Math.min(Math.max(pdfTotalPages - 2, 0), chapterIdx + 2))}
+                  style={{ opacity: chapterIdx >= Math.max(pdfTotalPages - 2, 0) ? 0.3 : 1, pointerEvents: chapterIdx >= Math.max(pdfTotalPages - 2, 0) ? "none" : "auto" }}>
                   下一页 <IconChevronRight size={14} />
                 </button>
               </>
@@ -759,12 +884,15 @@ export default function BookshelfPage() {
               {pdfFile ? (
                 <PdfViewer file={pdfFile} pageNum={chapterIdx} onTotalPages={setPdfTotalPages} />
               ) : (
-                <div ref={contentRef} className="p-8 max-w-3xl mx-auto w-full"
+                <div ref={contentRef} className="p-8 mx-auto w-full"
                   dangerouslySetInnerHTML={epubData ? { __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" } : undefined}
                   style={{
                     fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
                     wordWrap: "break-word",
                     overflowWrap: "break-word",
+                    columnCount: 2,
+                    columnGap: "36px",
+                    columnRule: "1px solid rgba(0,0,0,0.06)",
                     transition: "transform 0.3s ease",
                     transform: flipDirection === "right" ? "translateX(-5px)" : flipDirection === "left" ? "translateX(5px)" : "none",
                   }}>
@@ -802,15 +930,19 @@ export default function BookshelfPage() {
                 ))}
               </select>
             )}
-            {/* PDF page selector */}
+            {/* PDF page selector — spread-based */}
             {pdfFile && pdfTotalPages > 1 && (
               <select className="text-[10px] bg-transparent border-none outline-none cursor-pointer"
                 style={{ color: "var(--text-muted)" }}
                 value={chapterIdx}
                 onChange={e => { setChapterIdx(Number(e.target.value)); }}>
-                {Array.from({ length: pdfTotalPages }, (_, i) => (
-                  <option key={i} value={i}>第 {i + 1} 页</option>
-                ))}
+                {Array.from({ length: Math.ceil(pdfTotalPages / 2) }, (_, i) => {
+                  const left = i * 2;
+                  const right = Math.min(left + 1, pdfTotalPages - 1);
+                  return (
+                    <option key={i} value={left}>第 {left + 1}-{right + 1} 页</option>
+                  );
+                })}
               </select>
             )}
             <span className="flex-1" />

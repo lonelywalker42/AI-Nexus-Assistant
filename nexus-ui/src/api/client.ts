@@ -5,7 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
-export const APP_VERSION = "4.5.1";
+export const APP_VERSION = "4.5.2";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
@@ -287,6 +287,8 @@ export const tasksApi = {
   weekTasks: (start?: string) =>
     request<Record<string, { id: string; content: string; completed: boolean; priority: string; category: string }[]>>(
       `/api/tasks/week${start ? `?start=${start}` : ""}`),
+  heatmap: (days: number = 140) =>
+    request<Record<string, number>>(`/api/tasks/heatmap?days=${days}`),
 };
 
 // ── Weekly Plans ──────────────────────────────────────────

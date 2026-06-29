@@ -2,6 +2,30 @@ import { useEffect, useState } from "react";
 import { dashboardApi, tasksApi, type DashboardData } from "../api/client";
 import { IconCheck, IconSearch, IconFlask, IconChart, IconLightning } from "../components/Icons";
 
+/* ── 日期工具 ── */
+function getWeekDays(date: Date): Date[] {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=Sun
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((day + 6) % 7));
+  const result: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const dd = new Date(monday);
+    dd.setDate(monday.getDate() + i);
+    result.push(dd);
+  }
+  return result;
+}
+
+function formatWeekday(d: Date): string {
+  const days = ["日", "一", "二", "三", "四", "五", "六"];
+  return days[d.getDay()];
+}
+
+function toDateStr(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
 /* ── 活跃度热力图 (5.1.3) ── */
 function ActivityHeatmap({ taskDates }: { taskDates: Map<string, number> }) {
   const today = new Date();
@@ -91,17 +115,23 @@ const ACTIVITY_PAGE_MAP: Record<string, string> = {
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [taskDates, setTaskDates] = useState<Map<string, number>>(new Map());
+  const [weeklyData, setWeeklyData] = useState<{ label: string; value: number }[]>([]);
 
   useEffect(() => {
     dashboardApi.get().then(setData).catch(console.error);
     // 加载任务完成日期统计（热力图）
-    tasksApi.list("").then(allTasks => {
+    tasksApi.heatmap(140).then(data => {
       const dates = new Map<string, number>();
-      allTasks.filter(t => t.completed && t.completed_at).forEach(t => {
-        const d = t.completed_at!.split("T")[0];
-        dates.set(d, (dates.get(d) || 0) + 1);
-      });
+      Object.entries(data).forEach(([d, count]) => { dates.set(d, count); });
       setTaskDates(dates);
+
+      // 获取最近 7 天的数据
+      const weekDays = getWeekDays(new Date());
+      const weekData = weekDays.map(d => ({
+        label: formatWeekday(d),
+        value: data[toDateStr(d)] || 0,
+      }));
+      setWeeklyData(weekData);
     }).catch(() => {});
   }, []);
 
@@ -110,11 +140,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const exps = data?.experiments;
   const kb = data?.knowledge;
   const rate = monthly && monthly.total > 0 ? Math.round((monthly.done / monthly.total) * 100) : 0;
-
-  // 模拟最近 7 天任务完成数据（实际应从 API 获取）
-  const weeklyData = [3, 5, 2, 7, 4, 6, 3];
-  const maxVal = Math.max(...weeklyData, 1);
-  const weekDays = ["一", "二", "三", "四", "五", "六", "日"];
+  const maxVal = weeklyData.length > 0 ? Math.max(...weeklyData.map(w => w.value), 1) : 1;
 
   return (
     <div className="space-y-5">
@@ -135,17 +161,17 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         <div className="glass-card p-4">
           <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>本周任务完成趋势</h3>
           <div className="flex items-end gap-2 h-24">
-            {weeklyData.map((val, i) => (
+            {weeklyData.map((item, i) => (
               <div key={i} className="flex-1 flex flex-col items-center gap-1">
                 <div
                   className="w-full rounded-t transition-all"
                   style={{
-                    height: `${(val / maxVal) * 100}%`,
+                    height: `${(item.value / maxVal) * 100}%`,
                     background: `linear-gradient(to top, var(--accent-blue), rgba(59,130,246,0.5))`,
                     minHeight: "4px",
                   }}
                 />
-                <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>周{weekDays[i]}</span>
+                <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>周{item.label}</span>
               </div>
             ))}
           </div>

@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.5.1")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.5.2")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -402,6 +402,17 @@ class TaskUpdate(BaseModel):
     completed: Optional[bool] = None
     priority: Optional[str] = None
     category: Optional[str] = None
+
+
+@app.get("/api/tasks/heatmap")
+def get_task_heatmap(days: int = Query(140, ge=1, le=365)):
+    """获取热力图数据：最近 days 天每天已完成任务数"""
+    db = get_session()
+    try:
+        counts = task_service.get_completed_task_counts(db, days)
+        return counts
+    finally:
+        db.close()
 
 
 @app.get("/api/tasks")

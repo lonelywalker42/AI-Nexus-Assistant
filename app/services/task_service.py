@@ -227,6 +227,34 @@ def get_main_tasks(db: Session) -> list[Task]:
     )
 
 
+def get_completed_task_counts(db: Session, days: int = 140) -> dict[str, int]:
+    """获取最近 N 天每天已完成任务数，返回 {date_str: count}"""
+    end = date.today()
+    start = end - timedelta(days=days - 1)
+    results = (
+        db.query(
+            func.date(Task.completed_at).label("d"),
+            func.count(Task.id).label("c"),
+        )
+        .filter(
+            Task.completed == True,
+            Task.completed_at.isnot(None),
+            func.date(Task.completed_at) >= start.isoformat(),
+            func.date(Task.completed_at) <= end.isoformat(),
+        )
+        .group_by(func.date(Task.completed_at))
+        .all()
+    )
+    # 确保每天都有值（没完成任务的天数为 0）
+    counts: dict[str, int] = {}
+    for i in range(days):
+        d = (start + timedelta(days=i)).isoformat()
+        counts[d] = 0
+    for r in results:
+        counts[r.d] = r.c
+    return counts
+
+
 def get_all_incomplete_tasks(db: Session) -> list[Task]:
     """获取所有未完成任务（不分日期，排除主线）"""
     return (

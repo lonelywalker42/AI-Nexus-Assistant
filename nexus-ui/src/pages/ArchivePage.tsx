@@ -155,14 +155,11 @@ export default function ArchivePage() {
 
   const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
 
-  // 加载活跃度数据（全量已完成任务）
+  // 加载活跃度数据（热力图接口）
   useEffect(() => {
-    tasksApi.list("").then(tasks => {
+    tasksApi.heatmap(140).then(data => {
       const map = new Map<string, number>();
-      tasks.filter(t => t.completed && t.completed_at).forEach(t => {
-        const d = t.completed_at!.slice(0, 10);
-        map.set(d, (map.get(d) || 0) + 1);
-      });
+      Object.entries(data).forEach(([d, count]) => { map.set(d, count); });
       setActivityData(map);
     }).catch(() => {});
   }, []);
@@ -426,7 +423,7 @@ export default function ArchivePage() {
                             return (
                               <div key={t.id} className="flex items-start gap-1.5 text-[11px] py-0.5">
                                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5" style={{ background: p.color }} />
-                                <span style={{ color: "var(--text-secondary)" }} className="line-clamp-2">{t.content}</span>
+                                <span style={{ color: "var(--text-secondary)" }} className="line-clamp-4" title={t.content}>{t.content}</span>
                               </div>
                             );
                           })}
@@ -444,7 +441,7 @@ export default function ArchivePage() {
                             <div className="space-y-0.5">
                               <span className="text-[10px] font-medium" style={{ color: "var(--accent-green)" }}>✅ 完成</span>
                               {note.completed.map((item, i) => (
-                                <div key={i} className="text-[11px] pl-2 line-clamp-2" style={{ color: "var(--text-secondary)" }}>· {item}</div>
+                                <div key={i} className="text-[11px] pl-2 line-clamp-4" style={{ color: "var(--text-secondary)" }} title={item}>· {item}</div>
                               ))}
                             </div>
                           )}
@@ -452,7 +449,7 @@ export default function ArchivePage() {
                             <div className="space-y-0.5">
                               <span className="text-[10px] font-medium" style={{ color: "#f59e0b" }}>⚠️ 问题</span>
                               {note.issues.map((item, i) => (
-                                <div key={i} className="text-[11px] pl-2 line-clamp-2" style={{ color: "var(--text-secondary)" }}>· {item}</div>
+                                <div key={i} className="text-[11px] pl-2 line-clamp-4" style={{ color: "var(--text-secondary)" }} title={item}>· {item}</div>
                               ))}
                             </div>
                           )}
@@ -460,7 +457,7 @@ export default function ArchivePage() {
                             <div className="space-y-0.5">
                               <span className="text-[10px] font-medium" style={{ color: "var(--accent-blue)" }}>📋 计划</span>
                               {note.plans.map((item, i) => (
-                                <div key={i} className="text-[11px] pl-2 line-clamp-2" style={{ color: "var(--text-secondary)" }}>· {item}</div>
+                                <div key={i} className="text-[11px] pl-2 line-clamp-4" style={{ color: "var(--text-secondary)" }} title={item}>· {item}</div>
                               ))}
                             </div>
                           )}
