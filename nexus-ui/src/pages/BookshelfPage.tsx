@@ -453,27 +453,29 @@ export default function BookshelfPage() {
   const readerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Calculate total pages when content changes (for EPUB/TXT/MD only)
+  // Calculate total pages when content changes (for EPUB/TXT/MD only — with column-count:2)
   useEffect(() => {
     if (pdfFile) return; // PDF handles its own pagination
     setPageIdx(0);
     const timer = setTimeout(() => {
       if (contentRef.current && readerRef.current) {
-        const contentH = contentRef.current.scrollHeight;
-        const containerH = readerRef.current.clientHeight;
-        const pages = Math.max(1, Math.ceil(contentH / containerH));
+        const scrollW = contentRef.current.scrollWidth;
+        const containerW = readerRef.current.clientWidth;
+        // With column-count:2, each "spread" (left+right page) = containerW
+        // scrollWidth = total_spreads * containerW
+        const pages = Math.max(1, Math.ceil(scrollW / containerW));
         setTotalPages(pages);
       }
     }, 100);
     return () => clearTimeout(timer);
   }, [chapterIdx, epubData, textFileData, fontSize, pdfFile]);
 
-  // Scroll to current page
+  // Shift visible spread via translateX (for EPUB/TXT/MD with column-count:2)
   useEffect(() => {
-    if (pdfFile) return; // PDF uses canvas, no scrolling
-    if (readerRef.current) {
-      const containerH = readerRef.current.clientHeight;
-      readerRef.current.scrollTo({ top: pageIdx * containerH, behavior: 'smooth' });
+    if (pdfFile) return; // PDF handles its own display
+    if (contentRef.current && readerRef.current) {
+      const containerW = readerRef.current.clientWidth;
+      contentRef.current.style.transform = `translateX(-${pageIdx * containerW}px)`;
     }
   }, [pageIdx, pdfFile]);
 
@@ -884,14 +886,17 @@ export default function BookshelfPage() {
               {pdfFile ? (
                 <PdfViewer file={pdfFile} pageNum={chapterIdx} onTotalPages={setPdfTotalPages} />
               ) : (
-                <div ref={contentRef} className="p-8 max-w-3xl mx-auto w-full"
+                <div ref={contentRef} className="p-8 mx-auto w-full"
                   dangerouslySetInnerHTML={epubData ? { __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" } : undefined}
                   style={{
                     fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
                     wordWrap: "break-word",
                     overflowWrap: "break-word",
-                    transition: "transform 0.3s ease",
-                    transform: flipDirection === "right" ? "translateX(-5px)" : flipDirection === "left" ? "translateX(5px)" : "none",
+                    columnCount: 2,
+                    columnGap: "36px",
+                    columnRule: "1px solid rgba(0,0,0,0.06)",
+                    transition: "transform 0.4s ease",
+                    height: "100%",
                   }}>
                   {textFileData && (
                     textFileData.isMarkdown ? (
