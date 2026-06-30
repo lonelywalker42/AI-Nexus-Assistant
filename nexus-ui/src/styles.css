@@ -526,6 +526,20 @@ select.input-glass {
   overflow: hidden;
 }
 
+.line-clamp-4 {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-6 {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* ── 渐变文字 ── */
 .text-gradient {
   background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));

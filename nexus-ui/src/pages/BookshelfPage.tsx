@@ -460,7 +460,7 @@ export default function BookshelfPage() {
     const timer = setTimeout(() => {
       if (contentRef.current && readerRef.current) {
         const scrollW = contentRef.current.scrollWidth;
-        const containerW = readerRef.current.clientWidth;
+        const containerW = readerRef.current.getBoundingClientRect().width;
         // With column-count:2, each "spread" (left+right page) = containerW
         // scrollWidth = total_spreads * containerW
         const pages = Math.max(1, Math.ceil(scrollW / containerW));
@@ -471,13 +471,15 @@ export default function BookshelfPage() {
   }, [chapterIdx, epubData, textFileData, fontSize, pdfFile]);
 
   // Shift visible spread via translateX (for EPUB/TXT/MD with column-count:2)
+  // Use scrollWidth/totalPages as step to avoid cumulative rounding error from clientWidth
   useEffect(() => {
     if (pdfFile) return; // PDF handles its own display
     if (contentRef.current && readerRef.current) {
-      const containerW = readerRef.current.clientWidth;
-      contentRef.current.style.transform = `translateX(-${pageIdx * containerW}px)`;
+      const scrollW = contentRef.current.scrollWidth;
+      const step = totalPages > 1 ? scrollW / totalPages : readerRef.current.getBoundingClientRect().width;
+      contentRef.current.style.transform = `translateX(-${pageIdx * step}px)`;
     }
-  }, [pageIdx, pdfFile]);
+  }, [pageIdx, pdfFile, totalPages]);
 
   // Persist eye protection mode
   useEffect(() => {

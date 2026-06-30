@@ -20,11 +20,12 @@ interface StructuredWorkNote {
 // ── 日期工具 ──
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function toDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /** 获取 dateStr 所在周的 周一~周日 日期数组 */
@@ -474,6 +475,7 @@ export default function ArchivePage() {
                           <div
                             className="text-[11px] line-clamp-6 whitespace-pre-wrap"
                             style={{ color: "var(--text-secondary)" }}
+                            title={log}
                           >
                             {log}
                           </div>

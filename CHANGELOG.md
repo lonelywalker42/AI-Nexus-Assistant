@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.5.4 (2026-06-30) — 归档页修复 + 翻页居中
+
+### Bug 修复
+- **归档页文字截断**: 补充 `line-clamp-4` 和 `line-clamp-6` CSS 类定义，修复日报/总结内容显示为省略号的问题；周报摘要列表和归档卡片均添加 `title` 属性支持悬停查看全文
+- **归档页日期/星期错误**: 修复 `toISOString()` 返回 UTC 日期导致中国时区 (UTC+8) 凌晨 0-8 点日期偏移一天的 bug，所有日期工具改用本地时间
+- **Reader 翻页左移**: 修复 `clientWidth` 整数截断导致 `translateX` 累积舍入误差的问题，改用 `getBoundingClientRect().width` + `scrollWidth/totalPages` 精确步长
+
 ## v4.5.3 (2026-06-30) — EPUB 翻页修复
 
 ### Bug 修复

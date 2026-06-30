@@ -30,6 +30,7 @@ export function getCategory(key: string) {
 // 判断任务是否逾期（date < 今天且未完成）
 export function isOverdue(dateStr: string, completed: boolean): boolean {
   if (completed) return false;
-  const today = new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return dateStr < today;
 }

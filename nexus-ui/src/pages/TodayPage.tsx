@@ -22,7 +22,7 @@ function ActivityHeatmap({ taskDates }: { taskDates: Map<string, number> }) {
   for (let i = 139; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const key = d.toISOString().split("T")[0];
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const count = taskDates.get(key) || 0;
     currentWeek.push({ date: d, count });
     if (currentWeek.length === 7) {
@@ -139,7 +139,7 @@ function WeeklyReport({ dailyNotes }: { dailyNotes: Map<string, StructuredWorkNo
   for (let i = 0; i <= dayOfWeek; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const key = d.toISOString().split("T")[0];
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const note = dailyNotes.get(key);
     if (note) weekNotes.push(note);
   }
@@ -163,7 +163,7 @@ function WeeklyReport({ dailyNotes }: { dailyNotes: Map<string, StructuredWorkNo
           <p className="text-[10px] font-medium" style={{ color: "var(--accent-green)" }}>本周完成 ({allCompleted.length})</p>
           <ul className="mt-0.5">
             {allCompleted.slice(0, 4).map((item, i) => (
-              <li key={i} className="text-[10px] truncate" style={{ color: "var(--text-secondary)" }}>· {item}</li>
+              <li key={i} className="text-[10px] truncate" style={{ color: "var(--text-secondary)" }} title={item}>· {item}</li>
             ))}
             {allCompleted.length > 4 && <li className="text-[10px]" style={{ color: "var(--text-muted)" }}>...还有 {allCompleted.length - 4} 项</li>}
           </ul>
@@ -172,7 +172,7 @@ function WeeklyReport({ dailyNotes }: { dailyNotes: Map<string, StructuredWorkNo
           <p className="text-[10px] font-medium" style={{ color: "#f59e0b" }}>遗留问题 ({allIssues.length})</p>
           <ul className="mt-0.5">
             {allIssues.slice(0, 3).map((item, i) => (
-              <li key={i} className="text-[10px] truncate" style={{ color: "var(--text-secondary)" }}>· {item}</li>
+              <li key={i} className="text-[10px] truncate" style={{ color: "var(--text-secondary)" }} title={item}>· {item}</li>
             ))}
             {allIssues.length > 3 && <li className="text-[10px]" style={{ color: "var(--text-muted)" }}>...还有 {allIssues.length - 3} 项</li>}
           </ul>
@@ -183,7 +183,7 @@ function WeeklyReport({ dailyNotes }: { dailyNotes: Map<string, StructuredWorkNo
 }
 
 export default function TodayPage({ onNavigate }: { onNavigate?: (id: string) => void }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [newTask, setNewTask] = useState("");
