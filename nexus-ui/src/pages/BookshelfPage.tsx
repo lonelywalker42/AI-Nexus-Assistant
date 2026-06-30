@@ -452,32 +452,44 @@ export default function BookshelfPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const readerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const containerWRef = useRef(0); // stores fractional container width for translateX
 
-  // Calculate total pages when content changes (for EPUB/TXT/MD only — with column-count:2)
+  // Calculate total pages + set content width to exactly totalPages × containerW
+  // Uses ResizeObserver so it auto-recalculates on window resize
   useEffect(() => {
     if (pdfFile) return; // PDF handles its own pagination
     setPageIdx(0);
-    const timer = setTimeout(() => {
-      if (contentRef.current && readerRef.current) {
-        const scrollW = contentRef.current.scrollWidth;
-        const containerW = readerRef.current.getBoundingClientRect().width;
-        // With column-count:2, each "spread" (left+right page) = containerW
-        // scrollWidth = total_spreads * containerW
-        const pages = Math.max(1, Math.ceil(scrollW / containerW));
-        setTotalPages(pages);
-      }
-    }, 100);
-    return () => clearTimeout(timer);
+
+    const recalc = () => {
+      if (!contentRef.current || !readerRef.current) return;
+      const containerW = readerRef.current.getBoundingClientRect().width;
+      containerWRef.current = containerW;
+      // Step 1: set content to 100% to measure natural scrollWidth
+      contentRef.current.style.width = "100%";
+      const scrollW = contentRef.current.scrollWidth;
+      const pages = Math.max(1, Math.ceil(scrollW / containerW));
+      setTotalPages(pages);
+      // Step 2: set content width so each page (2 columns) = exactly containerW
+      contentRef.current.style.width = `${pages * containerW}px`;
+    };
+
+    const timer = setTimeout(recalc, 100);
+
+    // Watch for container resize (window drag, sidebar toggle, etc.)
+    const ro = new ResizeObserver(() => { clearTimeout(timer); setTimeout(recalc, 100); });
+    if (readerRef.current) ro.observe(readerRef.current);
+
+    return () => { clearTimeout(timer); ro.disconnect(); };
   }, [chapterIdx, epubData, textFileData, fontSize, pdfFile]);
 
   // Shift visible spread via translateX (for EPUB/TXT/MD with column-count:2)
-  // Use scrollWidth/totalPages as step to avoid cumulative rounding error from clientWidth
   useEffect(() => {
     if (pdfFile) return; // PDF handles its own display
-    if (contentRef.current && readerRef.current) {
-      const scrollW = contentRef.current.scrollWidth;
-      const step = totalPages > 1 ? scrollW / totalPages : readerRef.current.getBoundingClientRect().width;
-      contentRef.current.style.transform = `translateX(-${pageIdx * step}px)`;
+    if (contentRef.current) {
+      const step = containerWRef.current;
+      if (step > 0) {
+        contentRef.current.style.transform = `translateX(-${pageIdx * step}px)`;
+      }
     }
   }, [pageIdx, pdfFile, totalPages]);
 
@@ -888,7 +900,7 @@ export default function BookshelfPage() {
               {pdfFile ? (
                 <PdfViewer file={pdfFile} pageNum={chapterIdx} onTotalPages={setPdfTotalPages} />
               ) : (
-                <div ref={contentRef} className="p-8 mx-auto w-full"
+                <div ref={contentRef} className="p-8 mx-auto"
                   dangerouslySetInnerHTML={epubData ? { __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" } : undefined}
                   style={{
                     fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
