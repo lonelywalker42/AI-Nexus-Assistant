@@ -1,5 +1,16 @@
 # Changelog
 
+## v4.5.5 (2026-06-30) — Reader 翻页架构重构
+
+### 改进
+- **EPUB/TXT/MD 翻页架构重构**: 将旧的 `column-count` + `translateX` 双栏翻页方案替换为离散 page div 分页模型。内容按容器高度切分为多个 `.reader-page` div，翻页通过 `transform: translateX` 移动到目标页，彻底消除横向漂移问题
+- **scrollWidth 分页引擎**: 基于 `scrollWidth / containerW` 精确计算总页数，每页宽度等于容器宽度，内容自然填充无溢出
+- **窗口自适应**: ResizeObserver 监听容器尺寸变化，自动重新切分页面并维持当前阅读位置
+- **PDF 双页翻页同步**: PDF 模式下左右 canvas 双页渲染，翻页每次前进/后退 2 页，与 EPUB/TXT/MD 一致的交互体验
+
+### 文件变更
+- `nexus-ui/src/pages/ReaderPage.tsx`: 翻页引擎从 column-count+translateX 重写为离散 page div + scrollWidth 分页
+
 ## v4.5.4 (2026-06-30) — 归档页修复 + 翻页居中 + 五子棋AI增强
 
 ### Bug 修复

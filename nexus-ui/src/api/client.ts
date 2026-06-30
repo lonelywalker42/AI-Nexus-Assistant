@@ -5,7 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
-export const APP_VERSION = "4.5.4";
+export const APP_VERSION = "4.5.5";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
