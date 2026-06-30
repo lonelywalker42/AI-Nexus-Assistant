@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { IconBookOpen, IconBook, IconSearch, IconFolder, IconArrowLeft, IconChevronLeft, IconChevronRight, IconSun } from "../components/Icons";
 import JSZip from "jszip";
 import ReactMarkdown from "react-markdown";
@@ -214,6 +215,76 @@ function loadProgress(bookName: string): ReadingProgress | null {
   return null;
 }
 
+// ── Content Pagination (Range API) ──
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Paginate HTML content into discrete page strings using DOM measurement. */
+function paginateContent(measureDiv: HTMLDivElement, contentHtml: string, pageHeight: number): string[] {
+  measureDiv.innerHTML = contentHtml;
+  if (!measureDiv.firstChild) return ["<p></p>"];
+
+  // 1. Collect top-level block elements with positions relative to measureDiv
+  const divTop = measureDiv.getBoundingClientRect().top;
+  const items: { node: Node; top: number; bottom: number }[] = [];
+
+  for (let i = 0; i < measureDiv.childNodes.length; i++) {
+    const child = measureDiv.childNodes[i];
+    if (child.nodeType === Node.ELEMENT_NODE) {
+      const el = child as Element;
+      const tag = el.tagName.toLowerCase();
+      if (tag === "br" || tag === "script" || tag === "style") continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.height > 0) items.push({ node: el, top: rect.top - divTop, bottom: rect.bottom - divTop });
+    } else if (child.nodeType === Node.TEXT_NODE) {
+      if (!child.textContent?.trim()) continue;
+      const wrapper = document.createElement("p");
+      child.parentNode!.insertBefore(wrapper, child);
+      wrapper.appendChild(child);
+      const rect = wrapper.getBoundingClientRect();
+      if (rect.height > 0) items.push({ node: wrapper, top: rect.top - divTop, bottom: rect.bottom - divTop });
+    }
+  }
+
+  // 2. Group items into pages using pageStart tracking
+  //    pageStart = top of the first item on the current page
+  //    An item fits if its bottom - pageStart <= pageHeight
+  const pagesHtml: string[] = [];
+  let pageNodes: Node[] = [];
+  let pageStart = 0;
+
+  const flush = () => {
+    if (pageNodes.length === 0) return;
+    const html = pageNodes.map(n =>
+      n.nodeType === Node.ELEMENT_NODE
+        ? (n as Element).outerHTML
+        : (() => { const r = document.createRange(); r.selectNode(n); const d = document.createElement("div"); d.appendChild(r.cloneContents()); return d.innerHTML; })()
+    ).join("");
+    pagesHtml.push(html || "<p></p>");
+    pageNodes = [];
+  };
+
+  for (const item of items) {
+    if (pageNodes.length === 0) {
+      // First item on page — always add it, set pageStart to its top
+      pageNodes.push(item.node);
+      pageStart = item.top;
+    } else if (item.bottom - pageStart <= pageHeight) {
+      // Fits on current page
+      pageNodes.push(item.node);
+    } else {
+      // Doesn't fit — flush current page, start new page with this item
+      flush();
+      pageNodes.push(item.node);
+      pageStart = item.top;
+    }
+  }
+  flush();
+
+  return pagesHtml.length > 0 ? pagesHtml : ["<p></p>"];
+}
 
 type ViewMode = "shelf" | "detail" | "reader";
 
@@ -451,27 +522,56 @@ export default function BookshelfPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const readerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const containerWRef = useRef(0); // stores fractional container width for translateX
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [pages, setPages] = useState<string[]>([]);
 
-  // Calculate total pages + set content width to exactly totalPages × containerW
+  // Paginate content into discrete page strings (for EPUB/TXT/MD)
   // Uses ResizeObserver so it auto-recalculates on window resize
   useEffect(() => {
     if (pdfFile) return; // PDF handles its own pagination
-    setPageIdx(0);
 
     const recalc = () => {
-      if (!contentRef.current || !readerRef.current) return;
-      const containerW = readerRef.current.getBoundingClientRect().width;
-      containerWRef.current = containerW;
-      // Step 1: set content to 100% to measure natural scrollWidth
-      contentRef.current.style.width = "100%";
-      const scrollW = contentRef.current.scrollWidth;
-      const pages = Math.max(1, Math.ceil(scrollW / containerW));
-      setTotalPages(pages);
-      // Step 2: set content width so each page (2 columns) = exactly containerW
-      // +64 compensates for p-8 padding (32px × 2) so column content area = pages × containerW
-      contentRef.current.style.width = `${pages * containerW + 64}px`;
+      if (!readerRef.current || !measureRef.current) return;
+
+      const containerRect = readerRef.current.getBoundingClientRect();
+      const pageHeight = containerRect.height - 64; // 32px top + 32px bottom padding
+      const pageWidth = containerRect.width - 64;   // same padding for measurement div width
+
+      if (pageHeight <= 0 || pageWidth <= 0) return;
+
+      // Set measurement div width to match reader content area
+      measureRef.current.style.width = pageWidth + "px";
+
+      // Get content HTML
+      let html: string;
+      if (epubData) {
+        html = epubData.chapters[chapterIdx]?.content || "<p>No content</p>";
+      } else if (textFileData) {
+        if (textFileData.isMarkdown) {
+          html = renderToStaticMarkup(
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+              {textFileData.content}
+            </ReactMarkdown>
+          );
+        } else {
+          html = `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(textFileData.content)}</pre>`;
+        }
+      } else {
+        return;
+      }
+
+      try {
+        const newPages = paginateContent(measureRef.current, html, pageHeight);
+        setPages(newPages);
+        setTotalPages(newPages.length);
+        setPageIdx(prev => Math.min(prev, newPages.length - 1));
+      } catch (err) {
+        console.error("Pagination error:", err);
+        // Fallback: show all content as a single page
+        setPages([html]);
+        setTotalPages(1);
+        setPageIdx(0);
+      }
     };
 
     const timer = setTimeout(recalc, 100);
@@ -482,17 +582,6 @@ export default function BookshelfPage() {
 
     return () => { clearTimeout(timer); ro.disconnect(); };
   }, [chapterIdx, epubData, textFileData, fontSize, pdfFile]);
-
-  // Shift visible spread via translateX (for EPUB/TXT/MD with column-count:2)
-  useEffect(() => {
-    if (pdfFile) return; // PDF handles its own display
-    if (contentRef.current) {
-      const step = containerWRef.current;
-      if (step > 0) {
-        contentRef.current.style.transform = `translateX(-${pageIdx * step}px)`;
-      }
-    }
-  }, [pageIdx, pdfFile, totalPages]);
 
   // Persist eye protection mode
   useEffect(() => {
@@ -897,36 +986,43 @@ export default function BookshelfPage() {
                   animation: "fadeIn 0.3s ease",
                 }} />
               )}
-              {/* Content */}
+              {/* Hidden measurement div (for pagination calculation) */}
+              {/* Width matches visible content area. No padding — width already accounts for it. */}
+              <div ref={measureRef} aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  visibility: "hidden",
+                  top: 0,
+                  left: 0,
+                  overflow: "visible",
+                  pointerEvents: "none",
+                  fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
+                  wordWrap: "break-word",
+                  overflowWrap: "break-word",
+                  lineHeight: 1.8,
+                }}
+              />
+              {/* Content — one page at a time */}
               {pdfFile ? (
                 <PdfViewer file={pdfFile} pageNum={chapterIdx} onTotalPages={setPdfTotalPages} />
               ) : (
-                <div ref={contentRef} className="p-8 mx-auto"
-                  dangerouslySetInnerHTML={epubData ? { __html: epubData.chapters[chapterIdx]?.content || "<p>No content</p>" } : undefined}
-                  style={{
-                    fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
-                    wordWrap: "break-word",
-                    overflowWrap: "break-word",
-                    columnCount: 2,
-                    columnGap: "36px",
-                    columnRule: "1px solid rgba(0,0,0,0.06)",
-                    transition: "transform 0.4s ease",
-                    height: "100%",
-                  }}>
-                  {textFileData && (
-                    textFileData.isMarkdown ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                        {textFileData.content}
-                      </ReactMarkdown>
-                    ) : (
-                      <pre className="whitespace-pre-wrap" style={{ fontFamily: "inherit" }}>{textFileData.content}</pre>
-                    )
-                  )}
+                <div className="w-full h-full flex items-center justify-center overflow-hidden p-8">
+                  <div
+                    className="reader-content page-enter w-full h-full"
+                    key={`page-${chapterIdx}-${pageIdx}`}
+                    style={{
+                      fontFamily: "'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
+                      wordWrap: "break-word",
+                      overflowWrap: "break-word",
+                      columnCount: 2,
+                      columnGap: "36px",
+                      columnRule: "1px solid rgba(0,0,0,0.06)",
+                      boxSizing: "border-box",
+                    }}
+                    dangerouslySetInnerHTML={{ __html: pages[pageIdx] || "<p></p>" }}
+                  />
                 </div>
               )}
-              {/* Book fold line (center) */}
-              <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px pointer-events-none"
-                style={{ background: "rgba(0,0,0,0.04)" }} />
               {/* Left page click zone */}
               <div className="absolute top-0 bottom-0 left-0 w-1/3 cursor-pointer" onClick={() => flipPage("left")} />
               {/* Right page click zone */}
