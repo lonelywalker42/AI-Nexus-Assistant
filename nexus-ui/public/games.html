@@ -4587,9 +4587,11 @@ class GameGomoku {
     // Transposition table
     this.tt = new Map();
     // History heuristic table
-    this.historyTable = new Array(225).fill(0).map(() => new Array(225).fill(0));
-    // Pattern scores
-    this.SCORES = { FIVE: 100000, OPEN_FOUR: 10000, BLOCK_FOUR: 1000, OPEN_THREE: 1000, BLOCK_THREE: 100, OPEN_TWO: 100, BLOCK_TWO: 10, OPEN_ONE: 1 };
+    this.historyTable = new Array(225).fill(0);
+    // Killer heuristic: 2 killer moves per depth
+    this.killers = new Array(64).fill(null).map(() => [null, null]);
+    // Pattern scores (tuned for combination threat detection)
+    this.SCORES = { FIVE: 1000000, OPEN_FOUR: 100000, BLOCK_FOUR: 8000, OPEN_THREE: 5000, BLOCK_THREE: 500, OPEN_TWO: 200, BLOCK_TWO: 30 };
     // Win rate stats
     this.STATS_KEY = 'nexus-gomoku-stats';
   }
@@ -4610,7 +4612,8 @@ class GameGomoku {
       this.showHelp = true; this.zobristHash = 0;
     }
     this.tt.clear();
-    this.historyTable = new Array(225).fill(0).map(() => new Array(225).fill(0));
+    this.historyTable = new Array(225).fill(0);
+    this.killers = new Array(64).fill(null).map(() => [null, null]);
     this._keyD = (e) => this.handleKey(e);
     this._clickH = (e) => this.handleClick(e);
     document.addEventListener('keydown', this._keyD);
@@ -4679,45 +4682,93 @@ class GameGomoku {
     return count;
   }
 
-  // ── Evaluate a line segment for pattern scores ──
-  _evalLine(cells, player) {
-    const S = this.SCORES;
-    let score = 0, i = 0;
-    while (i < cells.length) {
-      if (cells[i] === player) {
-        let count = 0, openEnds = 0;
-        while (i < cells.length && cells[i] === player) { count++; i++; }
-        if (i - count > 0 && cells[i - count - 1] === 0) openEnds++;
-        if (i < cells.length && cells[i] === 0) openEnds++;
-        if (count >= 5) score += S.FIVE;
-        else if (count === 4) score += openEnds === 2 ? S.OPEN_FOUR : (openEnds === 1 ? S.BLOCK_FOUR : 0);
-        else if (count === 3) score += openEnds === 2 ? S.OPEN_THREE : (openEnds === 1 ? S.BLOCK_THREE : 0);
-        else if (count === 2) score += openEnds === 2 ? S.OPEN_TWO : (openEnds === 1 ? S.BLOCK_TWO : 0);
-        else score += openEnds === 2 ? S.OPEN_ONE : 0;
-      } else { i++; }
-    }
-    return score;
+  // ── Scan line from (x,y) in direction (dx,dy), return [count, openEnds] ──
+  _scanLine(x, y, dx, dy, player) {
+    let count = 1, openEnds = 0;
+    let nx = x + dx, ny = y + dy;
+    while (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === player) { count++; nx += dx; ny += dy; }
+    if (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === 0) openEnds++;
+    nx = x - dx; ny = y - dy;
+    while (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === player) { count++; nx -= dx; ny -= dy; }
+    if (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === 0) openEnds++;
+    return [count, openEnds];
   }
 
-  // ── Full board evaluation (for AI = player 2) ──
-  evaluateBoard() {
+  // ── Score patterns at empty cell (x,y) for one player ──
+  // Returns { five, openFour, blockFour, openThree, blockThree }
+  _scoreCell(x, y, player) {
     const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
-    let aiScore = 0, plScore = 0;
-    for (let y = 0; y < this.N; y++) {
-      for (let x = 0; x < this.N; x++) {
-        for (const [dx, dy] of dirs) {
-          if (this.board[y][x] !== 0) continue;
-          const cells = [];
-          for (let step = -4; step <= 4; step++) {
-            const nx = x + dx * step, ny = y + dy * step;
-            cells.push((nx >= 0 && nx < this.N && ny >= 0 && ny < this.N) ? this.board[ny][nx] : -1);
-          }
-          aiScore += this._evalLine(cells, 2);
-          plScore += this._evalLine(cells, 1);
-        }
+    let five = 0, openFour = 0, blockFour = 0, openThree = 0, blockThree = 0;
+    this.board[y][x] = player;
+    for (const [dx, dy] of dirs) {
+      const [cnt, open] = this._scanLine(x, y, dx, dy, player);
+      if (cnt >= 5) five++;
+      else if (cnt === 4) { if (open === 2) openFour++; else if (open === 1) blockFour++; }
+      else if (cnt === 3) { if (open === 2) openThree++; else if (open === 1) blockThree++; }
+    }
+    // Jump patterns: check gaps like X_XXX, XX_XX
+    for (const [dx, dy] of dirs) {
+      // Pattern _X_XXX_ (gap at x-dx)
+      const gx1 = x - dx, gy1 = y - dy;
+      if (gx1 >= 0 && gx1 < this.N && gy1 >= 0 && gy1 < this.N && this.board[gy1][gx1] === 0) {
+        this.board[gy1][gx1] = player;
+        const [c1, o1] = this._scanLine(gx1, gy1, dx, dy, player);
+        this.board[gy1][gx1] = 0;
+        if (c1 >= 5) five++;
+        else if (c1 === 4 && o1 === 2) openFour++;
+        else if (c1 === 4 && o1 === 1) blockFour++;
+        else if (c1 === 3 && o1 === 2) openThree++;
+      }
+      // Pattern _XXX_X_ (gap at x+dx)
+      const gx2 = x + dx, gy2 = y + dy;
+      if (gx2 >= 0 && gx2 < this.N && gy2 >= 0 && gy2 < this.N && this.board[gy2][gx2] === 0) {
+        this.board[gy2][gx2] = player;
+        const [c2, o2] = this._scanLine(gx2, gy2, dx, dy, player);
+        this.board[gy2][gx2] = 0;
+        if (c2 >= 5) five++;
+        else if (c2 === 4 && o2 === 2) openFour++;
+        else if (c2 === 4 && o2 === 1) blockFour++;
+        else if (c2 === 3 && o2 === 2) openThree++;
       }
     }
-    return aiScore - plScore * 1.08;
+    this.board[y][x] = 0;
+    return { five, openFour, blockFour, openThree, blockThree };
+  }
+
+  // ── Full board evaluation with combination threat detection ──
+  evaluateBoard() {
+    const S = this.SCORES;
+    let aiScore = 0, plScore = 0;
+    const ai = { five: 0, openFour: 0, blockFour: 0, openThree: 0, blockThree: 0 };
+    const pl = { five: 0, openFour: 0, blockFour: 0, openThree: 0, blockThree: 0 };
+    for (let y = 0; y < this.N; y++) {
+      for (let x = 0; x < this.N; x++) {
+        if (this.board[y][x] !== 0) continue;
+        const a = this._scoreCell(x, y, 2);
+        const p = this._scoreCell(x, y, 1);
+        ai.five += a.five; ai.openFour += a.openFour; ai.blockFour += a.blockFour;
+        ai.openThree += a.openThree; ai.blockThree += a.blockThree;
+        pl.five += p.five; pl.openFour += p.openFour; pl.blockFour += p.blockFour;
+        pl.openThree += p.openThree; pl.blockThree += p.blockThree;
+      }
+    }
+    // Combination threat scoring
+    const comboScore = (t) => {
+      if (t.five > 0) return S.FIVE;
+      if (t.openFour > 0) return S.OPEN_FOUR;
+      if (t.blockFour >= 2) return S.OPEN_FOUR; // double four
+      if (t.blockFour >= 1 && t.openThree >= 1) return S.OPEN_FOUR * 0.9; // 4+3 fork
+      if (t.openThree >= 2) return S.OPEN_FOUR * 0.8; // double open three
+      let s = 0;
+      s += t.openFour * S.OPEN_FOUR;
+      s += t.blockFour * S.BLOCK_FOUR;
+      s += t.openThree * S.OPEN_THREE;
+      s += t.blockThree * S.BLOCK_THREE;
+      return s;
+    };
+    aiScore = comboScore(ai);
+    plScore = comboScore(pl);
+    return aiScore - plScore * 1.1;
   }
 
   // ── Check if player has won (5+ consecutive) ──
@@ -4983,8 +5034,22 @@ class GameGomoku {
 
     const cands = this.getCandidates(2);
     if (!cands.length) return 0;
-    cands.sort((a, b) => this.historyTable[b.y * 15 + b.x] - this.historyTable[a.y * 15 + a.x]);
-    const limit = Math.min(cands.length, 22);
+    // Move ordering: TT move > killer moves > history heuristic
+    const ttMove = ttEntry ? ttEntry.bestMove : null;
+    const k1 = this.killers[depth] ? this.killers[depth][0] : null;
+    const k2 = this.killers[depth] ? this.killers[depth][1] : null;
+    cands.sort((a, b) => {
+      let sa = this.historyTable[a.y * 15 + a.x];
+      let sb = this.historyTable[b.y * 15 + b.x];
+      if (ttMove && a.x === ttMove.x && a.y === ttMove.y) sa += 10000000;
+      if (ttMove && b.x === ttMove.x && b.y === ttMove.y) sb += 10000000;
+      if (k1 && a.x === k1.x && a.y === k1.y) sa += 5000000;
+      if (k1 && b.x === k1.x && b.y === k1.y) sb += 5000000;
+      if (k2 && a.x === k2.x && a.y === k2.y) sa += 4000000;
+      if (k2 && b.x === k2.x && b.y === k2.y) sb += 4000000;
+      return sb - sa;
+    });
+    const limit = Math.min(cands.length, 30);
     const origAlpha = alpha;
     let bestMove = null;
 
@@ -4999,6 +5064,12 @@ class GameGomoku {
         alpha = Math.max(alpha, s);
         if (beta <= alpha) {
           this.historyTable[y * 15 + x] += depth * depth;
+          if (this.killers[depth]) {
+            if (!this.killers[depth][0] || this.killers[depth][0].x !== x || this.killers[depth][0].y !== y) {
+              this.killers[depth][1] = this.killers[depth][0];
+              this.killers[depth][0] = { x, y };
+            }
+          }
           break;
         }
       }
@@ -5015,12 +5086,52 @@ class GameGomoku {
         beta = Math.min(beta, s);
         if (beta <= alpha) {
           this.historyTable[y * 15 + x] += depth * depth;
+          if (this.killers[depth]) {
+            if (!this.killers[depth][0] || this.killers[depth][0].x !== x || this.killers[depth][0].y !== y) {
+              this.killers[depth][1] = this.killers[depth][0];
+              this.killers[depth][0] = { x, y };
+            }
+          }
           break;
         }
       }
       this.tt.set(ttKey, { score: val, depth, flag: val <= origAlpha ? -1 : (val >= beta ? 1 : 0), bestMove });
       return val;
     }
+  }
+
+  // ── Opening book: center-first strategy for first few moves ──
+  _getOpeningMove() {
+    const center = 7;
+    if (this.moveCount === 0) return { x: center, y: center };
+    if (this.moveCount === 1) {
+      // Play adjacent to center or opponent's stone
+      if (this.board[center][center] === 0) return { x: center, y: center };
+      const adj = [[0,1],[1,0],[1,1],[-1,1],[0,-1],[-1,0],[-1,-1],[1,-1]];
+      for (const [dx, dy] of adj) {
+        const nx = center + dx, ny = center + dy;
+        if (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === 0)
+          return { x: nx, y: ny };
+      }
+    }
+    if (this.moveCount === 2) {
+      // Play near center, extending a line or diagonal
+      const around = [[0,1],[1,0],[1,1],[-1,1],[0,-1],[-1,0],[-1,-1],[1,-1]];
+      let best = null, bestScore = -1;
+      for (const [dx, dy] of around) {
+        const nx = center + dx, ny = center + dy;
+        if (nx >= 0 && nx < this.N && ny >= 0 && ny < this.N && this.board[ny][nx] === 0) {
+          let s = 0;
+          for (const [ddx, ddy] of [[1,0],[0,1],[1,1],[1,-1]]) {
+            const [c, o] = this._scanLine(nx, ny, ddx, ddy, 2);
+            s += c * 2 + o;
+          }
+          if (s > bestScore) { bestScore = s; best = { x: nx, y: ny }; }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
   }
 
   // ── Iterative deepening search ──
@@ -5030,8 +5141,13 @@ class GameGomoku {
     // Quick win/block first
     const win = this.findCriticalMove(2); if (win) return win;
     const block = this.findCriticalMove(1); if (block) return block;
-    cands.sort((a, b) => this.historyTable[b.y * 15 + b.x] - this.historyTable[a.y * 15 + a.x]);
-    let bestMove = cands[0], limit = Math.min(cands.length, 22);
+    // Sort by threat score + history
+    cands.sort((a, b) => {
+      const ha = this.historyTable[a.y * 15 + a.x];
+      const hb = this.historyTable[b.y * 15 + b.x];
+      return hb - ha;
+    });
+    let bestMove = cands[0], limit = Math.min(cands.length, 30);
     const start = performance.now();
     for (let d = 1; d <= 30; d++) {
       if (performance.now() - start > timeLimit) break;
@@ -5055,7 +5171,11 @@ class GameGomoku {
     this.draw();
     setTimeout(() => {
       let move;
-      switch (this.difficulty) {
+      // Opening book for difficulties >= 4 (first 3 moves)
+      if (this.difficulty >= 4 && this.moveCount <= 2) {
+        move = this._getOpeningMove();
+      }
+      if (!move) switch (this.difficulty) {
         case 1: move = this.aiRandom(); break;
         case 2: move = this.aiGreedy(); break;
         case 3: move = this.aiDefend(); break;

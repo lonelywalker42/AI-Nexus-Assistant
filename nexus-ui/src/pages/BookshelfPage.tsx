@@ -470,7 +470,8 @@ export default function BookshelfPage() {
       const pages = Math.max(1, Math.ceil(scrollW / containerW));
       setTotalPages(pages);
       // Step 2: set content width so each page (2 columns) = exactly containerW
-      contentRef.current.style.width = `${pages * containerW}px`;
+      // +64 compensates for p-8 padding (32px × 2) so column content area = pages × containerW
+      contentRef.current.style.width = `${pages * containerW + 64}px`;
     };
 
     const timer = setTimeout(recalc, 100);
