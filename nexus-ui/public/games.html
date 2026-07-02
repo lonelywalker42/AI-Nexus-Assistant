@@ -4566,9 +4566,10 @@ class GameRacer {
 // ══════════════════════════════════════════════
 //  GOMOKU — Five-in-a-row with 7-level AI engine
 // ══════════════════════════════════════════════
-// AI engine: Minimax + Alpha-Beta + Iterative Deepening + Zobrist TT
-//            + History Heuristic + VCF/VCT threat-space search
-// Architecture reference: THMGomokuAI, lihongxun945/gobang
+// LV.1-2: Frontend JS (greedy/defend)
+// LV.3-6: Backend Python (minimax + alpha-beta + VCF + iterative deepening)
+// LV.7:   Backend Python (Neural Network + MCTS)
+// Architecture reference: lihongxun945/gobang, kevin2014123/gomoku-ai, Kali-Hac/Gomoku-AI
 class GameGomoku {
   constructor() {
     this.N = 15;
@@ -4579,8 +4580,8 @@ class GameGomoku {
     this.cursor = { x: 7, y: 7 };
     this.turn = 1; this.over = false; this.won = 0; this.showHelp = true;
     this.difficulty = 2;
-    this.diffNames = ['', 'LV.1 RANDOM', 'LV.2 GREEDY', 'LV.3 DEFEND', 'LV.4 THINKER', 'LV.5 EXPERT', 'LV.6 MASTER', 'LV.7 HELL'];
-    this.diffDescs = ['', 'Random moves', 'Max threat score', 'Block + threats', 'Minimax depth 2', 'Iterative deepening 2s', 'VCF + ID 3s', 'VCF+VCT + ID 5s'];
+    this.diffNames = ['', 'LV.1 DEFEND', 'LV.2 GREEDY', 'LV.3 MINIMAX', 'LV.4 ALPHA-BETA', 'LV.5 DEEP', 'LV.6 MASTER', 'LV.7 NEURAL'];
+    this.diffDescs = ['', 'Block + threats', 'Max threat score', 'Backend depth 2', 'Backend depth 4', 'Backend ID 2s', 'Backend VCF+ID 3s', 'Neural Network+MCTS'];
     this.thinking = false; this.moveCount = 0; this.lastMove = null;
     // Zobrist hashing
     this.zobristTable = []; this.zobristHash = 0;
@@ -5169,39 +5170,67 @@ class GameGomoku {
   aiMove() {
     this.thinking = true;
     this.draw();
-    setTimeout(() => {
-      let move;
-      // Opening book for difficulties >= 4 (first 3 moves)
-      if (this.difficulty >= 4 && this.moveCount <= 2) {
-        move = this._getOpeningMove();
-      }
-      if (!move) switch (this.difficulty) {
-        case 1: move = this.aiRandom(); break;
-        case 2: move = this.aiGreedy(); break;
-        case 3: move = this.aiDefend(); break;
-        case 4: move = this.aiThinker(); break;
-        case 5: move = this.aiExpert(); break;
-        case 6: move = this.aiMaster(); break;
-        case 7: move = this.aiHell(); break;
-        default: move = this.aiGreedy();
-      }
-      if (move) {
-        this.board[move.y][move.x] = 2;
-        this._zobristToggle(move.x, move.y, 2);
-        this.lastMove = move; this.moveCount++;
-        if (this.checkWin(2)) {
-          this.over = true; this.won = 2;
-          saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'lose' });
-          this._recordResult('lose'); clearGameProgress('gomoku');
-        } else if (this.moveCount >= this.N * this.N) {
-          this.over = true; this.won = 0;
-          saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'draw' });
-          this._recordResult('draw'); clearGameProgress('gomoku');
+    // LV.3-7: call backend API (Python min-max/alpha-beta/NN+MCTS is faster)
+    if (this.difficulty >= 3) {
+      this._aiMoveBackend();
+    } else {
+      // LV.1-2: frontend JS (simple, no network overhead)
+      setTimeout(() => {
+        let move;
+        switch (this.difficulty) {
+          case 1: move = this.aiDefend(); break;
+          case 2: move = this.aiGreedy(); break;
+          default: move = this.aiGreedy();
         }
+        this._applyAiMove(move);
+      }, 50);
+    }
+  }
+
+  async _aiMoveBackend() {
+    try {
+      const resp = await fetch('http://127.0.0.1:8765/api/gomoku/ai-move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ board: this.board, difficulty: this.difficulty, move_count: this.moveCount })
+      });
+      const data = await resp.json();
+      if (data.x !== undefined && data.y !== undefined) {
+        this._applyAiMove({ x: data.x, y: data.y });
+      } else {
+        // Fallback to frontend greedy
+        this._applyAiMove(this.aiGreedy());
       }
-      this.turn = 1; this.thinking = false;
-      this.saveProgress();
-    }, 50);
+    } catch (e) {
+      // Backend unavailable, fallback to frontend
+      console.warn('Gomoku backend unavailable, using frontend AI', e);
+      let move;
+      switch (this.difficulty) {
+        case 1: move = this.aiDefend(); break;
+        case 2: move = this.aiGreedy(); break;
+        default: move = this.aiDefend(); break;
+      }
+      this._applyAiMove(move);
+    }
+  }
+
+  _applyAiMove(move) {
+    if (move) {
+      this.board[move.y][move.x] = 2;
+      this._zobristToggle(move.x, move.y, 2);
+      this.lastMove = move; this.moveCount++;
+      if (this.checkWin(2)) {
+        this.over = true; this.won = 2;
+        saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'lose' });
+        this._recordResult('lose'); clearGameProgress('gomoku');
+      } else if (this.moveCount >= this.N * this.N) {
+        this.over = true; this.won = 0;
+        saveHighScore('gomoku', this.moveCount, { difficulty: this.difficulty, result: 'draw' });
+        this._recordResult('draw'); clearGameProgress('gomoku');
+      }
+    }
+    this.turn = 1; this.thinking = false;
+    this.saveProgress();
   }
 
   // ── Place stone at (x,y) for current turn ──
@@ -5367,12 +5396,12 @@ class GameGomoku {
     // Move count
     ctx.fillStyle = C.dim; ctx.font = '11px Consolas, monospace'; ctx.textAlign = 'left';
     ctx.fillText('MOVES: ' + this.moveCount, 15, 60);
-    // Board background
+    // Board background (wood brown)
     const cs = this.cellSize;
-    ctx.fillStyle = '#1a1508';
+    ctx.fillStyle = '#DEB887';
     ctx.fillRect(this.ox - 2, this.oy - 2, this.N * cs + 4, this.N * cs + 4);
     // Grid lines
-    ctx.strokeStyle = '#3a3520'; ctx.lineWidth = 0.5;
+    ctx.strokeStyle = '#8B7355'; ctx.lineWidth = 0.5;
     for (let i = 0; i < this.N; i++) {
       ctx.beginPath(); ctx.moveTo(this.ox + cs / 2, this.oy + i * cs + cs / 2);
       ctx.lineTo(this.ox + (this.N - 1) * cs + cs / 2, this.oy + i * cs + cs / 2); ctx.stroke();
@@ -5381,7 +5410,7 @@ class GameGomoku {
     }
     // Star points (standard gomoku markings)
     const stars = [3, 7, 11];
-    ctx.fillStyle = '#3a3520';
+    ctx.fillStyle = '#8B7355';
     stars.forEach(sy => stars.forEach(sx => {
       ctx.beginPath(); ctx.arc(this.ox + sx * cs + cs / 2, this.oy + sy * cs + cs / 2, 3, 0, Math.PI * 2); ctx.fill();
     }));
@@ -5391,18 +5420,10 @@ class GameGomoku {
       if (!p) continue;
       const cx = this.ox + x * cs + cs / 2, cy = this.oy + y * cs + cs / 2;
       // Shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
       ctx.beginPath(); ctx.arc(cx + 1, cy + 1, cs / 2 - 3, 0, Math.PI * 2); ctx.fill();
-      // Stone
-      if (p === 1) {
-        const grad = ctx.createRadialGradient(cx - 3, cy - 3, 2, cx, cy, cs / 2 - 3);
-        grad.addColorStop(0, '#555'); grad.addColorStop(1, '#111');
-        ctx.fillStyle = grad;
-      } else {
-        const grad = ctx.createRadialGradient(cx - 3, cy - 3, 2, cx, cy, cs / 2 - 3);
-        grad.addColorStop(0, '#fff'); grad.addColorStop(1, '#bbb');
-        ctx.fillStyle = grad;
-      }
+      // Stone (solid color, no gradient)
+      ctx.fillStyle = p === 1 ? '#111' : '#eee';
       ctx.beginPath(); ctx.arc(cx, cy, cs / 2 - 3, 0, Math.PI * 2); ctx.fill();
       // Last move marker
       if (this.lastMove && this.lastMove.x === x && this.lastMove.y === y) {

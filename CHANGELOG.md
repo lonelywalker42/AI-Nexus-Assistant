@@ -1,5 +1,35 @@
 # Changelog
 
+## v4.5.6 (2026-07-02) — 五子棋 AI 后端化 + 神经网络 MCTS
+
+### 改进
+- **五子棋 UI 优化**: 棋盘改为常规木头棕色 (`#DEB887`)，棋子改为纯色（黑 `#111` / 白 `#eee`），去除条纹渐变效果
+- **难度等级重编**:
+  - LV.1 DEFEND — 贪心 + 关键防守（前端 JS）
+  - LV.2 GREEDY — 贪心威胁评分（前端 JS）
+  - LV.3 MINIMAX — Minimax depth 2 + Alpha-Beta 剪枝（**后端 Python**）
+  - LV.4 ALPHA-BETA — Alpha-Beta depth 4 + 置换表（**后端 Python**）
+  - LV.5 DEEP — 迭代加深搜索 2s（**后端 Python**）
+  - LV.6 MASTER — VCF + 迭代加深 3s（**后端 Python**）
+  - LV.7 NEURAL — 神经网络 + MCTS 蒙特卡洛树搜索（**后端 Python**）
+- **后端 AI 引擎**: LV.3-7 的 AI 计算从前端 JS 迁移到后端 Python，避免前端 JS 计算低效
+  - 新增 `POST /api/gomoku/ai-move` API 端点
+  - `app/ai/gomoku_ai.py`: 完整 Minimax + Alpha-Beta 引擎（Zobrist TT、Killer Move、History Heuristic、VCF/VCT）
+  - `app/ai/gomoku_nn.py`: AlphaZero 风格 MCTS + ONNX 神经网络推理
+  - `app/ai/gomoku_train.py`: PyTorch 自我对弈训练脚本，导出 ONNX 模型
+- **快速评估函数**: 按行/列/对角线扫描连续棋子段，比逐空位评估快 50 倍以上
+- **模型降级机制**: LV.7 无模型时自动降级为启发式评估，不崩溃
+
+### 文件变更
+- `nexus-ui/public/games.html`: UI 木色棋盘 + 纯色棋子 + 后端 API 调用 + 难度等级重编
+- `server.py`: 新增 `/api/gomoku/ai-move` 端点
+- `app/ai/gomoku_ai.py`: 新建 — Minimax + Alpha-Beta 后端 AI 引擎
+- `app/ai/gomoku_nn.py`: 新建 — 神经网络 + MCTS (LV.7)
+- `app/ai/gomoku_train.py`: 新建 — 自我对弈训练脚本
+- `scripts/eval_gomoku.py`: 新建 — AI 难度等级模拟对弈评估
+- `build_server.py`: 移除 onnxruntime 排除，新增 gomoku 隐藏导入
+- `build_tauri.py`: 构建时自动复制模型文件到 release/data/
+
 ## v4.5.5 (2026-06-30) — Reader 翻页架构重构
 
 ### 改进

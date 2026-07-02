@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.5.5")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.5.6")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -4850,6 +4850,41 @@ async def workspace_search(workspace_id: str, q: str = ""):
         return {"papers": filtered[:20], "count": len(filtered)}
     finally:
         db.close()
+
+
+# ── 五子棋 AI API ─────────────────────────────────────────────
+
+class GomokuMoveRequest(BaseModel):
+    board: list  # 15x15, 0=空 1=玩家 2=AI
+    difficulty: int = 3  # 3-6
+    move_count: int = 0  # 当前步数
+
+
+@app.post("/api/gomoku/ai-move")
+async def gomoku_ai_move(req: GomokuMoveRequest):
+    """五子棋 AI 走法计算（后端运行，避免前端 JS 低效计算）"""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: _gomoku_compute(req.board, req.difficulty, req.move_count)
+    )
+    return result
+
+
+def _gomoku_compute(board: list, difficulty: int, move_count: int) -> dict:
+    """在后台线程中运行五子棋 AI"""
+    try:
+        if difficulty == 7:
+            # LV.7: 神经网络 + MCTS
+            from app.ai.gomoku_nn import get_nn_move
+            return get_nn_move(board, move_count)
+        else:
+            # LV.3-6: Minimax + Alpha-Beta
+            from app.ai.gomoku_ai import get_gomoku_move
+            return get_gomoku_move(board, max(3, min(6, difficulty)), move_count)
+    except Exception as e:
+        return {"x": 7, "y": 7, "score": 0, "thinking_time": 0, "nodes": 0, "depth": 0, "error": str(e)}
 
 
 if __name__ == "__main__":

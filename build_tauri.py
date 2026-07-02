@@ -116,6 +116,16 @@ def step3_package():
         shutil.copy2(dll, release_dir / dll.name)
         print(f"  -> {release_dir / dll.name}")
 
+    # 复制五子棋 AI 模型文件（如果存在）
+    model_src = PROJECT_DIR / "data" / "gomoku_model.onnx"
+    data_dst = release_dir / "data"
+    data_dst.mkdir(parents=True, exist_ok=True)
+    if model_src.exists():
+        shutil.copy2(model_src, data_dst / "gomoku_model.onnx")
+        print(f"  -> {data_dst / 'gomoku_model.onnx'} ({model_src.stat().st_size / 1024:.1f} KB)")
+    else:
+        print(f"  WARNING: {model_src} not found, LV.7 will use heuristic fallback")
+
     # 复制 open-webSearch 目录（AI Chat Web Search 需要 Node.js 运行时）
     ows_src = PROJECT_DIR / "open-webSearch"
     ows_dst = release_dir / "open-webSearch"

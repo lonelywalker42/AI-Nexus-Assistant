@@ -20,7 +20,7 @@ EXCLUDE_MODULES = [
     # GUI
     "PyQt5", "PyQt6", "PySide6", "tkinter",
     # AI/ML (torch 4.4GB 等)
-    "torch", "transformers", "onnxruntime", "onnx",
+    "torch", "transformers", "onnx",
     "chromadb", "chromadb_rust_bindings",
     # 科学计算
     "scipy", "numpy", "pandas", "sklearn", "sympy",
@@ -136,6 +136,8 @@ def build():
         "--hidden-import", "app.ai.agents.peer_review_agent",
         "--hidden-import", "app.ai.agents.debate_agent",
         "--hidden-import", "app.ai.mcp_client",
+        "--hidden-import", "app.ai.gomoku_ai",
+        "--hidden-import", "app.ai.gomoku_nn",
         "--hidden-import", "app.services.pdf_fetch",
         "--hidden-import", "app.services.pdf_converter",
         "--hidden-import", "app.services.arxiv_service",
