@@ -188,7 +188,7 @@ def evaluate_pair(level_a, level_b, num_games):
 def main():
     parser = argparse.ArgumentParser(description='五子棋 AI 难度等级评估')
     parser.add_argument('--games', type=int, default=20, help='每对对弈局数')
-    parser.add_argument('--levels', type=str, default='1,2,3,4,5,6',
+    parser.add_argument('--levels', type=str, default='1,2,3,4,5,6,7',
                         help='评估的等级列表 (逗号分隔)')
     args = parser.parse_args()
 

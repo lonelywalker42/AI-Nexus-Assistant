@@ -6,7 +6,7 @@
 - Kali-Hac/Gomoku-AI (Python, threat-space search)
 
 难度等级:
-- LV.3: Minimax depth 2 + alpha-beta
+- LV.3: Minimax depth 2 + alpha-beta (速度优先)
 - LV.4: Alpha-beta depth 4 + transposition table
 - LV.5: Iterative deepening 2s
 - LV.6: VCF + iterative deepening 3s
@@ -246,7 +246,7 @@ class GomokuAI:
             if len(line) >= 5:
                 process_line(line)
 
-        # 组合威胁评分
+        # 组合威胁评分 (限制 open_three 奖励避免过度膨胀)
         def combo_score(p):
             if p[6] > 0:
                 return SCORES['FIVE']
@@ -256,10 +256,12 @@ class GomokuAI:
                 return SCORES['OPEN_FOUR']
             if p[4] >= 1 and p[2] >= 1:
                 return SCORES['OPEN_FOUR'] * 0.9
+            # 最多奖励2个 open_three 作为组合威胁
+            ot_bonus = min(p[2], 2) * SCORES['OPEN_THREE']
             if p[2] >= 2:
-                return SCORES['OPEN_FOUR'] * 0.8
+                ot_bonus = max(ot_bonus, SCORES['OPEN_FOUR'] * 0.8)
             return (p[5] * SCORES['OPEN_FOUR'] + p[4] * SCORES['BLOCK_FOUR'] +
-                    p[2] * SCORES['OPEN_THREE'] + p[3] * SCORES['BLOCK_THREE'] +
+                    ot_bonus + p[3] * SCORES['BLOCK_THREE'] +
                     p[0] * SCORES['OPEN_TWO'] + p[1] * SCORES['BLOCK_TWO'])
 
         return combo_score(ai_p) - combo_score(pl_p) * 1.1
@@ -267,6 +269,9 @@ class GomokuAI:
     def find_critical_move(self, player: int) -> Optional[tuple]:
         """快速找必胜/必堵点"""
         opp = 3 - player
+        # 先检查游戏是否已结束
+        if self.check_win(player) or self.check_win(opp):
+            return None
         # 先找自己能赢的
         for y in range(N):
             for x in range(N):
@@ -465,8 +470,8 @@ class GomokuAI:
         """带置换表的 alpha-beta 剪枝"""
         self.nodes_searched += 1
 
-        # 时间检查
-        if self.nodes_searched % 1024 == 0:
+        # 时间检查 (每256节点检查一次，更灵敏)
+        if self.nodes_searched % 256 == 0:
             if self.time_limit > 0 and (time.time() - self.start_time) > self.time_limit:
                 return self.evaluate_board()
 
@@ -564,7 +569,11 @@ class GomokuAI:
     # ── 迭代加深 ──
 
     def iterative_deepening(self, time_limit: float) -> tuple:
-        """迭代加深搜索，在时间限制内尽可能搜索更深"""
+        """迭代加深搜索，在时间限制内尽可能搜索更深
+
+        关键: 只有当整层搜索全部完成时才更新 best_move，
+        超时层的结果丢弃，使用上一层的完成结果。
+        """
         cands = self.get_candidates(2)
         if not cands:
             return self._get_center_move()
@@ -580,16 +589,22 @@ class GomokuAI:
         # 按快速评分排序
         cands.sort(key=lambda m: self._quick_score(m[0], m[1]), reverse=True)
         limit = min(len(cands), 15)
-        best_move = cands[0]
+        best_move = cands[0]  # 默认: 快速评分最高的候选
         self.start_time = time.time()
         self.time_limit = time_limit
 
         for d in range(1, 30):
-            if time.time() - self.start_time > time_limit:
+            # 深度开始前检查时间 (留 20% 余量)
+            if time.time() - self.start_time > time_limit * 0.8:
                 break
             best = float('-inf')
-            dm = best_move
+            dm = None
+            completed = True
             for i in range(limit):
+                # 每个候选前检查时间 (留 10% 余量)
+                if time.time() - self.start_time > time_limit * 0.9:
+                    completed = False
+                    break
                 mx, my = cands[i]
                 self.board[my][mx] = AI
                 self._toggle(mx, my, AI)
@@ -599,7 +614,9 @@ class GomokuAI:
                 if s > best:
                     best = s
                     dm = (mx, my)
-            best_move = dm
+            # 只有整层完成才更新结果
+            if completed and dm is not None:
+                best_move = dm
             if best >= SCORES['FIVE']:
                 break
         return best_move
@@ -693,12 +710,15 @@ class GomokuAI:
         search_depth = 0
 
         if difficulty == 3:
-            # LV.3: Minimax depth 2
+            # LV.3: Minimax depth 2 (速度优先, depth 3 在 Python 中太慢)
             search_depth = 2
             cands = self.get_candidates(2)
             if cands:
+                cands.sort(key=lambda m: self._quick_score(m[0], m[1]), reverse=True)
+                limit = min(len(cands), 20)
                 best = float('-inf')
-                for mx, my in cands:
+                for i in range(limit):
+                    mx, my = cands[i]
                     self.board[my][mx] = AI
                     self._toggle(mx, my, AI)
                     s = self.minimax(2, float('-inf'), float('inf'), False)

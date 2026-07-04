@@ -5384,6 +5384,7 @@ class GameGomoku {
 
   draw() {
     ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    const cs = this.cellSize;
     // Title
     ctx.fillStyle = C.green; ctx.font = '16px Consolas, monospace'; ctx.textAlign = 'center';
     ctx.fillText('G O M O K U  ·  ' + this.diffNames[this.difficulty], W / 2, 22);
@@ -5396,48 +5397,85 @@ class GameGomoku {
     // Move count
     ctx.fillStyle = C.dim; ctx.font = '11px Consolas, monospace'; ctx.textAlign = 'left';
     ctx.fillText('MOVES: ' + this.moveCount, 15, 60);
-    // Board background (wood brown)
-    const cs = this.cellSize;
+    // ── Board: subtle wood grain ──
+    const bx = this.ox - 6, by = this.oy - 6, bw = this.N * cs + 12, bh = this.N * cs + 12;
+    // Outer shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(bx + 3, by + 3, bw, bh);
+    // Board base
+    ctx.fillStyle = '#D2A86E';
+    ctx.fillRect(bx, by, bw, bh);
+    // Inner playing area
     ctx.fillStyle = '#DEB887';
-    ctx.fillRect(this.ox - 2, this.oy - 2, this.N * cs + 4, this.N * cs + 4);
-    // Grid lines
-    ctx.strokeStyle = '#8B7355'; ctx.lineWidth = 0.5;
+    ctx.fillRect(this.ox, this.oy, (this.N - 1) * cs, (this.N - 1) * cs);
+    // Wood grain lines (subtle, low-opacity)
+    ctx.save();
+    ctx.globalAlpha = 0.06;
+    ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 1;
+    for (let i = 0; i < bh; i += 3) {
+      const wobble = Math.sin(i * 0.15) * 4;
+      ctx.beginPath(); ctx.moveTo(bx, by + i + wobble);
+      ctx.lineTo(bx + bw, by + i + wobble * 0.7); ctx.stroke();
+    }
+    ctx.restore();
+    // ── Grid lines (softer, thinner) ──
+    ctx.strokeStyle = 'rgba(120,90,50,0.45)'; ctx.lineWidth = 0.8;
+    ctx.lineCap = 'round';
     for (let i = 0; i < this.N; i++) {
       ctx.beginPath(); ctx.moveTo(this.ox + cs / 2, this.oy + i * cs + cs / 2);
       ctx.lineTo(this.ox + (this.N - 1) * cs + cs / 2, this.oy + i * cs + cs / 2); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(this.ox + i * cs + cs / 2, this.oy + cs / 2);
       ctx.lineTo(this.ox + i * cs + cs / 2, this.oy + (this.N - 1) * cs + cs / 2); ctx.stroke();
     }
-    // Star points (standard gomoku markings)
+    // ── Star points ──
     const stars = [3, 7, 11];
-    ctx.fillStyle = '#8B7355';
     stars.forEach(sy => stars.forEach(sx => {
-      ctx.beginPath(); ctx.arc(this.ox + sx * cs + cs / 2, this.oy + sy * cs + cs / 2, 3, 0, Math.PI * 2); ctx.fill();
+      const px = this.ox + sx * cs + cs / 2, py = this.oy + sy * cs + cs / 2;
+      ctx.fillStyle = 'rgba(100,70,30,0.6)';
+      ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill();
     }));
-    // Pieces
+    // ── Pieces with radial gradient (3D stones) ──
+    const stoneR = cs / 2 - 3;
     for (let y = 0; y < this.N; y++) for (let x = 0; x < this.N; x++) {
       const p = this.board[y][x];
       if (!p) continue;
       const cx = this.ox + x * cs + cs / 2, cy = this.oy + y * cs + cs / 2;
-      // Shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.beginPath(); ctx.arc(cx + 1, cy + 1, cs / 2 - 3, 0, Math.PI * 2); ctx.fill();
-      // Stone (solid color, no gradient)
-      ctx.fillStyle = p === 1 ? '#111' : '#eee';
-      ctx.beginPath(); ctx.arc(cx, cy, cs / 2 - 3, 0, Math.PI * 2); ctx.fill();
-      // Last move marker
+      // Drop shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.beginPath(); ctx.arc(cx + 1.5, cy + 1.5, stoneR, 0, Math.PI * 2); ctx.fill();
+      // Stone with gradient
+      if (p === 1) {
+        // Black stone: dark center, subtle highlight top-left
+        const g = ctx.createRadialGradient(cx - stoneR * 0.3, cy - stoneR * 0.3, stoneR * 0.1, cx, cy, stoneR);
+        g.addColorStop(0, '#555'); g.addColorStop(0.5, '#222'); g.addColorStop(1, '#0a0a0a');
+        ctx.fillStyle = g;
+      } else {
+        // White stone: bright center, soft gray edge
+        const g = ctx.createRadialGradient(cx - stoneR * 0.3, cy - stoneR * 0.3, stoneR * 0.1, cx, cy, stoneR);
+        g.addColorStop(0, '#fff'); g.addColorStop(0.6, '#f0f0f0'); g.addColorStop(1, '#c8c8c8');
+        ctx.fillStyle = g;
+      }
+      ctx.beginPath(); ctx.arc(cx, cy, stoneR, 0, Math.PI * 2); ctx.fill();
+      // Subtle rim highlight
+      ctx.strokeStyle = p === 1 ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.arc(cx, cy, stoneR - 0.5, 0, Math.PI * 2); ctx.stroke();
+      // Last move marker: red ring (visible on both colors)
       if (this.lastMove && this.lastMove.x === x && this.lastMove.y === y) {
-        ctx.fillStyle = p === 1 ? C.red : C.red;
-        ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#e53935'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.stroke();
       }
     }
-    // Cursor
+    // ── Cursor (subtle glow) ──
     if (!this.over && !this.thinking && this.turn === 1 && !this.paused) {
-      const cx = this.ox + this.cursor.x * cs, cy = this.oy + this.cursor.y * cs;
-      ctx.strokeStyle = C.amber; ctx.lineWidth = 2;
-      ctx.strokeRect(cx + 1, cy + 1, cs - 2, cs - 2);
+      const cu = this.ox + this.cursor.x * cs + cs / 2, cv = this.oy + this.cursor.y * cs + cs / 2;
+      ctx.strokeStyle = 'rgba(255,176,0,0.7)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cu, cv, stoneR + 1, 0, Math.PI * 2); ctx.stroke();
+      // Soft glow
+      ctx.strokeStyle = 'rgba(255,176,0,0.15)'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(cu, cv, stoneR + 3, 0, Math.PI * 2); ctx.stroke();
     }
-    // Paused overlay
+    // ── Paused overlay ──
     if (this.paused && !this.over) {
       ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = C.amber; ctx.font = '28px Consolas, monospace'; ctx.textAlign = 'center';
@@ -5445,7 +5483,7 @@ class GameGomoku {
       ctx.fillStyle = C.dim; ctx.font = '12px Consolas, monospace';
       ctx.fillText('P to resume · ESC menu', W / 2, H / 2 + 30);
     }
-    // Game over overlay
+    // ── Game over overlay ──
     if (this.over) {
       ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(0, 0, W, H);
       ctx.textAlign = 'center';

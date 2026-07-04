@@ -23,7 +23,7 @@ DIRECTIONS = [(1, 0), (0, 1), (1, 1), (1, -1)]
 
 # MCTS 参数
 C_PUCT = 1.5          # 探索常数
-NUM_SIMULATIONS = 400  # 每次走法的模拟次数
+NUM_SIMULATIONS = 800  # 每次走法的模拟次数 (训练用200, 推理用800更强)
 DIRICHLET_ALPHA = 0.3  # 根节点噪声参数
 DIRICHLET_EPS = 0.25   # 噪声权重
 TEMPERATURE = 1.0      # 温度参数 (训练时高, 对弈时低)
@@ -363,7 +363,7 @@ class GomokuNN:
 
         # MCTS 搜索
         # 根据模型是否加载调整模拟次数
-        sims = NUM_SIMULATIONS if self.model_loaded else 200
+        sims = NUM_SIMULATIONS if self.model_loaded else 400
         best_move, policy = self.mcts_search(board, sims)
 
         elapsed = time.time() - start

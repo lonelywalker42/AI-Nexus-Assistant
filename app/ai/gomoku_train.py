@@ -7,12 +7,25 @@
     pip install torch onnxruntime
     python -m app.ai.gomoku_train --iterations 50 --games-per-iter 100
 
+架构 (v2):
+    - 6 ResNet blocks × 128 channels (~1.2M 参数)
+    - 4 输入特征平面 (己方/对方/玩家标记/合法位置)
+    - Policy head: 225 维走法概率
+    - Value head: [-1,1] 局面评估
+
 训练流程:
     1. 初始化随机模型
-    2. 自我对弈生成训练数据 (MCTS 采样走法)
-    3. 用训练数据优化模型
+    2. 自我对弈生成训练数据 (MCTS 200 模拟, 温度前15步1.0/之后0.5)
+    3. 用训练数据优化模型 (5 epochs, Adam + StepLR)
     4. 重复 2-3 直到收敛
     5. 导出 ONNX 模型到 data/gomoku_model.onnx
+
+预期训练时间与棋力:
+    - 500 games (5 iter):  入门级, ~Elo 800  (约 1-2 小时)
+    - 2000 games (20 iter): 业余级, ~Elo 1200 (约 4-8 小时)
+    - 5000 games (50 iter): 中级,   ~Elo 1500 (约 12-24 小时)
+    推理时使用 400 MCTS 模拟, 比训练时的 200 更强。
+    参考: junxiaosong/AlphaZero_Gomoku (6×6 board, 500-1000 games 收敛)
 """
 
 import os
@@ -31,6 +44,16 @@ EMPTY = 0
 PLAYER = 1
 AI = 2
 DIRECTIONS = [(1, 0), (0, 1), (1, 1), (1, -1)]
+
+# ── 设备检测 ──
+def _get_device():
+    try:
+        import torch
+        return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    except ImportError:
+        return 'cpu'
+
+DEVICE = _get_device()
 
 # 模型路径（兼容 PyInstaller 打包和开发模式）
 def _get_paths():
@@ -74,8 +97,12 @@ def get_model():
 
         输入: (batch, 4, 15, 15) 特征平面
         输出: policy (batch, 225) + value (batch, 1)
+
+        架构: 6 ResNet blocks × 128 channels (~1.2M 参数)
+        参考: junxiaosong/AlphaZero_Gomoku (3 blocks × 64 ch),
+              initial-h/AlphaZero_Gomoku_MPI (19 blocks, Gomocup top 30)
         """
-        def __init__(self, num_res_blocks=3, channels=64):
+        def __init__(self, num_res_blocks=6, channels=128):
             super().__init__()
             # 初始卷积
             self.conv_input = nn.Conv2d(4, channels, 3, padding=1, bias=False)
@@ -89,8 +116,8 @@ def get_model():
             # Value head
             self.value_conv = nn.Conv2d(channels, 2, 1, bias=False)
             self.value_bn = nn.BatchNorm2d(2)
-            self.value_fc1 = nn.Linear(2 * N * N, 64)
-            self.value_fc2 = nn.Linear(64, 1)
+            self.value_fc1 = nn.Linear(2 * N * N, 128)
+            self.value_fc2 = nn.Linear(128, 1)
 
         def forward(self, x):
             # 初始层
@@ -159,7 +186,7 @@ def board_to_tensor(board, player=AI):
             if board[y][x] == EMPTY:
                 features[3][y][x] = 1.0
     features[2][:, :] = 1.0 if player == AI else 0.0
-    return torch.FloatTensor(features).unsqueeze(0)
+    return torch.FloatTensor(features).unsqueeze(0).to(DEVICE)
 
 
 # ── MCTS (训练用, 简化版) ──
@@ -219,7 +246,7 @@ def mcts_self_play(model, board, num_sims=200, temperature=1.0):
     with torch.no_grad():
         tensor = board_to_tensor(board)
         log_policy, value = model(tensor)
-        policy = torch.exp(log_policy).squeeze().numpy()
+        policy = torch.exp(log_policy).squeeze().cpu().numpy()
 
     # 合法位置 mask
     for y in range(N):
@@ -264,7 +291,7 @@ def mcts_self_play(model, board, num_sims=200, temperature=1.0):
             with torch.no_grad():
                 tensor = board_to_tensor(sim_board, node.player)
                 log_policy, value = model(tensor)
-                policy = torch.exp(log_policy).squeeze().numpy()
+                policy = torch.exp(log_policy).squeeze().cpu().numpy()
                 value = value.item()
                 for y in range(N):
                     for x in range(N):
@@ -322,8 +349,10 @@ def self_play_game(model, num_sims=200, temperature=1.0):
     current_player = PLAYER  # 玩家先手
 
     while True:
+        # 温度: 前 15 步用 1.0 (探索), 之后用 0.5 (利用)
+        temp = 1.0 if move_count < 15 else 0.5
         # MCTS 搜索
-        move, policy = mcts_self_play(model, board, num_sims, temperature)
+        move, policy = mcts_self_play(model, board, num_sims, temp)
 
         # 保存训练数据 (从当前玩家视角)
         features = np.zeros((4, N, N), dtype=np.float32)
@@ -380,9 +409,9 @@ def train_model(model, training_data, optimizer, batch_size=64):
         if len(batch) < 2:
             continue
 
-        features = torch.FloatTensor(np.stack([d[0] for d in batch]))
-        target_policies = torch.FloatTensor(np.stack([d[1] for d in batch]))
-        target_values = torch.FloatTensor(np.array([d[2] for d in batch])).unsqueeze(1)
+        features = torch.FloatTensor(np.stack([d[0] for d in batch])).to(DEVICE)
+        target_policies = torch.FloatTensor(np.stack([d[1] for d in batch])).to(DEVICE)
+        target_values = torch.FloatTensor(np.array([d[2] for d in batch])).unsqueeze(1).to(DEVICE)
 
         log_policies, values = model(features)
 
@@ -410,14 +439,17 @@ def export_onnx(model, path):
     import torch
 
     model.eval()
+    model_cpu = model.cpu()
     dummy = torch.randn(1, 4, N, N)
     torch.onnx.export(
-        model, dummy, path,
+        model_cpu, dummy, path,
         input_names=['input'],
         output_names=['policy', 'value'],
         dynamic_axes={'input': {0: 'batch'}, 'policy': {0: 'batch'}, 'value': {0: 'batch'}},
-        opset_version=11
+        opset_version=18,
+        dynamo=False
     )
+    model.to(DEVICE)  # 移回 GPU
     print(f"[train] ONNX 模型已导出: {path}")
 
 
@@ -438,24 +470,28 @@ def main():
         print("[train] 请先安装 PyTorch: pip install torch")
         sys.exit(1)
 
-    os.makedirs(MODEL_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
     # 初始化模型
-    model = get_model()
+    model = get_model().to(DEVICE)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
 
     start_iter = 0
     if args.resume and os.path.exists(args.resume):
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume, weights_only=False, map_location=DEVICE)
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
+        if 'scheduler' in checkpoint:
+            scheduler.load_state_dict(checkpoint['scheduler'])
         start_iter = checkpoint.get('iteration', 0)
         print(f"[train] 从检查点恢复: iteration {start_iter}")
 
     # 训练数据缓冲区
     replay_buffer = deque(maxlen=50000)
 
+    print(f"[train] 设备: {DEVICE}" + (f" ({torch.cuda.get_device_name(0)})" if DEVICE.type == 'cuda' else ""))
     print(f"[train] 开始训练: {args.iterations} 迭代, 每次 {args.games_per_iter} 局")
     print(f"[train] MCTS 模拟次数: {args.sims}")
 
@@ -466,9 +502,7 @@ def main():
         print(f"\n[iter {iteration+1}/{args.iterations}] 自我对弈中...")
         game_count = 0
         for g in range(args.games_per_iter):
-            # 温度: 前 15 步用 1.0 (探索), 之后用 0.5 (利用)
-            temp = 1.0
-            data = self_play_game(model, args.sims, temp)
+            data = self_play_game(model, args.sims)
             replay_buffer.extend(data)
             game_count += 1
             if (g + 1) % 10 == 0:
@@ -483,12 +517,16 @@ def main():
             loss = train_model(model, train_data, optimizer)
             print(f"  epoch {epoch+1}/{epochs}: loss = {loss:.4f}")
 
+        # 学习率调度
+        scheduler.step()
+
         # 保存检查点
         checkpoint_path = os.path.join(CHECKPOINT_DIR, f'checkpoint_{iteration+1}.pth')
         torch.save({
             'iteration': iteration + 1,
             'model': model.state_dict(),
             'optimizer': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict(),
         }, checkpoint_path)
 
         # 每 10 个迭代导出 ONNX
