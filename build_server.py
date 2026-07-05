@@ -100,6 +100,7 @@ def build():
         "--hidden-import", "app.services.citation_service",
         "--hidden-import", "app.services.export_service",
         "--hidden-import", "app.services.workspace_service",
+        "--hidden-import", "app.services.topic_service",
         "--hidden-import", "app.services.writing_service",
         "--hidden-import", "app.search",
         "--hidden-import", "app.search.engine",

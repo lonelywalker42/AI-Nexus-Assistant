@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献管理、试验管理、知识库、AI对话、音乐播放、电子书阅读的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v4.3.1-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v4.6.0-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,7 +16,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v4.3.1 |
+| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v4.6.0 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ## 功能模块
@@ -34,7 +34,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 | 模块 | 功能 |
 |------|------|
 | **文献检索** | 7源学术搜索(OpenAlex/arXiv/Semantic Scholar/CrossRef/PubMed/Google Scholar/Scopus)、arXiv PDF一键导入、布尔检索(AND/OR/NOT)、列表/网格视图切换、综述池FAB浮动按钮、AI综述生成(自定义章节结构)、批量导入文献库 |
-| **文献库** | 出版社PDF拉取(DOI→自动下载)、BibTeX/RIS批量导入、PDF→Markdown转换(MinerU+PyMuPDF降级)、元数据质量审计、语义近邻推荐、论文笔记系统、PDF批量导入+AI元数据提取、引用格式(GB/T 7714/APA/IEEE/MLA/BibTeX)、AI摘要、批量操作、分层阅读(元数据/摘要/全文) |
+| **文献库** | 出版社PDF拉取(DOI→自动下载)、BibTeX/RIS批量导入、PDF→Markdown转换(MinerU+PyMuPDF降级)、元数据质量审计、语义近邻推荐、论文笔记系统、PDF批量导入+AI元数据提取、引用格式(GB/T 7714/APA/IEEE/MLA/BibTeX)、AI摘要、批量操作、分层阅读(元数据/摘要/全文)、**话题管理**(论文分组、批量导入创建话题、综述按话题选择) |
 | **IDEA** | 知识卡片CRUD、随手记(快速记录想法)、AI对话关联、标签系统(支持层级标签)、JSON/MD/PDF导入、网页链接导入、**DeepSeek对话智能导入**(JSON解析→LLM摘要→知识卡片)、导入分组管理、知识图谱可视化、批量操作(导出/删除) |
 | **试验管理** | 版本化结果记录、参数对比表、AI分析、Git集成(状态/快照)、结构化参数编辑、README自动生成、归档打包、实验并排对比 |
 | **AI 对话** | 流式输出、工具调用(联网搜索+结构化卡片展示)、thinking折叠、分类管理、停止生成按钮、消息重新生成、会话搜索、Token统计、@引用文献 |
@@ -237,6 +237,9 @@ FastAPI 后端提供 40+ REST 路由：
 | 审计 | `/api/papers/audit/stats` | GET | 审计统计 |
 | 推荐 | `/api/papers/{id}/neighbors` | GET | 语义近邻推荐 |
 | 工作区 | `/api/workspaces/{id}/search` | GET | 工作区内搜索 |
+| 话题 | `/api/paper-topics` | GET/POST | 话题 CRUD |
+| 话题 | `/api/paper-topics/{id}` | GET/DELETE | 话题详情/删除 |
+| 话题 | `/api/paper-topics/{id}/papers` | POST/DELETE | 话题论文管理 |
 
 API 文档: `http://127.0.0.1:8765/docs`
 
@@ -244,27 +247,29 @@ API 文档: `http://127.0.0.1:8765/docs`
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
-| v4.3.1 | 2026-06-23 | 文献检索增强（引用修正、DOI复制、PDF获取修复）+ DeepSeek导入修复（FOREIGN KEY、摘要生成、UI跳转） |
-| v4.3.0 | 2026-06-23 | 代码规范化（API层统一、重复代码消除、返回格式统一、检查更新修复） |
-| v3.6.0 | 2026-06-21 | ScholarAIO特性移植（出版社PDF拉取、MinerU PDF转换、arXiv导入、BibTeX/RIS导入、论文笔记、元数据审计、语义推荐） |
-| v3.5.0 | 2026-06-21 | 科研助手功能增强（PDF元数据提取、FTS5索引、语义搜索、引用图谱、主题聚类、工作区） |
-| v3.1.0 | 2026-06-20 | 音乐播放器无缝切换、懒加载优化、Toast通知 |
-| v3.2.0 | 2026-06-20 | 写作工作台、布尔检索、智能综述、研究讨论、Markdown渲染升级 |
-| v3.3.0 | 2026-06-20 | Git集成、结构化参数、知识库增强搜索、网格视图 |
-| v3.4.0 | 2026-06-20 | 对话导出、README生成、归档打包、写作模板 |
-| v3.4.1 | 2026-06-21 | 播放同步修复、Word Hopper打字练习、CET-6词汇库 |
-| v3.0.0 | 2026-06-19 | 个人助手(音乐/书架)、iOS UI、自定义配色 |
-| v2.2.2 | 2026-06-19 | 倒计时音乐交互修复、开发体系文档 |
-| v2.2.1 | 2026-06-19 | 音乐IndexedDB持久化修复 |
-| v2.2.0 | 2026-06-18 | 时钟音乐播放器、备份修复、搜索修复 |
-| v2.1.0 | 2026-06-18 | 今日工作、侧边栏重构、文献UI升级、IDEA随手记 |
-| v2.0.0 | 2026-06-17 | 科研助手全面升级(文献库/试验/Chat/AI工具) |
-| v1.4.0 | 2026-06-14 | 深色日历、无cmd启动、Web Search |
-| v1.3.0 | 2026-06-14 | 待办日历UI重构、透明玻璃模式 |
-| v1.2.0 | 2026-06-13 | 历史增强、Markdown渲染 |
-| v1.1.0 | 2026-06-13 | 原生菜单、暖色主题 |
+| v4.6.0 | 2026-07-05 | 话题管理（论文分组、批量导入创建话题、综述按话题选择、话题面板UI） |
+| v4.5.6 | 2026-07-02 | 五子棋AI后端化 + 神经网络MCTS + 难度等级重编 |
+| v4.5.5 | 2026-06-30 | Reader翻页架构重构（离散page div替代column-count） |
+| v4.5.4 | 2026-06-30 | 归档页修复 + 翻页居中 + 五子棋AI增强 |
+| v4.5.3 | 2026-06-30 | EPUB翻页修复 |
+| v4.5.2 | 2026-06-30 | 写作工作台文献引用 + @mention |
+| v4.5.1 | 2026-06-29 | 对话停止生成 + 消息重新生成 |
+| v4.5.0 | 2026-06-29 | 多Agent工作流（综述/写作/实验/评审/讨论） |
+| v4.4.5 | 2026-06-28 | 五子棋游戏 + 游戏机扩展 |
+| v4.4.4 | 2026-06-27 | 知识图谱可视化 + 批量操作 |
+| v4.4.3 | 2026-06-26 | DeepSeek对话智能导入 + LLM摘要 |
+| v4.4.2 | 2026-06-25 | 对话分类管理 + Token统计 |
+| v4.4.1 | 2026-06-25 | 书架EPUB阅读器 + 翻页动画 |
+| v4.4.0 | 2026-06-24 | 引用格式修正 + 分层阅读 |
+| v4.3.1 | 2026-06-23 | 文献检索增强 + DeepSeek导入修复 |
+| v4.3.0 | 2026-06-23 | 代码规范化 |
+| v3.6.0 | 2026-06-21 | ScholarAIO特性移植 |
+| v3.5.0 | 2026-06-21 | 科研助手功能增强 |
+| v3.0.0 | 2026-06-19 | 个人助手(音乐/书架)、iOS UI |
+| v2.0.0 | 2026-06-17 | 科研助手全面升级 |
+| v1.1.0 | 2026-06-13 | 首个发布版本 |
 
-完整变更记录见 [CHANGELOG.md](nexus-ui/CHANGELOG.md)
+完整变更记录见 [CHANGELOG.md](CHANGELOG.md)
 
 ## 致谢
 
