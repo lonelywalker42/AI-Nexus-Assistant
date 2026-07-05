@@ -7,7 +7,6 @@ const CATEGORIES = [
   { key: "literature", label: "文献导入", iconKey: "file", color: "#3b82f6" },
   { key: "deepseek", label: "AI 对话", iconKey: "chat", color: "#8b5cf6" },
   { key: "note", label: "随手记", iconKey: "lightbulb", color: "#f59e0b" },
-  { key: "manual", label: "手动创建", iconKey: "edit", color: "#10b981" },
   { key: "web", label: "网页抓取", iconKey: "globe", color: "#06b6d4" },
 ];
 
@@ -51,6 +50,11 @@ export default function KnowledgePage() {
 
   // 摘要重新生成
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+
+  // 随手记编辑
+  const [editingNote, setEditingNote] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSummary, setEditSummary] = useState("");
 
   // 知识图谱
   const [showGraph, setShowGraph] = useState(false);
@@ -271,6 +275,7 @@ export default function KnowledgePage() {
 
   const handleBackFromDetail = () => {
     setSelectedCard(null);
+    setEditingNote(false);
     if (selectedGroup) setView("importGroupDetail");
     else setView(activeCategory ? "list" : "categories");
   };
@@ -629,10 +634,12 @@ export default function KnowledgePage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {categoryCounts.map(cat => {
             const CatIcon = CATEGORY_ICONS[cat.iconKey] || IconFile;
+            // 该类型最近 3 张卡片
+            const recentCards = allCards.filter(c => c.source_type === cat.key).slice(0, 3);
             return (
-            <div key={cat.key} className="glass-card p-5 cursor-pointer glass-card-hover"
+            <div key={cat.key} className="glass-card p-5 cursor-pointer glass-card-hover flex flex-col gap-3"
               onClick={() => handleCategoryClick(cat.key)}>
-              <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center gap-3">
                 <span className="w-8 h-8 rounded-lg flex items-center justify-center"
                   style={{ background: `${cat.color}15`, color: cat.color }}><CatIcon size={18} /></span>
                 <div>
@@ -643,6 +650,23 @@ export default function KnowledgePage() {
               <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--border-color)" }}>
                 <div className="h-full rounded-full" style={{ background: cat.color, width: `${Math.min(100, cat.count * 10)}%` }} />
               </div>
+              {/* 最近卡片简略 */}
+              {recentCards.length > 0 ? (
+                <div className="space-y-1.5 pt-1 border-t" style={{ borderColor: "var(--border-color)" }}>
+                  {recentCards.map(c => (
+                    <div key={c.id} className="flex items-center gap-2" onClick={e => { e.stopPropagation(); handleCardClick(c); }}>
+                      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: cat.color }} />
+                      <span className="text-xs truncate cursor-pointer hover:underline" style={{ color: "var(--text-secondary)" }}>
+                        {c.title}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] pt-1 border-t" style={{ borderColor: "var(--border-color)", color: "var(--text-muted)" }}>
+                  暂无卡片
+                </p>
+              )}
             </div>
             );
           })}
@@ -1016,11 +1040,46 @@ export default function KnowledgePage() {
                 查看关联对话
               </button>
             )}
+            {/* v4.6.1: 随手记编辑按钮 */}
+            {selectedCard.source_type === "note" && !editingNote && (
+              <button className="text-xs px-2 py-1.5 rounded-lg cursor-pointer"
+                style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}
+                onClick={() => { setEditingNote(true); setEditTitle(selectedCard.title); setEditSummary(selectedCard.summary || ""); }}>
+                编辑
+              </button>
+            )}
           </div>
 
-          <div><h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>{selectedCard.title}</h3></div>
+          {/* 标题：编辑模式 vs 只读模式 */}
+          {editingNote ? (
+            <input className="input-glass text-lg font-semibold w-full" value={editTitle}
+              onChange={e => setEditTitle(e.target.value)} placeholder="想法标题..." />
+          ) : (
+            <div><h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>{selectedCard.title}</h3></div>
+          )}
 
-          {selectedCard.summary && (
+          {/* 摘要/想法内容：编辑模式 vs 只读模式 */}
+          {editingNote ? (
+            <div>
+              <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-muted)" }}>想法内容</p>
+              <textarea className="input-glass text-sm w-full" rows={6} value={editSummary}
+                onChange={e => setEditSummary(e.target.value)} placeholder="记录你的想法..." />
+              <div className="flex justify-end gap-2 mt-2">
+                <button className="btn-ghost text-xs py-1.5" onClick={() => setEditingNote(false)}>取消</button>
+                <button className="btn-gradient btn-click text-xs py-1.5 px-4" onClick={async () => {
+                  if (!editTitle.trim()) { alert("标题不能为空"); return; }
+                  try {
+                    await knowledgeApi.updateCard(selectedCard.id, { title: editTitle.trim(), summary: editSummary.trim() });
+                    const updated = { ...selectedCard, title: editTitle.trim(), summary: editSummary.trim() };
+                    setSelectedCard(updated);
+                    setCards(prev => prev.map(c => c.id === selectedCard.id ? updated : c));
+                    setAllCards(prev => prev.map(c => c.id === selectedCard.id ? updated : c));
+                    setEditingNote(false);
+                  } catch (err) { alert("保存失败: " + err); }
+                }}>保存</button>
+              </div>
+            </div>
+          ) : selectedCard.summary && (
             <div>
               <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-muted)" }}>
                 {selectedCard.source_type === "note" ? "想法内容" : "摘要"}
