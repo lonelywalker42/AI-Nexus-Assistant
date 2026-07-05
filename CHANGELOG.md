@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.6.1 (2026-07-05) — 审计修复 + PDF 拉取优化 + 代理支持
+
+### 修复
+- **审计 404 错误**: 将 `/api/papers/audit` 端点移到 `/api/papers/{paper_id}` 通配路由之前，解决 FastAPI 路由遮蔽问题
+- **PDF 拉取超时**: `fetchPdf` 前端超时从 30s 增加到 120s，适配多级降级流水线耗时
+- **PDF 拉取不关联卡片**: 当 DOI 匹配已有论文时，更新其 `local_path` 和 `has_fulltext`，而非跳过
+
+### 新增
+- **arXiv PDF 拉取**: `normalize_doi()` 识别 arXiv ID（如 `2301.12345`），直接从 `arxiv.org/pdf/` 下载
+- **文献详情"拉取 PDF"按钮**: 无 PDF 的论文在详情面板显示"拉取 PDF"操作按钮
+- **网络代理设置**: 设置页新增"网络代理"区域，支持 HTTP 代理和 EZproxy 配置
+- **代理自动应用**: `pdf_fetch._make_httpx_client()` 自动读取 `data/settings.json` 中的代理设置
+
+### 文件变更
+- `server.py`: 审计端点前移 + fetch-pdf 更新已有论文 + 新增 `/api/settings` 端点
+- `app/services/pdf_fetch.py`: arXiv 快速路径 + 代理设置读取 + `normalize_doi` arXiv 支持
+- `nexus-ui/src/api/client.ts`: `fetchPdf` 120s 超时 + 新增 `settingsApi`
+- `nexus-ui/src/pages/PaperLibraryPage.tsx`: 详情面板"拉取 PDF"按钮
+- `nexus-ui/src/pages/SettingsPage.tsx`: 网络代理设置 UI
+
 ## v4.6.0 (2026-07-05) — 话题管理 (Paper Topics)
 
 ### 新增
