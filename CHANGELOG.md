@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.6.3 (2026-07-05) — arXiv PDF 拉取修复
+
+### 修复
+- **arXiv PDF 拉取失败**: Crossref 标题查询将 arXiv ID 错误匹配到无关 DOI，导致 arXiv 快速路径被跳过；arXiv ID 现在跳过 Crossref 查询
+- **arXiv 下载 SSL 错误**: httpx 通过代理下载 arXiv PDF 时 SSL 握手失败；改用 urllib 兼容代理环境
+- **arXiv 超时优化**: 下载超时从 60s 缩短到 20s，失败时提示配置代理
+
 ## v4.6.2 (2026-07-05) — IDEA 库 UI 优化
 
 ### 改进
