@@ -714,8 +714,9 @@ def fetch_pdf(
             if not filename:
                 filename = re.sub(r"[^\w\-.]", "_", arxiv_id)
             pdf_path = os.path.join(output_dir, f"{filename}.pdf")
+            arxiv_timeout = min(timeout, 20)  # arXiv 下载用更短超时，快速失败
             try:
-                with _make_httpx_client(timeout=timeout, headers={
+                with _make_httpx_client(timeout=arxiv_timeout, headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 }) as client:
                     resp = client.get(pdf_url, follow_redirects=True)
@@ -726,9 +727,10 @@ def fetch_pdf(
                         _log.info(f"arXiv PDF 下载成功: {pdf_path} ({len(resp.content)/1024:.1f} KB)")
                         return {"success": True, "pdf_path": pdf_path, "source_url": pdf_url, "method": "arxiv_direct"}
                     else:
-                        return {"success": False, "error": f"arXiv 返回非 PDF 内容"}
+                        return {"success": False, "error": "arXiv 返回非 PDF 内容，可能需要配置代理访问 arxiv.org"}
             except Exception as e:
-                return {"success": False, "error": f"arXiv PDF 下载失败: {e}"}
+                proxy_hint = "（未检测到代理配置，请在「设置 → 网络代理」中配置 HTTP 代理）" if not _get_proxy_url() else ""
+                return {"success": False, "error": f"arXiv PDF 下载超时{proxy_hint}。arxiv.org 可能需要代理才能访问。原始错误: {e}"}
 
     os.makedirs(output_dir, exist_ok=True)
 
