@@ -1128,8 +1128,27 @@ export default function PaperLibraryPage() {
               ) : null;
             })()}
 
-            {/* 删除按钮 */}
-            <div className="pt-2 border-t" style={{ borderColor: "var(--border-color)" }}>
+            {/* PDF 拉取 + 删除按钮 */}
+            <div className="pt-2 border-t flex items-center gap-3" style={{ borderColor: "var(--border-color)" }}>
+              {!selected.local_path && (
+                <button onClick={async () => {
+                  if (!selected.doi && !selected.title) { alert("该文献无 DOI 或标题，无法拉取"); return; }
+                  try {
+                    const result = await papersApi.fetchPdf(selected.doi || "", selected.title || "");
+                    setPapers(prev => prev.map(p => p.id === selected.id ? { ...p, local_path: result.local_path, has_fulltext: result.has_fulltext } : p));
+                    alert("PDF 拉取成功！");
+                  } catch (err: any) { alert(`拉取失败: ${err?.message || err}`); }
+                }}
+                  className="text-xs transition-colors cursor-pointer"
+                  style={{ color: "var(--accent-blue)" }}
+                  onMouseEnter={e => (e.currentTarget.style.color = "var(--accent-green)")}
+                  onMouseLeave={e => (e.currentTarget.style.color = "var(--accent-blue)")}
+                >拉取 PDF</button>
+              )}
+              {selected.local_path && (
+                <span className="text-xs" style={{ color: "var(--accent-green)" }}>✓ 已有 PDF</span>
+              )}
+              <div className="flex-1" />
               <button onClick={() => handleDelete(selected.id)}
                 className="text-xs transition-colors cursor-pointer"
                 style={{ color: "var(--text-muted)" }}

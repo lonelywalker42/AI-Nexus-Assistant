@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { modelsApi, backupApi, systemApi, APP_VERSION, type ModelConfig, type BackupItem } from "../api/client";
+import { modelsApi, backupApi, systemApi, settingsApi, APP_VERSION, type ModelConfig, type BackupItem } from "../api/client";
 import { useAppName, setAppName, resetAppName } from "../hooks/useAppName";
 import { IconSun, IconBook } from "../components/Icons";
 
@@ -33,6 +33,11 @@ export default function SettingsPage() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+
+  // v4.6.1: 网络代理设置
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [proxyUrl, setProxyUrl] = useState("");
+  const [proxySaving, setProxySaving] = useState(false);
 
   // 通过 latest.json fallback 获取版本号
   const fetchVersionFromLatestJson = async (): Promise<{ version: string; notes: string } | null> => {
@@ -198,6 +203,7 @@ export default function SettingsPage() {
     modelsApi.list().then(setModels).catch(console.error);
     loadBackups();
     loadSearchStatus();
+    loadProxySettings();
   }, []);
 
   // 同步 appName 变化到 editingName
@@ -208,6 +214,7 @@ export default function SettingsPage() {
   const loadModels = () => modelsApi.list().then(setModels).catch(console.error);
   const loadBackups = () => backupApi.list().then(setBackups).catch(() => {});
   const loadSearchStatus = () => systemApi.searchServiceStatus().then(d => setSearchRunning(d.running)).catch(() => setSearchRunning(null));
+  const loadProxySettings = () => settingsApi.get().then(d => { setProxyEnabled(!!d.proxy_enabled); setProxyUrl(d.proxy_url || ""); }).catch(() => {});
 
   const handleSaveModel = async () => {
     if (!form.name || !form.base_url || !form.model_name) return;
@@ -604,6 +611,56 @@ export default function SettingsPage() {
             </div>
           </div>
         </details>
+      </div>
+
+      {/* v4.6.1: 网络代理设置 */}
+      <div className="glass-card p-5 space-y-4">
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>网络代理</h3>
+        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          配置代理以访问校园网资源（如 Elsevier、Springer 等闭源期刊 PDF 下载）。支持 HTTP 代理和 EZproxy。
+        </p>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={proxyEnabled} onChange={e => setProxyEnabled(e.target.checked)} className="rounded" />
+            <span className="text-sm" style={{ color: "var(--text-secondary)" }}>启用代理</span>
+          </label>
+        </div>
+        {proxyEnabled && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs mb-1 block" style={{ color: "var(--text-muted)" }}>
+                代理地址（HTTP 代理或 EZproxy 域名）
+              </label>
+              <input className="input-glass w-full" placeholder="例: http://127.0.0.1:7890 或 e.buaa.edu.cn"
+                value={proxyUrl} onChange={e => setProxyUrl(e.target.value)} />
+            </div>
+            <div className="text-xs space-y-1" style={{ color: "var(--text-muted)" }}>
+              <p><strong>HTTP 代理示例:</strong> <code>http://127.0.0.1:7890</code>（Clash/V2Ray 等本地代理）</p>
+              <p><strong>EZproxy 示例:</strong> <code>e.buaa.edu.cn</code>（北航 WebVPN，自动改写出版社域名）</p>
+              <p><strong>SOCKS5 示例:</strong> <code>socks5://127.0.0.1:1080</code></p>
+            </div>
+            <button className="btn-gradient btn-click text-xs py-2 px-4" disabled={proxySaving}
+              onClick={async () => {
+                setProxySaving(true);
+                try {
+                  await settingsApi.update({ proxy_enabled: true, proxy_url: proxyUrl });
+                  alert("代理设置已保存");
+                } catch (err) { alert(`保存失败: ${err}`); }
+                setProxySaving(false);
+              }}>
+              {proxySaving ? "保存中..." : "保存设置"}
+            </button>
+          </div>
+        )}
+        {!proxyEnabled && (
+          <button className="btn-ghost text-xs"
+            onClick={async () => {
+              await settingsApi.update({ proxy_enabled: false, proxy_url: "" });
+              setProxyUrl("");
+            }}>
+            清除代理设置
+          </button>
+        )}
       </div>
 
       {/* v3.6.0: MinerU PDF 转换 */}

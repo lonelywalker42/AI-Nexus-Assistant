@@ -347,6 +347,38 @@ def get_system_info():
     return {"db_size": db_size, "db_size_str": size_str, "db_path": str(db_path), "data_dir": str(data_dir)}
 
 
+@app.get("/api/settings")
+def get_settings():
+    """读取应用设置（从 data/settings.json）"""
+    settings_path = Path(data_dir) / "settings.json"
+    if settings_path.exists():
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"proxy_enabled": False, "proxy_url": ""}
+
+
+@app.put("/api/settings")
+def update_settings(data: dict):
+    """更新应用设置"""
+    settings_path = Path(data_dir) / "settings.json"
+    # 读取现有设置
+    existing = {}
+    if settings_path.exists():
+        try:
+            with open(settings_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+    # 合并更新
+    existing.update(data)
+    with open(settings_path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, ensure_ascii=False, indent=2)
+    return existing
+
+
 # ══════════════════════════════════════════════════════════════
 #  行为埋点 & 研究洞察
 # ══════════════════════════════════════════════════════════════
@@ -1469,6 +1501,29 @@ def search_papers_for_mention(q: str = "", limit: int = 10):
         return [{"id": p.id, "title": p.title,
                  "authors": _safe_authors(p.authors),
                  "year": p.year} for p in papers[:limit]]
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/audit")
+async def audit_papers_endpoint():
+    """返回所有论文的审计结果（必须在 {paper_id} 路由之前注册）"""
+    db = get_session()
+    try:
+        from app.services.audit_service import audit_papers
+        results = audit_papers(db)
+        return {"papers": results, "count": len(results)}
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/audit/stats")
+async def audit_stats_endpoint():
+    """返回审计统计"""
+    db = get_session()
+    try:
+        from app.services.audit_service import get_audit_stats
+        return get_audit_stats(db)
     finally:
         db.close()
 
@@ -4452,13 +4507,23 @@ async def fetch_paper_pdf(req: FetchPdfRequest):
     except (ValueError, TypeError):
         meta["year"] = 0
 
-    # DOI 去重
+    # DOI 去重 — 如果已有论文，更新其 PDF 路径而非跳过
     doi = str(meta.get("doi", "")).strip().lower()
     if doi:
         db = get_session()
         try:
             existing = db.query(Paper).filter(func.lower(Paper.doi) == doi).first()
             if existing:
+                # 更新已有论文的 PDF 路径和全文
+                existing.local_path = pdf_path
+                existing.has_fulltext = True
+                # 如果元数据更完整，也更新
+                if not existing.abstract and meta.get("abstract"):
+                    existing.abstract = str(meta["abstract"])[:10000]
+                if not existing.ai_summary and meta.get("abstract"):
+                    pass  # 不自动生成 AI 摘要，保持原样
+                db.commit()
+                db.refresh(existing)
                 return _paper_to_dict(existing)
         finally:
             db.close()
@@ -4868,28 +4933,6 @@ async def delete_paper_note(paper_id: str, note_id: str):
 
 # ── Phase 5: 元数据质量审计 ──────────────────────────────
 
-
-@app.get("/api/papers/audit")
-async def audit_papers_endpoint():
-    """返回所有论文的审计结果"""
-    db = get_session()
-    try:
-        from app.services.audit_service import audit_papers
-        results = audit_papers(db)
-        return {"papers": results, "count": len(results)}
-    finally:
-        db.close()
-
-
-@app.get("/api/papers/audit/stats")
-async def audit_stats_endpoint():
-    """返回审计统计"""
-    db = get_session()
-    try:
-        from app.services.audit_service import get_audit_stats
-        return get_audit_stats(db)
-    finally:
-        db.close()
 
 
 # ── Phase 6: 语义近邻推荐 + 工作区搜索 ──────────────────

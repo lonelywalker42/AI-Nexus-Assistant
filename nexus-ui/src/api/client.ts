@@ -124,6 +124,42 @@ export const authApi = {
 
 // ── 通用请求函数（带认证 + 自动刷新）────────────────────────
 
+async function requestWithTimeout<T>(path: string, options: RequestInit & { timeoutMs?: number }): Promise<T> {
+  await ensureBackend();
+  const isGet = !options?.method || options.method === "GET";
+  const headers: Record<string, string> = {
+    ...getAuthHeader(),
+    ...(isGet ? {} : { "Content-Type": "application/json" }),
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  const timeoutMs = options.timeoutMs || 30000;
+  let abortController: AbortController | null = null;
+  let mergedSignal: AbortSignal | undefined;
+  try {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    mergedSignal = options?.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal;
+  } catch {
+    abortController = new AbortController();
+    mergedSignal = abortController.signal;
+    setTimeout(() => abortController?.abort(), timeoutMs);
+  }
+  const { timeoutMs: _, ...fetchOptions } = options;
+  const res = await fetch(`${API_BASE}${path}`, { ...fetchOptions, headers, signal: mergedSignal });
+  if (res.status === 401) {
+    const refreshed = await authApi.refresh();
+    if (refreshed) {
+      const retryHeaders = { ...getAuthHeader(), ...(isGet ? {} : { "Content-Type": "application/json" }), ...(options?.headers as Record<string, string> || {}) };
+      const res2 = await fetch(`${API_BASE}${path}`, { ...fetchOptions, headers: retryHeaders, signal: mergedSignal });
+      if (!res2.ok) { const err = await res2.text(); throw new Error(`API Error ${res2.status}: ${err}`); }
+      return res2.json();
+    }
+  }
+  if (!res.ok) { const err = await res.text(); throw new Error(`API Error ${res.status}: ${err}`); }
+  return res.json();
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   await ensureBackend();
   const isGet = !options?.method || options.method === "GET";
@@ -640,9 +676,9 @@ export const papersApi = {
   searchMention: (q: string, limit: number = 10) =>
     request<{ id: string; title: string; authors: string[]; year: number }[]>(`/api/papers/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 
-  // v3.6.0 新增: 出版社 PDF 拉取
+  // v3.6.0 新增: 出版社 PDF 拉取（120s 超时，多级降级需要更长时间）
   fetchPdf: (doi: string, title: string = "") =>
-    request<PaperDetail>("/api/papers/fetch-pdf", { method: "POST", body: JSON.stringify({ doi, title }) }),
+    requestWithTimeout<PaperDetail>("/api/papers/fetch-pdf", { method: "POST", body: JSON.stringify({ doi, title }), timeoutMs: 120000 }),
   batchFetchPdf: (dois: string[]) =>
     request<{ results: { doi: string; paper_id?: string; status: string; error?: string }[]; total: number; success: number }>(
       "/api/papers/batch-fetch-pdf", { method: "POST", body: JSON.stringify({ dois }) }),
@@ -805,6 +841,21 @@ export interface BackupItem {
   size: number;
   time: string;
 }
+
+// ── 应用设置 ───────────────────────────────────────────────
+
+export interface AppSettings {
+  proxy_enabled?: boolean;
+  proxy_url?: string;
+  [key: string]: unknown;
+}
+
+export const settingsApi = {
+  get: () => request<AppSettings>("/api/settings"),
+  update: (data: AppSettings) => request<AppSettings>("/api/settings", {
+    method: "PUT", body: JSON.stringify(data),
+  }),
+};
 
 export const backupApi = {
   list: () => request<BackupItem[]>("/api/backups"),

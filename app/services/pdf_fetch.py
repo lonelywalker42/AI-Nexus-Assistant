@@ -21,17 +21,40 @@ from typing import Optional
 _log = logging.getLogger("nexus.pdf_fetch")
 
 
+def _get_proxy_url() -> Optional[str]:
+    """从 settings.json 读取代理设置。"""
+    try:
+        from app.utils.paths import get_data_dir
+        settings_path = get_data_dir() / "settings.json"
+        if settings_path.exists():
+            import json
+            with open(settings_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+            if settings.get("proxy_enabled") and settings.get("proxy_url"):
+                return settings["proxy_url"]
+    except Exception:
+        pass
+    return None
+
+
 def _make_httpx_client(**kwargs):
     """创建 httpx.Client，对外部请求尊重系统代理设置。
 
-    与 ScholarAIO 的 trust_env 逻辑一致：
-    - 默认 trust_env=True，尊重 HTTP_PROXY/HTTPS_PROXY 环境变量和系统代理
-    - 调用方可通过 proxy= 参数显式覆盖
+    代理优先级:
+      1. 调用方显式传入 proxy= 参数
+      2. settings.json 中的 proxy_url（如果 proxy_enabled=true）
+      3. 系统环境变量 HTTP_PROXY/HTTPS_PROXY（trust_env=True）
     """
     import httpx
     kwargs.setdefault("follow_redirects", True)
     kwargs.setdefault("timeout", 60)
-    kwargs.setdefault("trust_env", True)
+    if "proxy" not in kwargs:
+        proxy_url = _get_proxy_url()
+        if proxy_url:
+            kwargs["proxy"] = proxy_url
+            _log.info(f"使用代理: {proxy_url}")
+        else:
+            kwargs.setdefault("trust_env", True)
     return httpx.Client(**kwargs)
 
 
@@ -55,6 +78,8 @@ def normalize_doi(doi_or_url: str) -> str:
       - "doi:10.xxxx/yyy"    → "https://doi.org/10.xxxx/yyy"
       - "http://dx.doi.org/..." → "https://doi.org/..."
       - "DOI: 10.xxxx/yyy"  → "https://doi.org/10.xxxx/yyy"
+      - "arXiv:2301.12345"  → "https://arxiv.org/abs/2301.12345"
+      - "2301.12345"         → "https://arxiv.org/abs/2301.12345"
       - 带空格/换行的 DOI    → 自动清理
     """
     s = doi_or_url.strip()
@@ -71,10 +96,32 @@ def normalize_doi(doi_or_url: str) -> str:
         return s
     # 去掉 "doi:" 前缀
     s = re.sub(r"^doi:\s*", "", s, flags=re.IGNORECASE)
+    # 去掉 "arXiv:" 前缀
+    s = re.sub(r"^arXiv:\s*", "", s, flags=re.IGNORECASE)
+    # arXiv ID 格式 (如 2301.12345, 2301.12345v2, hep-th/0001001)
+    if re.match(r"^\d{4}\.\d{4,5}(v\d+)?$", s) or re.match(r"^[a-z-]+/\d{7}$", s):
+        return f"https://arxiv.org/abs/{s}"
     # 纯 DOI
     if re.match(r"^10\.\d{4,}/", s):
         return f"https://doi.org/{s}"
     return s
+
+
+def is_arxiv_url(url: str) -> bool:
+    """检测是否为 arXiv URL"""
+    return "arxiv.org" in url
+
+
+def extract_arxiv_id(url: str) -> str:
+    """从 arXiv URL 或 ID 中提取 arXiv ID"""
+    # https://arxiv.org/abs/2301.12345v2 → 2301.12345
+    m = re.search(r"arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5})(?:v\d+)?", url)
+    if m:
+        return m.group(1)
+    m = re.search(r"arxiv\.org/(?:abs|pdf)/([a-z-]+/\d{7})", url)
+    if m:
+        return m.group(1)
+    return ""
 
 
 # 阶段 2: 落地页抓取 → PDF 链接提取
@@ -656,6 +703,32 @@ def fetch_pdf(
     url = normalize_doi(doi_or_url)
     if not url:
         return {"success": False, "error": "无效的 DOI 或 URL，请检查输入格式（如 10.1234/abcd）"}
+
+    # arXiv 快速路径: 直接下载 arXiv PDF
+    if is_arxiv_url(url):
+        arxiv_id = extract_arxiv_id(url)
+        if arxiv_id:
+            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+            _log.info(f"检测到 arXiv 论文，直接下载: {pdf_url}")
+            os.makedirs(output_dir, exist_ok=True)
+            if not filename:
+                filename = re.sub(r"[^\w\-.]", "_", arxiv_id)
+            pdf_path = os.path.join(output_dir, f"{filename}.pdf")
+            try:
+                with _make_httpx_client(timeout=timeout, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                }) as client:
+                    resp = client.get(pdf_url, follow_redirects=True)
+                    resp.raise_for_status()
+                    if _is_pdf_bytes(resp.content):
+                        with open(pdf_path, "wb") as f:
+                            f.write(resp.content)
+                        _log.info(f"arXiv PDF 下载成功: {pdf_path} ({len(resp.content)/1024:.1f} KB)")
+                        return {"success": True, "pdf_path": pdf_path, "source_url": pdf_url, "method": "arxiv_direct"}
+                    else:
+                        return {"success": False, "error": f"arXiv 返回非 PDF 内容"}
+            except Exception as e:
+                return {"success": False, "error": f"arXiv PDF 下载失败: {e}"}
 
     os.makedirs(output_dir, exist_ok=True)
 
