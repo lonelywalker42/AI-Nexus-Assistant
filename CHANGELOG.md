@@ -1,5 +1,26 @@
 # Changelog
 
+## v4.6.0 (2026-07-05) — 话题管理 (Paper Topics)
+
+### 新增
+- **话题卡片功能**: 可将文献库中的论文按话题分组管理，同一话题内不允许重复论文，不同话题间允许重复
+- **话题 CRUD API**: `GET/POST/DELETE /api/paper-topics`，支持话题的创建、列表、详情（含论文列表）、删除
+- **话题论文管理 API**: `POST/DELETE /api/paper-topics/{id}/papers`，支持批量添加（自动去重）和单篇移除
+- **批量导入创建话题**: 文献检索结果批量导入后，弹出对话框提示是否创建话题卡片
+- **综述生成话题选择**: 生成综述弹窗中支持按话题一键选中所有论文
+- **文献库话题面板**: 工具栏新增"话题"按钮，展开话题卡片列表，点击进入话题视图
+- **话题内操作**: 话题视图中论文卡片支持"从话题移除"（仅从话题移除，不删除文献）
+- **添加到话题**: 非话题视图中论文卡片支持"添加到话题"操作
+
+### 文件变更
+- `app/models/paper.py`: 新增 `PaperResearchTopic`、`PaperResearchTopicLink` 模型
+- `app/models/__init__.py`: 注册新模型
+- `app/services/topic_service.py`: 新建 — 话题 CRUD + 论文关联服务
+- `server.py`: 新增 6 个话题 API 端点 + 批量导入返回 paper_ids
+- `nexus-ui/src/api/client.ts`: 新增 `paperTopicsApi`、`PaperTopic`/`PaperTopicDetail` 接口
+- `nexus-ui/src/pages/PaperLibraryPage.tsx`: 话题面板、话题视图、创建/添加话题对话框、综述话题选择
+- `nexus-ui/src/pages/LiteraturePage.tsx`: 批量导入后创建话题对话框
+
 ## v4.5.6 (2026-07-02) — 五子棋 AI 后端化 + 神经网络 MCTS
 
 ### 改进

@@ -5,7 +5,7 @@
  */
 
 export const API_BASE = "http://127.0.0.1:8765";
-export const APP_VERSION = "4.5.6";
+export const APP_VERSION = "4.6.0";
 const MAX_RETRIES = 30;
 const RETRY_DELAY = 1000;
 
@@ -734,6 +734,38 @@ export const papersApi = {
     }),
 };
 
+// ── 文献话题 (Paper Topics) ─────────────────────────────────
+
+export interface PaperTopic {
+  id: string;
+  name: string;
+  description: string;
+  paper_count: number;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface PaperTopicDetail extends PaperTopic {
+  papers: PaperDetail[];
+}
+
+export const paperTopicsApi = {
+  list: () => request<{ topics: PaperTopic[] }>("/api/paper-topics"),
+  get: (id: string) => request<PaperTopicDetail>(`/api/paper-topics/${id}`),
+  create: (data: { name: string; description?: string }) =>
+    request<PaperTopic>("/api/paper-topics", {
+      method: "POST", body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<{ status: string }>(`/api/paper-topics/${id}`, { method: "DELETE" }),
+  addPapers: (topicId: string, paperIds: string[]) =>
+    request<{ added: number; skipped: number }>(`/api/paper-topics/${topicId}/papers`, {
+      method: "POST", body: JSON.stringify({ paper_ids: paperIds }),
+    }),
+  removePaper: (topicId: string, paperId: string) =>
+    request<{ status: string }>(`/api/paper-topics/${topicId}/papers/${paperId}`, { method: "DELETE" }),
+};
+
 // ── arXiv ──────────────────────────────────────────────────
 
 export interface ArxivPaper {
@@ -879,7 +911,7 @@ export const enhancedSearchApi = {
       body: JSON.stringify({ groups, sources, max_results }),
     }),
   batchImport: (papers: Record<string, unknown>[]) =>
-    request<{ imported: number; skipped: number }>("/api/papers/batch-import", {
+    request<{ imported: number; skipped: number; paper_ids: string[] }>("/api/papers/batch-import", {
       method: "POST",
       body: JSON.stringify({ papers }),
     }),

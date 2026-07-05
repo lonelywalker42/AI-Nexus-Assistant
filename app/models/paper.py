@@ -79,3 +79,23 @@ class Paper(Base):
     tags: Mapped[str] = mapped_column(Text, default="[]")  # JSON 标签数组
     review_id: Mapped[str] = mapped_column(String(36), default="")  # 关联综述 ID
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class PaperResearchTopic(Base):
+    """文献研究话题（用户自定义的论文分组）"""
+    __tablename__ = "paper_research_topics"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)
+
+
+class PaperResearchTopicLink(Base):
+    """文献-话题关联（多对多，同一话题内不允许重复论文）"""
+    __tablename__ = "paper_research_topic_links"
+
+    topic_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    paper_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

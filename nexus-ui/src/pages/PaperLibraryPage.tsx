@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { papersApi, reviewsApi, type PaperDetail, type Review } from "../api/client";
+import { papersApi, reviewsApi, paperTopicsApi, type PaperDetail, type Review, type PaperTopic, type PaperTopicDetail } from "../api/client";
 import { IconSearch, IconStar, IconFile, IconUpload, IconX, IconDownload, IconClipboard, IconEdit, IconLink, IconRefresh, IconBook } from "../components/Icons";
 import { renderSimpleMarkdown } from "../utils/markdown";
 import { getTagColor } from "../utils/tagColors";
@@ -105,6 +105,17 @@ export default function PaperLibraryPage() {
   // v4.1.0: 分类系统
   const [categories, setCategories] = useState<{ id: string; name: string; parent_id: string; sort_order: number; is_system: boolean; system_key: string; paper_count: number }[]>([]);
 
+  // v4.6.0: 话题管理
+  const [topics, setTopics] = useState<PaperTopic[]>([]);
+  const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
+  const [activeTopicDetail, setActiveTopicDetail] = useState<PaperTopicDetail | null>(null);
+  const [showTopicPanel, setShowTopicPanel] = useState(false);
+  const [showCreateTopic, setShowCreateTopic] = useState(false);
+  const [newTopicName, setNewTopicName] = useState("");
+  const [newTopicDesc, setNewTopicDesc] = useState("");
+  const [showAddToTopic, setShowAddToTopic] = useState<string | null>(null); // paper_id
+  const [topicForReview, setTopicForReview] = useState<string | null>(null);
+
   const selected = papers.find(p => p.id === selectedId);
 
   const loadPapers = () => {
@@ -125,6 +136,7 @@ export default function PaperLibraryPage() {
   useEffect(() => { loadPapers(); }, [search, sortBy, sortOrder]);
   useEffect(() => { reviewsApi.list().then(setReviews).catch(console.error); }, []);
   useEffect(() => { papersApi.listCategories().then(setCategories).catch(console.error); }, []);
+  useEffect(() => { paperTopicsApi.list().then(d => setTopics(d.topics)).catch(console.error); }, []);
 
   // 加载引用
   useEffect(() => {
@@ -495,6 +507,88 @@ export default function PaperLibraryPage() {
     }
   };
 
+  // v4.6.0: 话题管理函数
+  const refreshTopics = () => {
+    paperTopicsApi.list().then(d => setTopics(d.topics)).catch(console.error);
+  };
+
+  const openTopic = async (topicId: string) => {
+    try {
+      const detail = await paperTopicsApi.get(topicId);
+      setActiveTopicId(topicId);
+      setActiveTopicDetail(detail);
+      setPapers(detail.papers);
+    } catch (err) {
+      alert(`加载话题失败: ${err}`);
+    }
+  };
+
+  const exitTopic = () => {
+    setActiveTopicId(null);
+    setActiveTopicDetail(null);
+    loadPapers();
+  };
+
+  const handleCreateTopic = async () => {
+    if (!newTopicName.trim()) return;
+    try {
+      await paperTopicsApi.create({ name: newTopicName.trim(), description: newTopicDesc.trim() });
+      setNewTopicName("");
+      setNewTopicDesc("");
+      setShowCreateTopic(false);
+      refreshTopics();
+    } catch (err) {
+      alert(`创建话题失败: ${err}`);
+    }
+  };
+
+  const handleDeleteTopic = async (topicId: string) => {
+    if (!confirm("确定删除此话题？话题中的文献不会被删除。")) return;
+    try {
+      await paperTopicsApi.delete(topicId);
+      if (activeTopicId === topicId) exitTopic();
+      refreshTopics();
+    } catch (err) {
+      alert(`删除话题失败: ${err}`);
+    }
+  };
+
+  const handleRemoveFromTopic = async (paperId: string) => {
+    if (!activeTopicId) return;
+    try {
+      await paperTopicsApi.removePaper(activeTopicId, paperId);
+      setPapers(prev => prev.filter(p => p.id !== paperId));
+      setActiveTopicDetail(prev => prev ? { ...prev, papers: prev.papers.filter(p => p.id !== paperId), paper_count: prev.paper_count - 1 } : prev);
+      refreshTopics();
+    } catch (err) {
+      alert(`移除失败: ${err}`);
+    }
+  };
+
+  const handleAddPaperToTopic = async (topicId: string) => {
+    if (!showAddToTopic) return;
+    try {
+      const result = await paperTopicsApi.addPapers(topicId, [showAddToTopic]);
+      if (result.skipped > 0) {
+        alert("该文献已在话题中");
+      }
+      setShowAddToTopic(null);
+      refreshTopics();
+    } catch (err) {
+      alert(`添加失败: ${err}`);
+    }
+  };
+
+  const handleSelectTopicForReview = async (topicId: string) => {
+    setTopicForReview(topicId);
+    try {
+      const detail = await paperTopicsApi.get(topicId);
+      setSelectedForReview(detail.papers.map(p => p.id));
+    } catch (err) {
+      alert(`加载话题失败: ${err}`);
+    }
+  };
+
   const openDetail = (id: string) => {
     if (batchMode) return;
     setSelectedId(id);
@@ -557,6 +651,10 @@ export default function PaperLibraryPage() {
         <input ref={bibtexInputRef} type="file" accept=".bib,.bibtex" className="hidden" onChange={handleImportBibtex} />
         <input ref={risInputRef} type="file" accept=".ris" className="hidden" onChange={handleImportRis} />
         <button className="btn-ghost text-xs py-2 px-3 flex items-center gap-1" onClick={handleAudit}><IconSearch size={12} /> 审计</button>
+        <button className={`btn-ghost text-xs py-2 px-3 flex items-center gap-1 ${showTopicPanel ? "!bg-blue-500 !text-white" : ""}`}
+          onClick={() => setShowTopicPanel(!showTopicPanel)}>
+          <IconBook size={12} /> 话题
+        </button>
         <button className={`btn-ghost text-xs py-2 ${batchMode ? "!bg-red-500 !text-white" : ""}`}
           onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()); }}>
           {batchMode ? "取消" : "批量"}
@@ -567,6 +665,59 @@ export default function PaperLibraryPage() {
           </button>
         )}
       </div>
+
+      {/* v4.6.0: 话题面板 */}
+      {showTopicPanel && !activeTopicId && (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {/* 创建话题卡片 */}
+          <div className="glass-card p-3 min-w-[140px] cursor-pointer hover:scale-[1.02] transition-all flex flex-col items-center justify-center gap-1"
+            style={{ border: "2px dashed var(--border-color)" }}
+            onClick={() => setShowCreateTopic(true)}>
+            <span className="text-lg" style={{ color: "var(--text-muted)" }}>+</span>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>新建话题</span>
+          </div>
+          {/* 话题卡片列表 */}
+          {topics.map(t => (
+            <div key={t.id}
+              className="glass-card p-3 min-w-[160px] cursor-pointer hover:scale-[1.02] transition-all flex flex-col gap-1.5 relative group"
+              onClick={() => openTopic(t.id)}>
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold line-clamp-1 flex-1" style={{ color: "var(--text-primary)" }}>{t.name}</h4>
+                <button className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-0.5 rounded hover:bg-red-100"
+                  onClick={(e) => { e.stopPropagation(); handleDeleteTopic(t.id); }}
+                  title="删除话题">
+                  <IconX size={12} style={{ color: "#ef4444" }} />
+                </button>
+              </div>
+              {t.description && <p className="text-[11px] line-clamp-2" style={{ color: "var(--text-muted)" }}>{t.description}</p>}
+              <span className="text-[10px] px-1.5 py-0.5 rounded self-start"
+                style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>
+                {t.paper_count} 篇
+              </span>
+            </div>
+          ))}
+          {topics.length === 0 && (
+            <p className="text-xs py-4" style={{ color: "var(--text-muted)" }}>暂无话题，点击左侧创建</p>
+          )}
+        </div>
+      )}
+
+      {/* v4.6.0: 话题内视图面包屑 */}
+      {activeTopicId && activeTopicDetail && (
+        <div className="flex items-center gap-2 text-xs">
+          <button className="cursor-pointer hover:underline" style={{ color: "var(--accent-blue)" }} onClick={exitTopic}>
+            文献库
+          </button>
+          <span style={{ color: "var(--text-muted)" }}>›</span>
+          <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{activeTopicDetail.name}</span>
+          <span style={{ color: "var(--text-muted)" }}>({activeTopicDetail.paper_count} 篇)</span>
+          {activeTopicDetail.description && (
+            <span className="ml-2" style={{ color: "var(--text-muted)" }}>— {activeTopicDetail.description}</span>
+          )}
+          <div className="flex-1" />
+          <button className="btn-ghost text-xs py-1 px-2" onClick={exitTopic}>返回文献库</button>
+        </div>
+      )}
 
       {/* 统计信息 */}
       <div className="flex items-center gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
@@ -624,6 +775,22 @@ export default function PaperLibraryPage() {
                         onChange={() => toggleBatchSelect(p.id)}
                         className="rounded" onClick={e => e.stopPropagation()} />
                     </div>
+                  )}
+
+                  {/* v4.6.0: 话题操作按钮 */}
+                  {activeTopicId && (
+                    <button className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-1 rounded hover:bg-red-100"
+                      onClick={(e) => { e.stopPropagation(); handleRemoveFromTopic(p.id); }}
+                      title="从话题移除">
+                      <IconX size={12} style={{ color: "#ef4444" }} />
+                    </button>
+                  )}
+                  {!activeTopicId && !batchMode && (
+                    <button className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-1 rounded hover:bg-blue-100"
+                      onClick={(e) => { e.stopPropagation(); setShowAddToTopic(p.id); }}
+                      title="添加到话题">
+                      <IconBook size={12} style={{ color: "var(--accent-blue)" }} />
+                    </button>
                   )}
 
                   {/* 标题 */}
@@ -986,6 +1153,30 @@ export default function PaperLibraryPage() {
 
             <input className="input-glass mb-3" placeholder="综述标题（可选）"
               value={reviewTitle} onChange={e => setReviewTitle(e.target.value)} />
+
+            {/* v4.6.0: 话题快捷选择 */}
+            {topics.length > 0 && (
+              <div className="mb-3">
+                <label className="text-xs mb-1 block" style={{ color: "var(--text-muted)" }}>按话题选择文献：</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {topics.map(t => (
+                    <button key={t.id}
+                      className={`text-xs px-2 py-1 rounded-lg cursor-pointer transition-all ${topicForReview === t.id ? "!bg-blue-500 !text-white" : ""}`}
+                      style={topicForReview === t.id ? {} : { background: "var(--hover-bg)", color: "var(--text-secondary)" }}
+                      onClick={() => {
+                        if (topicForReview === t.id) {
+                          setTopicForReview(null);
+                          setSelectedForReview([]);
+                        } else {
+                          handleSelectTopicForReview(t.id);
+                        }
+                      }}>
+                      {t.name} ({t.paper_count})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto space-y-1.5 mb-4" style={{ maxHeight: "300px" }}>
               {papers.map(p => (
@@ -1366,6 +1557,69 @@ export default function PaperLibraryPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* v4.6.0: 创建话题对话框 */}
+      {showCreateTopic && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="glass-card p-6 w-[400px]" style={{ background: "var(--glass-bg)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>新建话题</h3>
+              <button onClick={() => { setShowCreateTopic(false); setNewTopicName(""); setNewTopicDesc(""); }}
+                className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
+            </div>
+            <input className="input-glass mb-3" placeholder="话题名称" value={newTopicName}
+              onChange={e => setNewTopicName(e.target.value)} autoFocus />
+            <textarea className="input-glass mb-4 h-20 resize-none" placeholder="描述（可选）" value={newTopicDesc}
+              onChange={e => setNewTopicDesc(e.target.value)} />
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost text-xs" onClick={() => { setShowCreateTopic(false); setNewTopicName(""); setNewTopicDesc(""); }}>取消</button>
+              <button className="btn-gradient btn-click text-xs" onClick={handleCreateTopic}
+                disabled={!newTopicName.trim()}>
+                创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v4.6.0: 添加到话题对话框 */}
+      {showAddToTopic && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="glass-card p-6 w-[400px] max-h-[60vh] flex flex-col" style={{ background: "var(--glass-bg)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>添加到话题</h3>
+              <button onClick={() => setShowAddToTopic(null)}
+                className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-2 mb-4">
+              {topics.length === 0 ? (
+                <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>暂无话题，请先创建</p>
+              ) : (
+                topics.map(t => (
+                  <button key={t.id}
+                    className="w-full text-left glass-card p-3 cursor-pointer hover:scale-[1.01] transition-all flex items-center justify-between"
+                    onClick={() => handleAddPaperToTopic(t.id)}>
+                    <div>
+                      <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{t.name}</p>
+                      {t.description && <p className="text-[11px] line-clamp-1" style={{ color: "var(--text-muted)" }}>{t.description}</p>}
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded"
+                      style={{ background: "rgba(59,130,246,0.1)", color: "var(--accent-blue)" }}>
+                      {t.paper_count} 篇
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="flex justify-between items-center">
+              <button className="btn-ghost text-xs" onClick={() => { setShowAddToTopic(null); setShowCreateTopic(true); }}>
+                + 新建话题
+              </button>
+              <button className="btn-ghost text-xs" onClick={() => setShowAddToTopic(null)}>取消</button>
+            </div>
           </div>
         </div>
       )}

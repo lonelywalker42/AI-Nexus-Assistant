@@ -197,7 +197,7 @@ try:
     except Exception as _e:
         print(f"[server] 搜索服务启动异常: {_e}", flush=True)
 
-    app = FastAPI(title="AI Nexus Assistant API", version="4.5.6")
+    app = FastAPI(title="AI Nexus Assistant API", version="4.6.0")
 except Exception as e:
     print(f"[server] FATAL import/init error: {e}", flush=True)
     import traceback
@@ -2553,6 +2553,97 @@ def get_workspace_papers(workspace_id: str):
         db.close()
 
 
+# ── 文献话题 API ────────────────────────────────────────────────
+
+class PaperTopicCreate(BaseModel):
+    name: str
+    description: str = ""
+
+class PaperTopicAddPapers(BaseModel):
+    paper_ids: list[str]
+
+@app.get("/api/paper-topics")
+def list_paper_topics():
+    """获取所有话题列表"""
+    from app.services import topic_service
+    db = get_session()
+    try:
+        topics = topic_service.get_topics(db)
+        return {"topics": topics}
+    finally:
+        db.close()
+
+
+@app.post("/api/paper-topics")
+def create_paper_topic(body: PaperTopicCreate):
+    """创建话题"""
+    from app.services import topic_service
+    db = get_session()
+    try:
+        topic = topic_service.create_topic(db, body.name, body.description)
+        return topic
+    finally:
+        db.close()
+
+
+@app.get("/api/paper-topics/{topic_id}")
+def get_paper_topic(topic_id: str):
+    """获取话题详情（含论文列表）"""
+    from app.services import topic_service
+    db = get_session()
+    try:
+        topic = topic_service.get_topic_with_papers(db, topic_id)
+        if not topic:
+            raise HTTPException(status_code=404, detail="话题不存在")
+        return topic
+    finally:
+        db.close()
+
+
+@app.delete("/api/paper-topics/{topic_id}")
+def delete_paper_topic(topic_id: str):
+    """删除话题"""
+    from app.services import topic_service
+    db = get_session()
+    try:
+        ok = topic_service.delete_topic(db, topic_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="话题不存在")
+        return {"status": "ok"}
+    finally:
+        db.close()
+
+
+@app.post("/api/paper-topics/{topic_id}/papers")
+def add_papers_to_paper_topic(topic_id: str, body: PaperTopicAddPapers):
+    """批量添加论文到话题（去重）"""
+    from app.services import topic_service
+    db = get_session()
+    try:
+        # 先检查话题是否存在
+        topic = topic_service.get_topic(db, topic_id)
+        if not topic:
+            raise HTTPException(status_code=404, detail="话题不存在")
+        result = topic_service.add_papers_to_topic(db, topic_id, body.paper_ids)
+        return result
+    finally:
+        db.close()
+
+
+@app.delete("/api/paper-topics/{topic_id}/papers/{paper_id}")
+def remove_paper_from_paper_topic(topic_id: str, paper_id: str):
+    """从话题中移除单篇论文"""
+    from app.services import topic_service
+    db = get_session()
+    try:
+        ok = topic_service.remove_paper_from_topic(db, topic_id, paper_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="论文不在该话题中")
+        return {"status": "ok"}
+    finally:
+        db.close()
+
+
 @app.post("/api/papers/fts-rebuild")
 def fts_rebuild():
     """重建 FTS5 全文索引"""
@@ -3987,6 +4078,7 @@ def batch_import_papers(data: dict):
     try:
         imported = 0
         skipped = 0
+        imported_ids = []
         for p in papers_data:
             title = p.get("title", "")
             if not title:
@@ -4004,9 +4096,11 @@ def batch_import_papers(data: dict):
             if existing:
                 skipped += 1
                 continue
-            paper_service.save_from_search(db, p)
+            paper = paper_service.save_from_search(db, p)
+            if paper and hasattr(paper, 'id'):
+                imported_ids.append(paper.id)
             imported += 1
-        return {"imported": imported, "skipped": skipped}
+        return {"imported": imported, "skipped": skipped, "paper_ids": imported_ids}
     finally:
         db.close()
 

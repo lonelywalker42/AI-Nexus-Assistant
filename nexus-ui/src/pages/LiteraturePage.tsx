@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { searchApi, historyApi, chatApi, modelsApi, knowledgeApi, papersApi, enhancedSearchApi, type Paper, type HistoryRecord, type ModelConfig, type KnowledgeCard } from "../api/client";
+import { searchApi, historyApi, chatApi, modelsApi, knowledgeApi, papersApi, enhancedSearchApi, paperTopicsApi, type Paper, type HistoryRecord, type ModelConfig, type KnowledgeCard } from "../api/client";
 import { IconSearch, IconChevronRight, IconSparkle, IconBookmark, IconList, IconGrid, IconUpload, IconFilter, IconX } from "../components/Icons";
 import { renderSimpleMarkdown } from "../utils/markdown";
 
@@ -31,6 +31,11 @@ export default function LiteraturePage() {
   const [useBoolean, setUseBoolean] = useState(false);
   // Batch import
   const [batchImporting, setBatchImporting] = useState(false);
+  // v4.6.0: 批量导入后创建话题
+  const [showTopicCreateDialog, setShowTopicCreateDialog] = useState(false);
+  const [importedPaperIds, setImportedPaperIds] = useState<string[]>([]);
+  const [newTopicName, setNewTopicName] = useState("");
+  const [creatingTopic, setCreatingTopic] = useState(false);
   // Smart review sections
   const [customSections, setCustomSections] = useState(["研究背景", "研究现状", "方法对比", "研究趋势", "关键结论"]);
   const [showSectionEditor, setShowSectionEditor] = useState(false);
@@ -143,11 +148,36 @@ export default function LiteraturePage() {
     setBatchImporting(true);
     try {
       const res = await enhancedSearchApi.batchImport(poolResults as unknown as Record<string, unknown>[]) as any;
-      alert(`导入完成：${res.imported} 篇成功，${res.skipped} 篇已存在`);
+      // v4.6.0: 导入成功后提示创建话题
+      if (res.imported > 0 && res.paper_ids && res.paper_ids.length > 0) {
+        setImportedPaperIds(res.paper_ids);
+        setShowTopicCreateDialog(true);
+      } else {
+        alert(`导入完成：${res.imported} 篇成功，${res.skipped} 篇已存在`);
+      }
     } catch (err) {
       alert(`导入失败: ${err}`);
     }
     setBatchImporting(false);
+  };
+
+  // v4.6.0: 创建话题并关联已导入论文
+  const handleCreateTopicAfterImport = async () => {
+    if (!newTopicName.trim()) return;
+    setCreatingTopic(true);
+    try {
+      const topic = await paperTopicsApi.create({ name: newTopicName.trim() });
+      if (importedPaperIds.length > 0) {
+        await paperTopicsApi.addPapers(topic.id, importedPaperIds);
+      }
+      setShowTopicCreateDialog(false);
+      setNewTopicName("");
+      setImportedPaperIds([]);
+      alert(`话题"${topic.name}"已创建，包含 ${importedPaperIds.length} 篇文献`);
+    } catch (err) {
+      alert(`创建话题失败: ${err}`);
+    }
+    setCreatingTopic(false);
   };
 
   const toggleSource = (key: string) => {
@@ -1037,6 +1067,34 @@ export default function LiteraturePage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* v4.6.0: 批量导入后创建话题对话框 */}
+      {showTopicCreateDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="glass-card p-6 w-[400px]" style={{ background: "var(--glass-bg)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>创建话题卡片</h3>
+              <button onClick={() => { setShowTopicCreateDialog(false); setNewTopicName(""); setImportedPaperIds([]); }}
+                className="cursor-pointer" style={{ color: "var(--text-muted)" }}><IconX size={18} /></button>
+            </div>
+            <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+              导入完成：{importedPaperIds.length} 篇文献已入库。是否创建话题卡片？
+            </p>
+            <input className="input-glass mb-4" placeholder="输入话题名称" value={newTopicName}
+              onChange={e => setNewTopicName(e.target.value)} autoFocus
+              onKeyDown={e => { if (e.key === "Enter") handleCreateTopicAfterImport(); }} />
+            <div className="flex justify-end gap-2">
+              <button className="btn-ghost text-xs" onClick={() => { setShowTopicCreateDialog(false); setNewTopicName(""); setImportedPaperIds([]); }}>
+                跳过
+              </button>
+              <button className="btn-gradient btn-click text-xs" onClick={handleCreateTopicAfterImport}
+                disabled={!newTopicName.trim() || creatingTopic}>
+                {creatingTopic ? "创建中..." : "创建话题"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
