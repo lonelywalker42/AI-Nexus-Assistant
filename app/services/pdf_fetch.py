@@ -692,8 +692,9 @@ def fetch_pdf(
     """
     import httpx
 
-    # 如果输入看起来像纯标题（不是 DOI 也不是 URL），尝试 Crossref 查询
-    if not doi_or_url.startswith("http") and not re.match(r"^10\.\d{4,}/", doi_or_url):
+    # 如果输入看起来像纯标题（不是 DOI 也不是 URL 也不是 arXiv ID），尝试 Crossref 查询
+    is_arxiv_input = bool(re.match(r"^arXiv:\d{4}\.\d{4,5}", doi_or_url, re.IGNORECASE)) or bool(re.match(r"^\d{4}\.\d{4,5}(v\d+)?$", doi_or_url.strip()))
+    if not doi_or_url.startswith("http") and not re.match(r"^10\.\d{4,}/", doi_or_url) and not is_arxiv_input:
         _log.info("输入可能是论文标题，尝试 Crossref 查询 DOI...")
         crossref_doi = _try_crossref_title_to_doi(doi_or_url)
         if crossref_doi:
@@ -704,7 +705,7 @@ def fetch_pdf(
     if not url:
         return {"success": False, "error": "无效的 DOI 或 URL，请检查输入格式（如 10.1234/abcd）"}
 
-    # arXiv 快速路径: 直接下载 arXiv PDF
+    # arXiv 快速路径: 直接下载 arXiv PDF（使用 urllib，兼容代理环境下的 SSL）
     if is_arxiv_url(url):
         arxiv_id = extract_arxiv_id(url)
         if arxiv_id:
@@ -714,23 +715,24 @@ def fetch_pdf(
             if not filename:
                 filename = re.sub(r"[^\w\-.]", "_", arxiv_id)
             pdf_path = os.path.join(output_dir, f"{filename}.pdf")
-            arxiv_timeout = min(timeout, 20)  # arXiv 下载用更短超时，快速失败
+            arxiv_timeout = min(timeout, 20)
             try:
-                with _make_httpx_client(timeout=arxiv_timeout, headers={
+                import urllib.request
+                req = urllib.request.Request(pdf_url, headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                }) as client:
-                    resp = client.get(pdf_url, follow_redirects=True)
-                    resp.raise_for_status()
-                    if _is_pdf_bytes(resp.content):
+                })
+                with urllib.request.urlopen(req, timeout=arxiv_timeout) as resp:
+                    data = resp.read()
+                    if validate_pdf(data):
                         with open(pdf_path, "wb") as f:
-                            f.write(resp.content)
-                        _log.info(f"arXiv PDF 下载成功: {pdf_path} ({len(resp.content)/1024:.1f} KB)")
+                            f.write(data)
+                        _log.info(f"arXiv PDF 下载成功: {pdf_path} ({len(data)/1024:.1f} KB)")
                         return {"success": True, "pdf_path": pdf_path, "source_url": pdf_url, "method": "arxiv_direct"}
                     else:
                         return {"success": False, "error": "arXiv 返回非 PDF 内容，可能需要配置代理访问 arxiv.org"}
             except Exception as e:
                 proxy_hint = "（未检测到代理配置，请在「设置 → 网络代理」中配置 HTTP 代理）" if not _get_proxy_url() else ""
-                return {"success": False, "error": f"arXiv PDF 下载超时{proxy_hint}。arxiv.org 可能需要代理才能访问。原始错误: {e}"}
+                return {"success": False, "error": f"arXiv PDF 下载失败{proxy_hint}。原始错误: {e}"}
 
     os.makedirs(output_dir, exist_ok=True)
 
