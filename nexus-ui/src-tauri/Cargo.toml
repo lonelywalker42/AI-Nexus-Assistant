@@ -1,6 +1,6 @@
 [package]
 name = "nexus-ui"
-version = "4.6.1"
+version = "4.6.2"
 description = "AI Nexus Assistant"
 authors = ["lonelywalker42"]
 edition = "2021"
