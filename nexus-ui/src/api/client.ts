@@ -135,7 +135,7 @@ export const authApi = {
 // ── 通用请求函数（带认证 + 自动刷新）────────────────────────
 
 async function requestWithTimeout<T>(path: string, options: RequestInit & { timeoutMs?: number }): Promise<T> {
-  await ensureBackend();
+  await ensureBackendReady();
   const isGet = !options?.method || options.method === "GET";
   const headers: Record<string, string> = {
     ...getAuthHeader(),
