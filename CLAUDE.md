@@ -379,30 +379,8 @@ cd nexus-ui && npx tauri build      # Build Tauri app
 cp nexus-ui/src-tauri/target/release/nexus-ui.exe release/AI-Nexus-Assistant.exe
 cp nexus-ui/src-tauri/target/release/nexus_ui_lib.dll release/nexus_ui_lib.dll
 
-# Sign installers (必须！updater 需要 Ed25519 签名验证)
-cd nexus-ui
-npx tauri signer sign -f ~/.tauri/nexus.key -p "" "src-tauri/target/release/bundle/nsis/AI Nexus Assistant_X.Y.Z_x64-setup.exe"
-npx tauri signer sign -f ~/.tauri/nexus.key -p "" "src-tauri/target/release/bundle/msi/AI Nexus Assistant_X.Y.Z_x64_en-US.msi"
-cd ..
-
-# Generate latest.json (用 Python 生成，确保中文正确编码)
-python -c "
-import json, datetime
-nsis_sig = open('nexus-ui/src-tauri/target/release/bundle/nsis/...setup.exe.sig').read().strip()
-data = {
-    'version': 'X.Y.Z',
-    'notes': '更新说明',
-    'pub_date': datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
-    'platforms': {
-        'windows-x86_64': {
-            'signature': nsis_sig,
-            'url': 'https://github.com/lonelywalker42/AI-Nexus-Assistant/releases/download/vX.Y.Z/AI.Nexus.Assistant_X.Y.Z_x64-setup.exe'
-        }
-    }
-}
-with open('release/latest.json', 'w', encoding='utf-8') as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
-"
+# Generate latest.json (自动签名 + 生成，需要 ~/.tauri/nexus.key)
+python build_latest_json.py
 
 # Publish (⚠️ 必须包含 latest.json！)
 git tag vX.Y.Z && git push origin main && git push origin vX.Y.Z

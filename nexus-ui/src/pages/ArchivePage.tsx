@@ -169,11 +169,10 @@ export default function ArchivePage() {
   const loadWeekData = useCallback(async (days: string[]) => {
     setLoading(true);
     try {
-      // 并行请求 7 天任务
-      const taskResults = await Promise.all(days.map(d => tasksApi.list(d).catch(() => [] as Task[])));
+      const taskResults = await tasksApi.weekTasks(days[0]).catch(() => ({} as Record<string, Task[]>));
       const tasksMap = new Map<string, Task[]>();
-      days.forEach((d, i) => {
-        tasksMap.set(d, taskResults[i].filter(t => t.completed));
+      days.forEach((d) => {
+        tasksMap.set(d, (taskResults[d] || []).filter(t => t.completed));
       });
       setWeekTasks(tasksMap);
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { experimentsApi, type Experiment, type ExperimentResult } from "../api/client";
 import { renderSimpleMarkdown } from "../utils/markdown";
 
@@ -50,8 +50,20 @@ export default function ExperimentPage() {
   const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
   const [showCompare, setShowCompare] = useState(false);
 
-  const loadExperiments = () => experimentsApi.list(search, statusFilter).then(setExperiments).catch(console.error);
-  useEffect(() => { loadExperiments(); }, [search, statusFilter]);
+  const experimentRequestId = useRef(0);
+  const loadExperiments = (signal?: AbortSignal) => {
+    const requestId = ++experimentRequestId.current;
+    return experimentsApi.list(search, statusFilter, signal).then(result => {
+      if (requestId === experimentRequestId.current) setExperiments(result);
+    }).catch(error => {
+      if (!(error instanceof DOMException && error.name === "AbortError")) console.error(error);
+    });
+  };
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => { void loadExperiments(controller.signal); }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [search, statusFilter]);
 
   const active = experiments.find(e => e.id === activeId);
 

@@ -22,7 +22,7 @@ if hasattr(sys.stderr, "reconfigure"):
 import json
 import asyncio
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 from pathlib import Path
 import builtins
@@ -131,8 +131,10 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
+    from sqlalchemy import func
+    from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
-    from app.db import init_db, get_session
+    from app.db import init_db, get_session, get_database_path
     from app.models import Task, WeeklyPlan, Paper, ModelConfig, SearchHistory
     from app.models import Experiment, ExperimentResult
     from app.models import KnowledgeCard, Tag, CardTag
@@ -151,9 +153,8 @@ try:
     def _auto_migrate():
         import sqlite3
         try:
-            from app.utils.paths import get_data_dir
-            db_path = get_data_dir() / "nexus.db"
-            if not db_path.exists():
+            db_path = get_database_path()
+            if db_path is None or not db_path.exists():
                 return
             conn = sqlite3.connect(str(db_path))
 
@@ -211,6 +212,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/api/health")
+def health_check():
+    """Cheap readiness probe; avoids using the dashboard as a health check."""
+    return {"status": "ok"}
 
 
 # ── JWT 认证依赖 ─────────────────────────────────────────────
@@ -336,15 +343,20 @@ def get_dashboard():
 @app.get("/api/system/info")
 def get_system_info():
     """系统信息（数据库大小等）"""
-    db_path = Path(data_dir) / "nexus.db"
-    db_size = db_path.stat().st_size if db_path.exists() else 0
+    db_path = get_database_path()
+    db_size = db_path.stat().st_size if db_path and db_path.exists() else 0
     if db_size > 1024 * 1024:
         size_str = f"{db_size / 1024 / 1024:.1f} MB"
     elif db_size > 1024:
         size_str = f"{db_size / 1024:.1f} KB"
     else:
         size_str = f"{db_size} B"
-    return {"db_size": db_size, "db_size_str": size_str, "db_path": str(db_path), "data_dir": str(data_dir)}
+    return {
+        "db_size": db_size,
+        "db_size_str": size_str,
+        "db_path": str(db_path) if db_path else ":memory:",
+        "data_dir": str(data_dir),
+    }
 
 
 @app.get("/api/settings")
@@ -656,13 +668,12 @@ def get_week_tasks(start: str = ""):
         else:
             start_date = date.fromisoformat(start)
         dates = [(start_date + timedelta(days=i)).isoformat() for i in range(7)]
-        result = {}
-        for d in dates:
-            tasks = task_service.get_all_todos_by_date(db, d)
-            result[d] = [{
-                "id": t.id, "content": t.content, "completed": t.completed,
-                "priority": t.priority, "category": t.category,
-            } for t in tasks]
+        result = {d: [] for d in dates}
+        tasks = db.query(Task).filter(Task.date.in_(dates)).order_by(
+            Task.date, Task.sort_order, Task.created_at
+        ).all()
+        for t in tasks:
+            result[t.date].append(_task_to_dict(t))
         return result
     finally:
         db.close()
@@ -1490,7 +1501,7 @@ def search_papers_for_mention(q: str = "", limit: int = 10):
     """供 @引用使用的文献搜索"""
     db = get_session()
     try:
-        papers = paper_service.get_papers(db, search=q)
+        papers = paper_service.get_papers(db, search=q, limit=max(1, min(limit, 50)))
         def _safe_authors(s):
             if not s:
                 return []
@@ -1500,7 +1511,28 @@ def search_papers_for_mention(q: str = "", limit: int = 10):
                 return []
         return [{"id": p.id, "title": p.title,
                  "authors": _safe_authors(p.authors),
-                 "year": p.year} for p in papers[:limit]]
+                 "year": p.year} for p in papers]
+    finally:
+        db.close()
+
+
+@app.get("/api/papers/categories")
+def list_paper_categories():
+    """获取所有论文分类。"""
+    from app.models.paper import PaperCategory, PaperCategoryLink
+    db = get_session()
+    try:
+        cats = db.query(PaperCategory).order_by(PaperCategory.sort_order).all()
+        counts = dict(
+            db.query(PaperCategoryLink.category_id, func.count(PaperCategoryLink.paper_id))
+            .group_by(PaperCategoryLink.category_id)
+            .all()
+        )
+        return [{
+            "id": c.id, "name": c.name, "parent_id": c.parent_id,
+            "sort_order": c.sort_order, "is_system": c.is_system,
+            "system_key": c.system_key, "paper_count": counts.get(c.id, 0),
+        } for c in cats]
     finally:
         db.close()
 
@@ -1786,15 +1818,11 @@ async def import_paper_pdf(request: Request):
 
     try:
         # 第一级：PyMuPDF 内置元数据 + 正则提取
-        from app.services.pdf_service import extract_pdf_metadata
-        meta = extract_pdf_metadata(tmp_path)
+        from app.services.pdf_service import extract_pdf_metadata, extract_pdf_text
+        meta = await run_in_threadpool(extract_pdf_metadata, tmp_path)
 
         # 提取全文文本用于 AI 兜底
-        doc = fitz.open(tmp_path)
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        doc.close()
+        text = await run_in_threadpool(extract_pdf_text, tmp_path)
 
         if not text.strip():
             raise HTTPException(400, "PDF 无法提取文本（可能是扫描版或纯图片 PDF）")
@@ -1818,7 +1846,7 @@ async def import_paper_pdf(request: Request):
 返回格式：
 {"title":"...","authors":["FirstName LastName", "..."],"year":2024,"journal":"...","doi":"...","abstract":"...","summary":"中文摘要..."}"""
 
-            result = ai.chat([
+            result = await run_in_threadpool(ai.chat, [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text[:8000]}
             ])
@@ -1831,7 +1859,9 @@ async def import_paper_pdf(request: Request):
 
 文本内容：
 {text[:6000]}"""
-                result2 = ai.chat([{"role": "user", "content": retry_prompt}])
+                result2 = await run_in_threadpool(
+                    ai.chat, [{"role": "user", "content": retry_prompt}]
+                )
                 ai_meta = _parse_ai_json(result2.get("content", ""))
 
             # 合并：AI 结果补充缺失字段（不覆盖已提取的）
@@ -1999,15 +2029,11 @@ async def extract_paper_metadata(request: Request):
         f.write(file_bytes)
 
     try:
-        from app.services.pdf_service import extract_pdf_metadata
-        meta = extract_pdf_metadata(str(temp_path))
+        from app.services.pdf_service import extract_pdf_metadata, extract_pdf_text
+        meta = await run_in_threadpool(extract_pdf_metadata, str(temp_path))
 
         # 提取全文文本
-        doc = fitz.open(str(temp_path))
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        doc.close()
+        text = await run_in_threadpool(extract_pdf_text, str(temp_path))
 
         # 确保 authors 是列表
         if isinstance(meta.get("authors"), str):
@@ -2073,14 +2099,9 @@ async def confirm_paper_import(body: dict):
         raise HTTPException(404, "临时文件已过期，请重新上传")
 
     try:
-        import fitz
-
         # 读取全文文本
-        doc = fitz.open(str(temp_path))
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        doc.close()
+        from app.services.pdf_service import extract_pdf_text
+        text = await run_in_threadpool(extract_pdf_text, str(temp_path), 100000)
 
         # 标题相似度去重
         title = meta.get("title", "").strip()
@@ -2144,7 +2165,7 @@ async def confirm_paper_import(body: dict):
 
 
 @app.post("/api/papers/lookup-metadata")
-async def lookup_paper_metadata(body: dict):
+def lookup_paper_metadata(body: dict):
     """查询 OpenAlex/Crossref 元数据（用于导入确认对话框的"自动填充"）"""
     doi = body.get("doi", "").strip()
     title = body.get("title", "").strip()
@@ -2198,27 +2219,6 @@ async def lookup_paper_metadata(body: dict):
             pass
 
     return {"metadata": result}
-
-
-@app.get("/api/papers/categories")
-def list_paper_categories():
-    """获取所有论文分类"""
-    from app.models.paper import PaperCategory, PaperCategoryLink
-    db = get_session()
-    try:
-        cats = db.query(PaperCategory).order_by(PaperCategory.sort_order).all()
-        result = []
-        for c in cats:
-            # 计算分类下的论文数
-            count = db.query(PaperCategoryLink).filter(PaperCategoryLink.category_id == c.id).count()
-            result.append({
-                "id": c.id, "name": c.name, "parent_id": c.parent_id,
-                "sort_order": c.sort_order, "is_system": c.is_system,
-                "system_key": c.system_key, "paper_count": count,
-            })
-        return result
-    finally:
-        db.close()
 
 
 @app.post("/api/papers/categories")
@@ -2843,10 +2843,10 @@ async def generate_review(body: ReviewGenerate):
 
     async def generate():
         full_content = ""
-        for chunk in ai.stream_chat([
+        async for chunk in iterate_in_threadpool(ai.stream_chat([
             {"role": "system", "content": "你是学术文献综述写作助手，擅长撰写结构化的文献综述。"},
             {"role": "user", "content": prompt}
-        ]):
+        ])):
             if chunk["type"] == "content":
                 full_content += chunk["data"]
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
@@ -3045,7 +3045,9 @@ async def stream_chat(body: ChatRequest):
         full_content = ""
         total_tokens = 0
 
-        for chunk in ai.stream_chat(messages, model_id=body.model_id):
+        async for chunk in iterate_in_threadpool(
+            ai.stream_chat(messages, model_id=body.model_id)
+        ):
             data = json.dumps(chunk, ensure_ascii=False)
             yield f"data: {data}\n\n"
             if chunk["type"] == "thinking":
@@ -3311,9 +3313,8 @@ def export_db_file():
     import io
     from fastapi.responses import StreamingResponse
 
-    from app.utils.paths import get_data_dir
-    db_path = get_data_dir() / "nexus.db"
-    if not db_path.exists():
+    db_path = get_database_path()
+    if db_path is None or not db_path.exists():
         raise HTTPException(404, "数据库文件不存在")
 
     # 先 checkpoint，尽量减小 WAL
@@ -3725,18 +3726,15 @@ async def import_pdf(request: Request):
         tmp_path = tmp.name
 
     try:
-        doc = fitz.open(tmp_path)
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        doc.close()
+        from app.services.pdf_service import extract_pdf_text
+        text = await run_in_threadpool(extract_pdf_text, tmp_path)
 
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         title = lines[0][:200] if lines else "导入的PDF"
 
         # 用 AI 生成摘要和关键点
         ai = get_ai()
-        summary_result = ai.chat([
+        summary_result = await run_in_threadpool(ai.chat, [
             {"role": "system", "content": "你是一个学术文献分析助手。请从以下文本中提取：1) 简短摘要(200字以内) 2) 3-5个关键点 3) 5个标签关键词。用JSON格式返回：{\"summary\": \"...\", \"key_points\": [...], \"tags\": [...]}"},
             {"role": "user", "content": text[:3000]}
         ])
@@ -3783,7 +3781,7 @@ async def import_pdf(request: Request):
 
 
 @app.post("/api/knowledge/import/md")
-async def import_markdown(data: dict):
+def import_markdown(data: dict):
     """导入 Markdown 文件，按 ## 标题分割生成知识卡片"""
     content = data.get("content", "")
     filename = data.get("filename", "导入的Markdown")
@@ -4472,7 +4470,7 @@ async def fetch_paper_pdf(req: FetchPdfRequest):
     pdf_dir = str(data_dir / "pdfs")
 
     # 拉取 PDF（内部已有重试和 Unpaywall 兜底）
-    result = fetch_pdf(req.doi or req.title, pdf_dir, timeout=60)
+    result = await run_in_threadpool(fetch_pdf, req.doi or req.title, pdf_dir, 60)
     if not result.get("success"):
         error_msg = result.get("error", "PDF 拉取失败")
         # 根据错误类型返回更合适的 HTTP 状态码
@@ -4492,7 +4490,7 @@ async def fetch_paper_pdf(req: FetchPdfRequest):
     # 提取元数据（PDF 已保存到磁盘，元数据提取失败不应阻断入库）
     meta = {}
     try:
-        meta = extract_pdf_metadata(pdf_path) or {}
+        meta = await run_in_threadpool(extract_pdf_metadata, pdf_path) or {}
     except Exception as e:
         logging.warning(f"PDF 元数据提取失败（文件已保存）: {e}")
 
@@ -4577,9 +4575,9 @@ async def batch_fetch_papers(req: BatchFetchPdfRequest):
         if not doi:
             continue
         try:
-            result = fetch_pdf(doi, pdf_dir, timeout=60)
+            result = await run_in_threadpool(fetch_pdf, doi, pdf_dir, 60)
             if result.get("success"):
-                meta = extract_pdf_metadata(result["pdf_path"])
+                meta = await run_in_threadpool(extract_pdf_metadata, result["pdf_path"])
                 if not meta.get("doi"):
                     meta["doi"] = doi
                 # 入库
@@ -4615,7 +4613,7 @@ async def refetch_paper_pdf(paper_id: str):
 
         from app.services.pdf_fetch import fetch_pdf
         pdf_dir = str(data_dir / "pdfs")
-        result = fetch_pdf(doi_or_url, pdf_dir, timeout=60)
+        result = await run_in_threadpool(fetch_pdf, doi_or_url, pdf_dir, 60)
 
         if not result.get("success"):
             error_msg = result.get("error", "PDF 拉取失败")
@@ -4642,7 +4640,7 @@ async def refetch_paper_pdf(paper_id: str):
 
 
 @app.get("/api/system/mineru-status")
-async def mineru_status():
+def mineru_status():
     """返回 MinerU 安装状态"""
     from app.services.pdf_converter import check_mineru_available, get_mineru_version
     available = check_mineru_available()
@@ -4655,7 +4653,7 @@ async def install_mineru_endpoint():
     """后台安装 MinerU (pip install magic-pdf[full])"""
     import subprocess
 
-    async def _install():
+    def _install():
         proc = subprocess.Popen(
             [sys.executable, "-m", "pip", "install", "magic-pdf[full]"],
             stdout=subprocess.PIPE,
@@ -4683,7 +4681,7 @@ async def convert_paper_markdown(paper_id: str):
 
         from app.services.pdf_converter import convert_pdf_to_markdown
         output_dir = os.path.join(os.path.dirname(paper.local_path), "markdown")
-        result = convert_pdf_to_markdown(paper.local_path, output_dir)
+        result = await run_in_threadpool(convert_pdf_to_markdown, paper.local_path, output_dir)
 
         if not result.get("success"):
             raise HTTPException(422, result.get("error", "转换失败"))
@@ -4703,7 +4701,7 @@ async def search_arxiv_papers(q: str = "", max_results: int = 20):
         return {"papers": [], "count": 0}
 
     from app.services.arxiv_service import search_arxiv
-    papers = search_arxiv(q, max_results)
+    papers = await run_in_threadpool(search_arxiv, q, max_results)
     return {"papers": papers, "count": len(papers)}
 
 
@@ -4719,7 +4717,7 @@ async def import_from_arxiv_endpoint(request: Request):
     from app.services.pdf_service import extract_pdf_metadata
 
     # 搜索获取元数据
-    papers = search_arxiv(f"id_list:{arxiv_id}", max_results=1)
+    papers = await run_in_threadpool(search_arxiv, f"id_list:{arxiv_id}", 1)
     if not papers:
         raise HTTPException(404, f"未找到 arXiv 论文: {arxiv_id}")
 
@@ -4739,10 +4737,10 @@ async def import_from_arxiv_endpoint(request: Request):
 
     # 下载 PDF
     pdf_dir = str(data_dir / "pdfs")
-    result = download_arxiv_pdf(arxiv_id, pdf_dir)
+    result = await run_in_threadpool(download_arxiv_pdf, arxiv_id, pdf_dir)
     if result.get("success"):
         # 用 PyMuPDF 补充元数据
-        pdf_meta = extract_pdf_metadata(result["pdf_path"])
+        pdf_meta = await run_in_threadpool(extract_pdf_metadata, result["pdf_path"])
         for key in ["abstract", "journal"]:
             if not paper_data.get(key) and pdf_meta.get(key):
                 paper_data[key] = pdf_meta[key]
@@ -4817,7 +4815,7 @@ class PaperNoteUpdate(BaseModel):
 
 
 @app.get("/api/papers/{paper_id}/notes")
-async def get_paper_notes(paper_id: str):
+def get_paper_notes(paper_id: str):
     """获取论文笔记列表"""
     db = get_session()
     try:
@@ -4846,7 +4844,7 @@ async def get_paper_notes(paper_id: str):
 
 
 @app.post("/api/papers/{paper_id}/notes")
-async def create_paper_note(paper_id: str, body: PaperNoteCreate):
+def create_paper_note(paper_id: str, body: PaperNoteCreate):
     """添加论文笔记"""
     db = get_session()
     try:
@@ -4875,7 +4873,7 @@ async def create_paper_note(paper_id: str, body: PaperNoteCreate):
 
 
 @app.put("/api/papers/{paper_id}/notes/{note_id}")
-async def update_paper_note(paper_id: str, note_id: str, body: PaperNoteUpdate):
+def update_paper_note(paper_id: str, note_id: str, body: PaperNoteUpdate):
     """更新论文笔记"""
     db = get_session()
     try:
@@ -4907,7 +4905,7 @@ async def update_paper_note(paper_id: str, note_id: str, body: PaperNoteUpdate):
 
 
 @app.delete("/api/papers/{paper_id}/notes/{note_id}")
-async def delete_paper_note(paper_id: str, note_id: str):
+def delete_paper_note(paper_id: str, note_id: str):
     """删除论文笔记"""
     db = get_session()
     try:
@@ -4934,12 +4932,11 @@ async def delete_paper_note(paper_id: str, note_id: str):
 # ── Phase 5: 元数据质量审计 ──────────────────────────────
 
 
-
 # ── Phase 6: 语义近邻推荐 + 工作区搜索 ──────────────────
 
 
 @app.get("/api/papers/{paper_id}/neighbors")
-async def paper_neighbors(paper_id: str, top_k: int = 10):
+def paper_neighbors(paper_id: str, top_k: int = 10):
     """语义近邻推荐（基于 FAISS 向量索引）"""
     db = get_session()
     try:
@@ -4963,7 +4960,7 @@ async def paper_neighbors(paper_id: str, top_k: int = 10):
 
 
 @app.get("/api/workspaces/{workspace_id}/search")
-async def workspace_search(workspace_id: str, q: str = ""):
+def workspace_search(workspace_id: str, q: str = ""):
     """限定在工作区内搜索"""
     if not q.strip():
         return {"papers": [], "count": 0}

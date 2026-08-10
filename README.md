@@ -103,16 +103,15 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 git clone --recursive https://github.com/lonelywalker42/AI-Nexus-Assistant.git
 cd AI-Nexus-Assistant
 
-# Python 依赖
-pip install -e .
-pip install fastapi uvicorn openai anthropic httpx
-pip install python-docx              # DOCX 导出
+# Python 依赖（按前端选择）
+pip install -e ".[desktop]"          # PySide6 版
+pip install -e ".[tauri]"            # Tauri/FastAPI 后端
 
 # 前端依赖
-cd nexus-ui && npm install
+cd nexus-ui && npm ci
 
 # 联网搜索(可选, 需要 Node.js)
-cd open-webSearch && npm install && npm run build
+cd open-webSearch && npm ci && npm run build
 
 # 开发模式(两个终端)
 python server.py                    # 后端 :8765
@@ -122,13 +121,17 @@ cd nexus-ui && npm run tauri dev    # Tauri 前端
 ### 构建
 
 ```bash
-python build_server.py              # 构建 Python sidecar exe
-python build_tauri.py               # 完整构建(Tauri + sidecar + 前端)
+# Windows 隔离构建环境 + 便携 EXE
+powershell -ExecutionPolicy Bypass -File scripts/windows/setup-build-env.ps1
+powershell -ExecutionPolicy Bypass -File scripts/windows/build-release.ps1 -CleanOutputs
+
+# Windows MSI + NSIS 安装包（首次需要联网下载并缓存 WiX/NSIS）
+powershell -ExecutionPolicy Bypass -File scripts/windows/build-release.ps1 -CleanOutputs -PackageMode installers
 ```
 
 ### 便携版
 
-下载 `release/AI-Nexus-Assistant.exe` + `release/nexus_ui_lib.dll`，同目录运行。
+核心产物是 `release/AI-Nexus-Assistant.exe`。`open-webSearch/` 用于可选的联网搜索功能，目标电脑仍需 Node.js 运行时；构建模式为 `installers` 时，MSI 与 NSIS setup 也会复制到 `release/`。
 
 ## 项目结构
 

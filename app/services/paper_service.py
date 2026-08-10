@@ -3,16 +3,18 @@
 import json
 from datetime import datetime
 from typing import Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from sqlalchemy import func, or_
 from app.models.paper import Paper
 
 
 def get_papers(db: Session, search: str = "", sort_by: str = "created_at",
                sort_order: str = "desc", year_from: int = 0, year_to: int = 0,
-               star_min: int = 0) -> list[Paper]:
+               star_min: int = 0, limit: int | None = None,
+               offset: int = 0) -> list[Paper]:
     """获取文献列表（筛选/排序）"""
-    q = db.query(Paper)
+    # Full text can be several megabytes and is not part of list responses.
+    q = db.query(Paper).options(defer(Paper.fulltext))
     if search:
         q = q.filter(or_(
             Paper.title.ilike(f"%{search}%"),
@@ -34,6 +36,10 @@ def get_papers(db: Session, search: str = "", sort_by: str = "created_at",
     else:
         q = q.order_by(sort_col.desc())
 
+    if offset > 0:
+        q = q.offset(offset)
+    if limit is not None:
+        q = q.limit(limit)
     return q.all()
 
 

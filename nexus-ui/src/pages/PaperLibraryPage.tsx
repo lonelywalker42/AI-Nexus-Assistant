@@ -104,6 +104,7 @@ export default function PaperLibraryPage() {
 
   // v4.1.0: 分类系统
   const [categories, setCategories] = useState<{ id: string; name: string; parent_id: string; sort_order: number; is_system: boolean; system_key: string; paper_count: number }[]>([]);
+  const paperRequestId = useRef(0);
 
   // v4.6.0: 话题管理
   const [topics, setTopics] = useState<PaperTopic[]>([]);
@@ -118,10 +119,12 @@ export default function PaperLibraryPage() {
 
   const selected = papers.find(p => p.id === selectedId);
 
-  const loadPapers = () => {
+  const loadPapers = (signal?: AbortSignal) => {
+    const requestId = ++paperRequestId.current;
     setLoading(true);
-    papersApi.list({ search, sort_by: sortBy, sort_order: sortOrder })
+    return papersApi.list({ search, sort_by: sortBy, sort_order: sortOrder }, signal)
       .then(result => {
+        if (requestId !== paperRequestId.current) return;
         setPapers(prev => {
           // 合并服务器结果与本地新增（防止竞态覆盖）
           const serverIds = new Set(result.map((p: PaperDetail) => p.id));
@@ -129,11 +132,19 @@ export default function PaperLibraryPage() {
           return [...result, ...localOnly];
         });
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch(error => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) console.error(error);
+      })
+      .finally(() => {
+        if (requestId === paperRequestId.current) setLoading(false);
+      });
   };
 
-  useEffect(() => { loadPapers(); }, [search, sortBy, sortOrder]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => { void loadPapers(controller.signal); }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [search, sortBy, sortOrder]);
   useEffect(() => { reviewsApi.list().then(setReviews).catch(console.error); }, []);
   useEffect(() => { papersApi.listCategories().then(setCategories).catch(console.error); }, []);
   useEffect(() => { paperTopicsApi.list().then(d => setTopics(d.topics)).catch(console.error); }, []);

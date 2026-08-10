@@ -1,21 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import Sidebar from "./components/Sidebar";
-import Dashboard from "./pages/Dashboard";
-import TaskPage from "./pages/TaskPage";
-import TodayPage from "./pages/TodayPage";
-import LiteraturePage from "./pages/LiteraturePage";
-import PaperLibraryPage from "./pages/PaperLibraryPage";
-import ExperimentPage from "./pages/ExperimentPage";
-import KnowledgePage from "./pages/KnowledgePage";
-import ChatPage from "./pages/ChatPage";
-import SettingsPage from "./pages/SettingsPage";
-import MusicPage from "./pages/MusicPage";
-import BookshelfPage from "./pages/BookshelfPage";
-import WritingPage from "./pages/WritingPage";
-import ResearchAgentPage from "./pages/ResearchAgentPage";
-import GameConsolePage from "./pages/GameConsolePage";
-import ArchivePage from "./pages/ArchivePage";
-import { dashboardApi, isLoggedIn, API_BASE } from "./api/client";
+import { ensureBackendReady, isLoggedIn, API_BASE } from "./api/client";
 import LoginPage from "./pages/LoginPage";
 import { usePlatform } from "./hooks/usePlatform";
 import MobileLayout from "./layouts/MobileLayout";
@@ -25,6 +10,22 @@ import {
   IconMusic, IconBookOpen, IconGamepad, IconArchive,
 } from "./components/Icons";
 import { useAppName } from "./hooks/useAppName";
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const TaskPage = lazy(() => import("./pages/TaskPage"));
+const TodayPage = lazy(() => import("./pages/TodayPage"));
+const LiteraturePage = lazy(() => import("./pages/LiteraturePage"));
+const PaperLibraryPage = lazy(() => import("./pages/PaperLibraryPage"));
+const ExperimentPage = lazy(() => import("./pages/ExperimentPage"));
+const KnowledgePage = lazy(() => import("./pages/KnowledgePage"));
+const ChatPage = lazy(() => import("./pages/ChatPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const MusicPage = lazy(() => import("./pages/MusicPage"));
+const BookshelfPage = lazy(() => import("./pages/BookshelfPage"));
+const WritingPage = lazy(() => import("./pages/WritingPage"));
+const ResearchAgentPage = lazy(() => import("./pages/ResearchAgentPage"));
+const GameConsolePage = lazy(() => import("./pages/GameConsolePage"));
+const ArchivePage = lazy(() => import("./pages/ArchivePage"));
 
 // ── 页面注册 ──
 const PAGES = [
@@ -136,16 +137,20 @@ function App() {
   }, []);
 
   useEffect(() => {
-    dashboardApi.get()
-      .then(() => setLoading(false))
-      .catch(() => {
-        const interval = setInterval(() => {
-          dashboardApi.get().then(() => {
-            setLoading(false);
-            clearInterval(interval);
-          }).catch(() => {});
-        }, 1000);
-      });
+    let cancelled = false;
+    const connect = async () => {
+      while (!cancelled) {
+        try {
+          await ensureBackendReady();
+          if (!cancelled) setLoading(false);
+          return;
+        } catch {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    };
+    void connect();
+    return () => { cancelled = true; };
   }, []);
 
   // 登录页面（仅远程 API 模式需要认证，本地 localhost 跳过）
@@ -203,7 +208,7 @@ function App() {
   if (isMobile) {
     return (
       <MobileLayout activePage={activePage} onNavigate={setActivePage}>
-        {renderPage()}
+        <Suspense fallback={<div className="flex-1 animate-pulse" />}>{renderPage()}</Suspense>
       </MobileLayout>
     );
   }
@@ -254,7 +259,7 @@ function App() {
       {/* 主内容 */}
       <main className="flex-1 mt-9 p-6 flex flex-col overflow-hidden">
         <div className="animate-fade-in flex-1 flex flex-col min-h-0 overflow-auto">
-          {renderPage()}
+          <Suspense fallback={<div className="flex-1 animate-pulse" />}>{renderPage()}</Suspense>
         </div>
       </main>
 

@@ -7,6 +7,13 @@ from sqlalchemy.orm import Session
 from app.models.chat import ChatSession, ChatMessage
 
 
+# Long conversations used to send the complete history on every request.  Keeping
+# the most recent 20 messages bounds prompt construction and is roughly a 10x
+# reduction once a conversation grows beyond a few hundred turns.
+MAX_AI_CONTEXT_MESSAGES = 20
+MAX_AI_CONTEXT_CHARS = 40_000
+
+
 def get_sessions(db: Session) -> list[ChatSession]:
     """获取所有对话会话"""
     return db.query(ChatSession).order_by(ChatSession.created_at.desc()).all()
@@ -88,7 +95,7 @@ def get_message_count(db: Session, session_id: str) -> int:
 
 
 def build_messages_for_ai(db: Session, session_id: str,
-                          system_prompt: str = "") -> list[dict]:
+                           system_prompt: str = "") -> list[dict]:
     """构建发送给 AI 的消息列表"""
     messages = []
     if not system_prompt:
@@ -103,9 +110,33 @@ def build_messages_for_ai(db: Session, session_id: str,
         )
     messages.append({"role": "system", "content": system_prompt})
 
-    db_messages = get_messages(db, session_id)
-    for msg in db_messages:
-        messages.append({"role": msg.role, "content": msg.content})
+    db_messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at.desc())
+        .limit(MAX_AI_CONTEXT_MESSAGES)
+        .all()
+    )
+    db_messages.reverse()
+
+    # Preserve the newest turns if a few unusually large messages would still
+    # exceed the character budget.
+    selected: list[tuple[str, str]] = []
+    remaining = MAX_AI_CONTEXT_CHARS
+    for msg in reversed(db_messages):
+        content = msg.content or ""
+        if len(content) > remaining:
+            if not selected and remaining > 0:
+                selected.append((msg.role, content[:remaining]))
+            break
+        selected.append((msg.role, content))
+        remaining -= len(content)
+        if remaining <= 0:
+            break
+
+    selected.reverse()
+    for role, content in selected:
+        messages.append({"role": role, "content": content})
 
     return messages
 

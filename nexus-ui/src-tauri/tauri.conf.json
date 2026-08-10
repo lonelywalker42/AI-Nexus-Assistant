@@ -29,7 +29,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3REMzRjBBMTRCODg3OEQKUldTTmg3Z1VDai9jdHlWRVIyWk9YQytrYUJDMy92N1R0V2V2NHBTZ2x5VFNDMERQWFAyZlZoTzQK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlGOEYxQzdCNzk3MjYwQTYKUldTbVlISjVleHlQbjhCcmFmaDN4anBqNEs3OE9OUU1hWGpQYSswRjhpYVlRMmtRcXhDUkozYkoK",
       "endpoints": [
         "https://github.com/lonelywalker42/AI-Nexus-Assistant/releases/latest/download/latest.json"
       ]
@@ -38,6 +38,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

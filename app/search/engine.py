@@ -112,7 +112,8 @@ class UnifiedSearchEngine:
 
         # 并行搜索 (per-source 超时)
         all_papers: List[PaperData] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(engines)))
+        try:
             futures = {
                 executor.submit(self._search_one, engine, query, max_results): name
                 for name, engine in engines.items()
@@ -135,16 +136,24 @@ class UnifiedSearchEngine:
                 for f in unfinished:
                     f.cancel()
                 print(f"[TIMEOUT] 搜索总超时 ({total_timeout}s)，{len(unfinished)} 个源未完成，已取消", flush=True)
+        finally:
+            # A context manager calls shutdown(wait=True), which defeats the
+            # timeout above when a source is still blocked in network I/O.
+            executor.shutdown(wait=False, cancel_futures=True)
 
         # 去重 (DOI 优先 + 标题模糊 + URL 规范化)
         unique = self._deduplicate(all_papers)
 
-        # 摘要补全
-        if enrich and unique:
-            unique = self.enricher.batch_enrich(unique)
-
-        # 加权排序
+        # Sort and cap before enrichment.  Previously every source could return
+        # max_results and all deduplicated rows were enriched serially.
         unique = self._weighted_sort(unique)
+        unique = unique[:max_results]
+
+        # OpenAlex enrichment is intentionally limited to the highest-ranked
+        # results so a few missing abstracts cannot dominate request latency.
+        if enrich and unique:
+            enrich_count = min(10, len(unique))
+            unique[:enrich_count] = self.enricher.batch_enrich(unique[:enrich_count])
 
         # 生成引用格式
         for i, paper in enumerate(unique):

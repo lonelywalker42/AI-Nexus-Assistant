@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 from typing import Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
 from app.models.experiment import Experiment, ExperimentResult
 
@@ -13,7 +13,9 @@ USER_ID = "default"
 
 def get_experiments(db: Session, search: str = "", status: str = "") -> list[Experiment]:
     """获取试验列表"""
-    q = db.query(Experiment).filter(Experiment.user_id == USER_ID)
+    q = db.query(Experiment).options(selectinload(Experiment.results)).filter(
+        Experiment.user_id == USER_ID
+    )
     if search:
         q = q.filter(Experiment.title.ilike(f"%{search}%"))
     if status:

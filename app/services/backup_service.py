@@ -14,12 +14,16 @@ import os
 import sqlite3
 from datetime import datetime, date
 from pathlib import Path
-from app.utils.paths import get_data_dir, get_backup_dir
+from app.db import get_database_path
+from app.utils.paths import get_backup_dir
 
 
 def get_db_path() -> Path:
     """获取数据库文件路径"""
-    return get_data_dir() / "nexus.db"
+    db_path = get_database_path()
+    if db_path is None:
+        raise RuntimeError("内存数据库不支持文件备份")
+    return db_path
 
 
 def _get_wal_files(db_path: Path) -> list[Path]:

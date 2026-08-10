@@ -1,13 +1,16 @@
 {
   "name": "nexus-ui",
   "private": true,
-  "version": "4.0.1",
+  "version": "4.5.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build": "tauri build -- --locked",
+    "tauri:build:portable": "tauri build --no-bundle -- --locked"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -31,7 +34,7 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/react-syntax-highlighter": "^15.5.13",

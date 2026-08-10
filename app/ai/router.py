@@ -28,6 +28,8 @@ class AIRouter:
 
     def __init__(self):
         self._models: dict[str, ModelConfig] = {}
+        self._openai_clients: dict[str, object] = {}
+        self._anthropic_clients: dict[str, object] = {}
         self._load_models()
         try:
             init_tools()
@@ -45,7 +47,40 @@ class AIRouter:
             db.close()
 
     def reload(self):
+        self._close_clients()
         self._load_models()
+
+    def _close_clients(self):
+        for client in [*self._openai_clients.values(), *self._anthropic_clients.values()]:
+            try:
+                client.close()
+            except Exception:
+                pass
+        self._openai_clients.clear()
+        self._anthropic_clients.clear()
+
+    def _get_openai_client(self, model: ModelConfig):
+        client = self._openai_clients.get(model.id)
+        if client is not None:
+            return client
+
+        import openai
+        base_url = model.base_url.rstrip("/")
+        if not base_url.endswith("/v1"):
+            base_url += "/v1"
+        client = openai.OpenAI(base_url=base_url, api_key=model.api_key)
+        self._openai_clients[model.id] = client
+        return client
+
+    def _get_anthropic_client(self, model: ModelConfig):
+        client = self._anthropic_clients.get(model.id)
+        if client is not None:
+            return client
+
+        import anthropic
+        client = anthropic.Anthropic(api_key=model.api_key)
+        self._anthropic_clients[model.id] = client
+        return client
 
     def get_model(self, purpose: str = "all") -> ModelConfig | None:
         for m in self._models.values():
@@ -93,7 +128,7 @@ class AIRouter:
 
         print(f"[router] Calling OpenAI API: base_url={base_url}, model={model.model_name}", flush=True)
 
-        client = openai.OpenAI(base_url=base_url, api_key=model.api_key)
+        client = self._get_openai_client(model)
 
         def _do_call(include_response_format: bool = True):
             """执行 API 调用，可选是否包含 response_format"""
@@ -146,7 +181,7 @@ class AIRouter:
         except ImportError:
             return {"thinking": "", "content": "[ERROR] 未安装 anthropic 库"}
 
-        client = anthropic.Anthropic(api_key=model.api_key)
+        client = self._get_anthropic_client(model)
         try:
             system_msg = ""
             user_messages = []
@@ -213,7 +248,7 @@ class AIRouter:
         if not base_url.endswith("/v1"):
             base_url += "/v1"
 
-        client = openai.OpenAI(base_url=base_url, api_key=model.api_key)
+        client = self._get_openai_client(model)
         current_messages = list(messages)
 
         for round_num in range(self.MAX_TOOL_ROUNDS + 1):
@@ -417,7 +452,7 @@ class AIRouter:
             yield {"type": "content", "data": "[ERROR] 未安装 anthropic 库"}
             return
 
-        client = anthropic.Anthropic(api_key=model.api_key)
+        client = self._get_anthropic_client(model)
 
         system_msg = ""
         user_messages = []

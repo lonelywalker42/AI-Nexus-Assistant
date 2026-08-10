@@ -1,6 +1,6 @@
-"""构建 Python FastAPI 后端为独立 exe
+"""构建 Python FastAPI 后端为独立 Windows sidecar exe。
 
-输出: D:/ai_coding_research/release/nexus-server-x86_64-pc-windows-msvc.exe
+输出: release/nexus-server-x86_64-pc-windows-msvc.exe
 """
 
 import subprocess
@@ -9,11 +9,13 @@ import shutil
 import os
 import stat
 import time
+import importlib.util
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).parent
 BINARY_NAME = "nexus-server-x86_64-pc-windows-msvc"
 RELEASE_DIR = PROJECT_DIR / "release"
+MANAGED_VENV = (PROJECT_DIR / ".build-env" / "python").resolve()
 
 # server 不需要的重量级模块 — 从 venv 中排除
 EXCLUDE_MODULES = [
@@ -62,6 +64,25 @@ def _rmtree_retry(path: Path, retries: int = 5, delay: float = 1.0):
 
 
 def build():
+    current_venv = Path(sys.prefix).resolve()
+    if current_venv != MANAGED_VENV and os.environ.get("NEXUS_ALLOW_UNMANAGED_BUILD") != "1":
+        print("ERROR: 后端必须从仓库管理的隔离环境构建。")
+        print(f"  当前 Python: {sys.executable}")
+        print(f"  期望环境:   {MANAGED_VENV}")
+        print("  请先运行: powershell -ExecutionPolicy Bypass -File scripts/windows/setup-build-env.ps1")
+        print("  临时绕过: 设置 NEXUS_ALLOW_UNMANAGED_BUILD=1（不推荐）")
+        sys.exit(2)
+
+    required_modules = [
+        "PyInstaller", "fastapi", "uvicorn", "sqlalchemy", "pydantic",
+        "httpx", "openai", "anthropic", "fitz", "docx", "multipart",
+    ]
+    missing = [name for name in required_modules if importlib.util.find_spec(name) is None]
+    if missing:
+        print("ERROR: 构建环境缺少依赖: " + ", ".join(missing))
+        print("请重新运行 scripts/windows/setup-build-env.ps1 -Reset")
+        sys.exit(2)
+
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
 
     # 清理旧构建产物
@@ -75,7 +96,7 @@ def build():
         "--onefile",
         "--console",
         "--noconfirm",
-        "--strip",
+        "--clean",
         "--paths", str(PROJECT_DIR),
         # 隐藏导入
         "--hidden-import", "app",
@@ -169,6 +190,12 @@ def build():
         "--hidden-import", "starlette",
         "--hidden-import", "openai",
         "--hidden-import", "anthropic",
+        "--hidden-import", "fitz",
+        "--hidden-import", "docx",
+        "--hidden-import", "multipart",
+        "--hidden-import", "python_multipart",
+        "--hidden-import", "arxiv",
+        "--hidden-import", "scholarly",
         # 排除不需要的模块
         *[item for m in EXCLUDE_MODULES for item in ("--exclude-module", m)],
         # 入口

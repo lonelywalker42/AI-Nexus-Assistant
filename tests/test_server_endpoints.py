@@ -36,6 +36,23 @@ class TestDashboardEndpoint:
         assert len(data) > 0
 
 
+class TestPerformanceEndpoints:
+    def test_health_check(self, client):
+        resp = client.get("/api/health")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
+    def test_week_tasks_are_batched(self, client):
+        resp = client.get("/api/tasks/week?start=2026-08-10")
+        assert resp.status_code == 200
+        assert len(resp.json()) == 7
+
+    def test_paper_categories_static_route(self, client):
+        resp = client.get("/api/papers/categories")
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+
 class TestKnowledgeCardsEndpoint:
     """测试知识卡片端点。"""
 

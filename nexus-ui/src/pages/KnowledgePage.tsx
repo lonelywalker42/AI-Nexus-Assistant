@@ -149,6 +149,7 @@ export default function KnowledgePage() {
       try {
         return await fn();
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") throw err;
         lastError = err;
         if (attempt < maxRetries) {
           await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
@@ -158,41 +159,23 @@ export default function KnowledgePage() {
     throw lastError;
   };
 
-  const loadCards = () => {
+  const loadCards = (signal?: AbortSignal) => {
     setLoading(true);
     setLoadError(null);
-    // 加载全部卡片（用于分类计数 + 主列表），前端做筛选
-    fetchWithRetry(() => knowledgeApi.listCards({})).then(data => {
-      const all = Array.isArray(data) ? data : [];
-      setAllCards(all);
-      // 前端筛选：搜索、排序、星级、标签
-      let filtered = all;
-      if (debouncedSearch) {
-        const q = debouncedSearch.toLowerCase();
-        filtered = filtered.filter(c =>
-          (c.title || "").toLowerCase().includes(q) ||
-          (c.summary || "").toLowerCase().includes(q) ||
-          (Array.isArray(c.key_points) ? c.key_points.join(" ") : (c.key_points || "")).toLowerCase().includes(q)
-        );
-      }
-      if (starMin) filtered = filtered.filter(c => (c.star_rating || 0) >= starMin);
-      if (tagFilter) filtered = filtered.filter(c =>
-        (c.tags || []).some((t: any) => (typeof t === "string" ? t : t.name) === tagFilter)
-      );
-      // 排序
-      filtered.sort((a: any, b: any) => {
-        const va = sortBy === "star_rating" ? (a.star_rating || 0) : (a[sortBy] || "");
-        const vb = sortBy === "star_rating" ? (b.star_rating || 0) : (b[sortBy] || "");
-        if (sortBy === "star_rating") {
-          return sortOrder === "asc" ? va - vb : vb - va;
-        }
-        const cmp = String(va).localeCompare(String(vb));
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
+    fetchWithRetry(() => knowledgeApi.listCards({
+      search: debouncedSearch,
+      tag: tagFilter,
+      star_min: starMin,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+    }, signal)).then(data => {
+      const filtered = Array.isArray(data) ? data : [];
+      if (!debouncedSearch && !tagFilter && !starMin) setAllCards(filtered);
       setCards(filtered);
       setLoadError(null);
       setLoading(false);
     }).catch(err => {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       console.error("加载卡片失败:", err);
       const msg = err?.message || "";
       const name = err?.name || "";
@@ -208,7 +191,11 @@ export default function KnowledgePage() {
       setLoading(false);
     });
   };
-  useEffect(() => { loadCards(); }, [debouncedSearch, sortBy, sortOrder, starMin, tagFilter]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadCards(controller.signal);
+    return () => controller.abort();
+  }, [debouncedSearch, sortBy, sortOrder, starMin, tagFilter]);
 
   // 加载标签（首次加载时自动清理孤立标签）
   useEffect(() => {
@@ -855,13 +842,13 @@ export default function KnowledgePage() {
           {loadError && (
             <div className="glass-card p-4 text-center">
               <p className="text-sm" style={{ color: "#ef4444" }}>{loadError}</p>
-              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={loadCards}>重试</button>
+              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={() => loadCards()}>重试</button>
             </div>
           )}
           {!loading && !loadError && filteredCards.length === 0 ? (
             <div className="glass-card p-8 text-center">
               <p style={{ color: "var(--text-muted)" }}>该分类下暂无卡片</p>
-              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={loadCards}>刷新</button>
+              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={() => loadCards()}>刷新</button>
             </div>
           ) : filteredCards.map(card => (
             <div key={card.id}
@@ -937,13 +924,13 @@ export default function KnowledgePage() {
           {loadError && (
             <div className="col-span-full glass-card p-4 text-center">
               <p className="text-sm" style={{ color: "#ef4444" }}>{loadError}</p>
-              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={loadCards}>重试</button>
+              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={() => loadCards()}>重试</button>
             </div>
           )}
           {!loading && !loadError && filteredCards.length === 0 ? (
             <div className="col-span-full glass-card p-8 text-center">
               <p style={{ color: "var(--text-muted)" }}>该分类下暂无卡片</p>
-              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={loadCards}>刷新</button>
+              <button className="text-xs mt-2 cursor-pointer" style={{ color: "var(--accent-blue)" }} onClick={() => loadCards()}>刷新</button>
             </div>
           ) : filteredCards.map(card => (
             <div key={card.id} className="glass-card p-3 cursor-pointer glass-card-hover group flex flex-col gap-2"

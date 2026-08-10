@@ -5,6 +5,23 @@ import json
 from typing import Optional
 
 
+def extract_pdf_text(pdf_path: str, max_chars: int | None = None) -> str:
+    """Extract PDF text in a worker-friendly synchronous helper."""
+    import fitz
+
+    parts: list[str] = []
+    size = 0
+    with fitz.open(pdf_path) as doc:
+        for page in doc:
+            page_text = page.get_text()
+            parts.append(page_text)
+            size += len(page_text)
+            if max_chars is not None and size >= max_chars:
+                break
+    text = "".join(parts)
+    return text[:max_chars] if max_chars is not None else text
+
+
 def extract_pdf_metadata(pdf_path: str) -> dict:
     """从 PDF 文件提取元数据（布局分析 → 内置元数据 → 正则 → OpenAlex/Crossref）
 

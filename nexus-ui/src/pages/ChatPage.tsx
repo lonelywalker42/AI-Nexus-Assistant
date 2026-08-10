@@ -30,6 +30,30 @@ function extractTitle(userMsg: string, _aiMsg: string): string {
   return text.slice(0, 10) || "新对话";
 }
 
+function createStreamBatcher(
+  appendContent: (value: string) => void,
+  appendThinking: (value: string) => void,
+  intervalMs = 100,
+) {
+  let content = "";
+  let thinking = "";
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (content) { appendContent(content); content = ""; }
+    if (thinking) { appendThinking(thinking); thinking = ""; }
+  };
+  const schedule = () => {
+    if (!timer) timer = setTimeout(flush, intervalMs);
+  };
+  return {
+    content(value: string) { content += value; schedule(); },
+    thinking(value: string) { thinking += value; schedule(); },
+    flush,
+  };
+}
+
 // 复制状态 hook
 function useCopyable() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -204,26 +228,31 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
   const mentionRef = useRef<HTMLDivElement>(null);
 
   // 搜索文献供 @引用
-  const searchMentionPapers = useCallback(async (q: string) => {
+  const searchMentionPapers = useCallback(async (q: string, signal?: AbortSignal) => {
     if (!q.trim()) { setMentionResults([]); return; }
     try {
-      const results = await papersApi.searchMention(q, 8);
+      const results = await papersApi.searchMention(q, 8, signal);
       setMentionResults(results);
-    } catch { setMentionResults([]); }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) setMentionResults([]);
+    }
   }, []);
 
   // 监听 @ 触发
   useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const lastAt = input.lastIndexOf("@");
     if (lastAt >= 0 && (lastAt === 0 || input[lastAt - 1] === " ")) {
       const q = input.slice(lastAt + 1);
       if (!q.includes(" ") && q.length < 50) {
         setShowMention(true);
-        searchMentionPapers(q);
-        return;
+        timer = setTimeout(() => { void searchMentionPapers(q, controller.signal); }, 250);
+        return () => { if (timer) clearTimeout(timer); controller.abort(); };
       }
     }
     setShowMention(false);
+    return () => controller.abort();
   }, [input, searchMentionPapers]);
 
   // 插入引用
@@ -420,13 +449,20 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const batcher = createStreamBatcher(
+      value => setStreamContent(prev => prev + value),
+      value => setStreamThinking(prev => prev + value),
+    );
 
     try {
       const modelId = selectedModelId || models[0]?.id;
       for await (const chunk of chatApi.stream(activeSession!, modelId, controller.signal)) {
-        if (chunk.type === "thinking") setStreamThinking(prev => prev + chunk.data);
-        else if (chunk.type === "content") setStreamContent(prev => prev + chunk.data);
-        else if (chunk.type === "stats") setStreamStats(chunk.data);
+        if (chunk.type === "thinking") batcher.thinking(chunk.data);
+        else if (chunk.type === "content") batcher.content(chunk.data);
+        else if (chunk.type === "stats") {
+          batcher.flush();
+          setStreamStats(chunk.data);
+        }
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -445,8 +481,11 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
         } else {
           hint = "\n\n💡 请检查网络连接和模型配置，或尝试切换其他模型。";
         }
+        batcher.flush();
         setStreamContent(`❌ 请求失败: ${errMsg}${hint}`);
       }
+    } finally {
+      batcher.flush();
     }
 
     abortRef.current = null;
@@ -506,15 +545,20 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const batcher = createStreamBatcher(
+      value => setStreamContent(prev => prev + value),
+      value => setStreamThinking(prev => prev + value),
+    );
 
     try {
       const modelId = selectedModelId || models[0]?.id;
       for await (const chunk of chatApi.stream(activeSession!, modelId, controller.signal)) {
         if (chunk.type === "thinking") {
-          setStreamThinking(prev => prev + chunk.data);
+          batcher.thinking(chunk.data);
         } else if (chunk.type === "content") {
-          setStreamContent(prev => prev + chunk.data);
+          batcher.content(chunk.data);
         } else if (chunk.type === "tool_call") {
+          batcher.flush();
           const info = JSON.parse(chunk.data);
           setStreamToolCalls(prev => [...prev, { name: info.name, query: info.query }]);
         } else if (chunk.type === "tool_result") {
@@ -525,6 +569,7 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
               : tc
           ));
         } else if (chunk.type === "stats") {
+          batcher.flush();
           setStreamStats(chunk.data);
         }
       }
@@ -532,8 +577,11 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
       if (err instanceof DOMException && err.name === "AbortError") {
         // 用户主动停止，不显示错误
       } else {
+        batcher.flush();
         setStreamContent(`错误: ${err}`);
       }
+    } finally {
+      batcher.flush();
     }
 
     abortRef.current = null;
@@ -573,13 +621,18 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const batcher = createStreamBatcher(
+      value => setStreamContent(prev => prev + value),
+      value => setStreamThinking(prev => prev + value),
+    );
 
     try {
       const modelId = selectedModelId || models[0]?.id;
       for await (const chunk of chatApi.stream(activeSession, modelId, controller.signal)) {
-        if (chunk.type === "thinking") setStreamThinking(prev => prev + chunk.data);
-        else if (chunk.type === "content") setStreamContent(prev => prev + chunk.data);
+        if (chunk.type === "thinking") batcher.thinking(chunk.data);
+        else if (chunk.type === "content") batcher.content(chunk.data);
         else if (chunk.type === "tool_call") {
+          batcher.flush();
           const info = JSON.parse(chunk.data);
           setStreamToolCalls(prev => [...prev, { name: info.name, query: info.query }]);
         } else if (chunk.type === "tool_result") {
@@ -588,12 +641,18 @@ export default function ChatPage({ initialSessionId, onSessionLoaded }: ChatPage
             i === prev.length - 1 && tc.name === info.name && tc.query === info.query
               ? { ...tc, result: info.result } : tc
           ));
-        } else if (chunk.type === "stats") setStreamStats(chunk.data);
+        } else if (chunk.type === "stats") {
+          batcher.flush();
+          setStreamStats(chunk.data);
+        }
       }
     } catch (err: unknown) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
+        batcher.flush();
         setStreamContent(`错误: ${err}`);
       }
+    } finally {
+      batcher.flush();
     }
 
     abortRef.current = null;

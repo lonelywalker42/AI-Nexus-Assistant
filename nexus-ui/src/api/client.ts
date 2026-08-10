@@ -62,7 +62,7 @@ export function logout() {
 async function waitForBackend(): Promise<void> {
   for (let i = 0; i < MAX_RETRIES; i++) {
     try {
-      const res = await fetch(`${API_BASE}/api/dashboard`, { signal: AbortSignal.timeout(2000) });
+      const res = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(2000) });
       if (res.ok) return;
     } catch {}
     await new Promise(r => setTimeout(r, RETRY_DELAY));
@@ -71,10 +71,20 @@ async function waitForBackend(): Promise<void> {
 }
 
 let backendReady = false;
+let backendReadyPromise: Promise<void> | null = null;
 
-async function ensureBackend() {
+export async function ensureBackendReady() {
+  if (backendReady) return;
+  if (!backendReadyPromise) {
+    backendReadyPromise = waitForBackend().then(() => {
+      backendReady = true;
+    }).catch((error) => {
+      backendReadyPromise = null;
+      throw error;
+    });
+  }
+  await backendReadyPromise;
   if (!backendReady) {
-    await waitForBackend();
     backendReady = true;
   }
 }
@@ -161,7 +171,7 @@ async function requestWithTimeout<T>(path: string, options: RequestInit & { time
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  await ensureBackend();
+  await ensureBackendReady();
   const isGet = !options?.method || options.method === "GET";
   const headers: Record<string, string> = {
     ...getAuthHeader(),
@@ -171,6 +181,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   // 30 秒超时，防止请求挂起（AbortSignal.timeout + Promise.race 双保险）
   const TIMEOUT_MS = 30000;
   let abortController: AbortController | null = null;
+  let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
   let mergedSignal: AbortSignal | undefined;
   try {
     const timeoutSignal = AbortSignal.timeout(TIMEOUT_MS);
@@ -181,7 +192,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     // AbortSignal.timeout/any 不可用时，使用 AbortController + setTimeout 兜底
     abortController = new AbortController();
     mergedSignal = abortController.signal;
-    setTimeout(() => abortController?.abort(), TIMEOUT_MS);
+    fallbackTimer = setTimeout(() => abortController?.abort(), TIMEOUT_MS);
   }
 
   const doFetch = async (): Promise<Response> => {
@@ -202,10 +213,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   };
 
   // Promise.race 兜底：即使 AbortSignal 机制失效，也能超时
+  let raceTimer: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new DOMException("Request timed out", "TimeoutError")), TIMEOUT_MS + 1000);
+    raceTimer = setTimeout(() => reject(new DOMException("Request timed out", "TimeoutError")), TIMEOUT_MS + 1000);
   });
-  const res = await Promise.race([doFetch(), timeoutPromise]);
+  let res: Response;
+  try {
+    res = await Promise.race([doFetch(), timeoutPromise]);
+  } finally {
+    if (fallbackTimer) clearTimeout(fallbackTimer);
+    if (raceTimer) clearTimeout(raceTimer);
+  }
 
   if (!res.ok) {
     const err = await res.text();
@@ -321,7 +339,7 @@ export const tasksApi = {
   dates: (year: number, month: number) =>
     request<Record<string, string>>(`/api/tasks/dates?year=${year}&month=${month}`),
   weekTasks: (start?: string) =>
-    request<Record<string, { id: string; content: string; completed: boolean; priority: string; category: string }[]>>(
+    request<Record<string, Task[]>>(
       `/api/tasks/week${start ? `?start=${start}` : ""}`),
   heatmap: (days: number = 140) =>
     request<Record<string, number>>(`/api/tasks/heatmap?days=${days}`),
@@ -401,11 +419,11 @@ export interface Experiment {
 }
 
 export const experimentsApi = {
-  list: (search?: string, status?: string) => {
+  list: (search?: string, status?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
-    return request<Experiment[]>(`/api/experiments?${params}`);
+    return request<Experiment[]>(`/api/experiments?${params}`, { signal });
   },
   create: (data: { title: string; background?: string; objective?: string; setup?: string }) =>
     request<{ id: string }>("/api/experiments", { method: "POST", body: JSON.stringify(data) }),
@@ -461,7 +479,7 @@ export interface KnowledgeCard {
 
 export const knowledgeApi = {
   listCards: (params?: { search?: string; category?: string; tag?: string; source_type?: string;
-    sort_by?: string; sort_order?: string; star_min?: number }) => {
+    sort_by?: string; sort_order?: string; star_min?: number }, signal?: AbortSignal) => {
     const p = new URLSearchParams();
     if (params?.search) p.set("search", params.search);
     if (params?.category) p.set("category", params.category);
@@ -470,7 +488,7 @@ export const knowledgeApi = {
     if (params?.sort_by) p.set("sort_by", params.sort_by);
     if (params?.sort_order) p.set("sort_order", params.sort_order);
     if (params?.star_min) p.set("star_min", String(params.star_min));
-    return request<KnowledgeCard[]>(`/api/knowledge/cards?${p}`);
+    return request<KnowledgeCard[]>(`/api/knowledge/cards?${p}`, { signal });
   },
   getCard: (id: string) => request<KnowledgeCard>(`/api/knowledge/cards/${id}`),
   createCard: (data: { title: string; summary?: string; tags?: string[]; source_type?: string }) =>
@@ -648,7 +666,7 @@ export interface PaperDetail {
 
 export const papersApi = {
   list: (params?: { search?: string; sort_by?: string; sort_order?: string;
-    year_from?: number; year_to?: number; star_min?: number }) => {
+    year_from?: number; year_to?: number; star_min?: number }, signal?: AbortSignal) => {
     const p = new URLSearchParams();
     if (params?.search) p.set("search", params.search);
     if (params?.sort_by) p.set("sort_by", params.sort_by);
@@ -656,7 +674,7 @@ export const papersApi = {
     if (params?.year_from) p.set("year_from", String(params.year_from));
     if (params?.year_to) p.set("year_to", String(params.year_to));
     if (params?.star_min) p.set("star_min", String(params.star_min));
-    return request<PaperDetail[]>(`/api/papers?${p}`);
+    return request<PaperDetail[]>(`/api/papers?${p}`, { signal });
   },
   get: (id: string) => request<PaperDetail>(`/api/papers/${id}`),
   create: (data: Partial<PaperDetail>) =>
@@ -673,8 +691,8 @@ export const papersApi = {
   aiSummary: (id: string) =>
     request<{ ai_summary: string }>(`/api/papers/${id}/ai-summary`, { method: "POST" }),
   stats: () => request<{ total: number; by_source: Record<string, number>; rated: number }>("/api/papers/stats"),
-  searchMention: (q: string, limit: number = 10) =>
-    request<{ id: string; title: string; authors: string[]; year: number }[]>(`/api/papers/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  searchMention: (q: string, limit: number = 10, signal?: AbortSignal) =>
+    request<{ id: string; title: string; authors: string[]; year: number }[]>(`/api/papers/search?q=${encodeURIComponent(q)}&limit=${limit}`, { signal }),
 
   // v3.6.0 新增: 出版社 PDF 拉取（120s 超时，多级降级需要更长时间）
   fetchPdf: (doi: string, title: string = "") =>

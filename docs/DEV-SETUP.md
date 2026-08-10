@@ -2,6 +2,8 @@
 
 > 面向希望参与开发或进行自定义改造的开发者。普通用户请参考 `usage.md`。
 
+> Windows 正式构建以 [`WINDOWS-BUILD.md`](WINDOWS-BUILD.md) 为准。本文保留跨平台开发说明；不要再通过手工拼接 MSVC 路径或全局 `npx tauri` 制作发布包。
+
 ---
 
 ## 目录
@@ -132,11 +134,14 @@ source .venv/bin/activate
 ### 4.2 安装依赖
 
 ```bash
-# 核心依赖（PySide6 + SQLAlchemy + 搜索库等）
-pip install -e .
+# PySide6 桌面开发
+pip install -e ".[desktop]"
 
-# Tauri 后端额外依赖（FastAPI + AI SDK）
-pip install fastapi uvicorn openai anthropic httpx
+# Tauri/FastAPI 后端开发
+pip install -e ".[tauri]"
+
+# 测试与构建工具
+pip install -e ".[tauri,build,test]"
 
 # 可选：PDF 转 Markdown
 pip install magic-pdf
@@ -172,10 +177,10 @@ python -c "import fastapi, uvicorn, openai, anthropic, httpx, fitz, docx; print(
 
 ```bash
 cd nexus-ui
-npm install
+npm ci
 
 # 如果网络慢，使用镜像源
-npm install --registry https://registry.npmmirror.com
+npm ci --registry https://registry.npmmirror.com
 ```
 
 ### 5.2 技术栈
@@ -230,12 +235,9 @@ rustup default stable-x86_64-pc-windows-msvc
 ### 6.3 Tauri CLI
 
 ```bash
-# 全局安装（可选，项目已作为 devDependency 包含）
-npm install -g @tauri-apps/cli
-
-# 或使用项目内版本
+# 使用项目锁定的本地版本；正式构建禁止依赖全局 Tauri CLI
 cd nexus-ui
-npx tauri --version   # 应为 2.x
+npm run tauri -- --version   # 应为 2.x
 ```
 
 ### 6.4 Cargo 依赖一览
@@ -286,7 +288,7 @@ nexus-ui/src-tauri/
 
 ```bash
 cd open-webSearch
-npm install
+npm ci
 npm run build          # TypeScript 编译 → build/
 cd ..
 ```
@@ -364,8 +366,9 @@ cd nexus-ui && npm run build
 ### 9.2 完整 Tauri 构建
 
 ```bash
-# 一键构建（推荐）
-python build_tauri.py
+# Windows 一键构建（推荐，使用隔离环境）
+powershell -ExecutionPolicy Bypass -File scripts/windows/setup-build-env.ps1
+powershell -ExecutionPolicy Bypass -File scripts/windows/build-release.ps1 -CleanOutputs
 ```
 
 **`build_tauri.py` 执行 3 个步骤:**
@@ -375,7 +378,7 @@ Step 1: build_server.py
   └─ PyInstaller 打包 server.py → release/nexus-server-*.exe (~31MB)
   └─ 复制到 nexus-ui/src-tauri/binaries/
 
-Step 2: npx tauri build
+Step 2: npm run tauri:build
   └─ beforeBuildCommand: npm run build (Vite → dist/)
   └─ cargo build --release (Rust 编译)
   └─ build.rs: 复制 sidecar 到 OUT_DIR
@@ -395,7 +398,7 @@ Step 3: 整理到 release/
 python build_server.py
 
 # Step 2: 构建 Tauri（前端 + Rust + 打包）
-cd nexus-ui && npx tauri build
+cd nexus-ui && npm run tauri:build
 
 # Step 3: 手动整理（或运行 build_tauri.py 的 step3）
 ```
@@ -425,27 +428,13 @@ release/
 
 ## 10. 版本号同步清单
 
-发版时必须同步更新以下 **5 处**版本号：
+`VERSION` 是发布版本的规范值。发版时同步更新 `pyproject.toml`、npm package/lock、Tauri config、Cargo package/lock、前端 `APP_VERSION` 和 FastAPI 版本，然后运行：
 
-| # | 文件 | 字段 | 说明 |
-|---|------|------|------|
-| 1 | `nexus-ui/src-tauri/tauri.conf.json` | `"version"` | 安装包文件名、Windows 安装信息 |
-| 2 | `nexus-ui/src-tauri/Cargo.toml` | `version` | Rust 编译产物元数据 |
-| 3 | `nexus-ui/src/api/client.ts` | `APP_VERSION` | 前端显示版本号 |
-| 4 | `server.py` | `FastAPI(version=...)` | API 文档版本号 |
-| 5 | `CLAUDE.md` | `Current version: **vX.Y.Z**` | 项目文档版本记录 |
-
-**一键检查脚本:**
-```bash
-V="4.4.1"  # 替换为目标版本
-grep -qn "\"version\": \"$V\"" nexus-ui/src-tauri/tauri.conf.json && echo "✅ tauri.conf.json" || echo "❌ tauri.conf.json"
-grep -qn "^version = \"$V\"" nexus-ui/src-tauri/Cargo.toml && echo "✅ Cargo.toml" || echo "❌ Cargo.toml"
-grep -qn "APP_VERSION.*$V" nexus-ui/src/api/client.ts && echo "✅ client.ts" || echo "❌ client.ts"
-grep -qn "version.*$V" server.py && echo "✅ server.py" || echo "❌ server.py"
-grep -qn "v$V" CLAUDE.md && echo "✅ CLAUDE.md" || echo "❌ CLAUDE.md"
+```powershell
+.build-env\python\Scripts\python.exe tools\project_check.py
 ```
 
-> **注意:** `Cargo.lock` 会随 `Cargo.toml` 变更自动更新，无需手动编辑。
+任意发布元数据不一致都会返回非零退出码并阻止正式构建。界面上的登录页和 PySide6 版本标签也由检查脚本覆盖。
 
 ---
 
@@ -455,10 +444,10 @@ grep -qn "v$V" CLAUDE.md && echo "✅ CLAUDE.md" || echo "❌ CLAUDE.md"
 
 | 问题 | 解决方案 |
 |------|----------|
-| `pip install -e .` 失败 | 确认 Python >= 3.10，运行 `python --version` 检查 |
-| `ModuleNotFoundError: No module named 'fastapi'` | `pip install fastapi uvicorn openai anthropic httpx` |
+| `pip install -e .` 失败 | 使用 Python 3.10–3.13 x64；正式构建推荐 3.12 |
+| `ModuleNotFoundError: No module named 'fastapi'` | 运行 `pip install -e ".[tauri]"` |
 | `ModuleNotFoundError: No module named 'fitz'` | `pip install PyMuPDF` |
-| `ModuleNotFoundError: No module named 'docx'` | `pip install python-docx` |
+| `ModuleNotFoundError: No module named 'docx'` | `python-docx` 已在核心依赖中；重新安装项目依赖 |
 | PySide6 安装太慢/太大 | Tauri 开发模式不需要 PySide6，可跳过 |
 | `chromadb` 安装失败 | 需要 C++ 编译器（VS Build Tools），或跳过 `pip install -e ".[full]"` |
 
@@ -466,7 +455,7 @@ grep -qn "v$V" CLAUDE.md && echo "✅ CLAUDE.md" || echo "❌ CLAUDE.md"
 
 | 问题 | 解决方案 |
 |------|----------|
-| `npm install` 网络超时 | `npm install --registry https://registry.npmmirror.com` |
+| `npm ci` 网络超时 | `npm ci --registry https://registry.npmmirror.com` |
 | `npm run dev` 端口 1420 被占用 | 关闭占用进程，或修改 `vite.config.ts` 中的 `strictPort` |
 | TypeScript 类型错误 | `npx tsc --noEmit` 查看详情 |
 
@@ -487,7 +476,7 @@ grep -qn "v$V" CLAUDE.md && echo "✅ CLAUDE.md" || echo "❌ CLAUDE.md"
 |------|----------|
 | 端口 8765 被占用 | `netstat -ano \| findstr 8765` 找到进程并终止 |
 | 端口 3210 被占用 | open-webSearch 端口冲突，重启应用 |
-| open-webSearch 不工作 | `cd open-webSearch && npm install && npm run build` |
+| open-webSearch 不工作 | `cd open-webSearch && npm ci && npm run build` |
 | "localhost 拒绝连接" | 确认 `python server.py` 已启动并输出 `NEXUS_SERVER_READY:8765` |
 | PDF 拉取失败 | 检查网络/代理，部分出版社需要校园网或 VPN |
 | AI 功能不工作 | 在设置页配置 AI 模型（API Key + Base URL） |
@@ -499,7 +488,8 @@ grep -qn "v$V" CLAUDE.md && echo "✅ CLAUDE.md" || echo "❌ CLAUDE.md"
 ### Windows（主要开发平台）
 
 - 项目主要在 Windows 上开发和测试
-- `build_tauri.py` 中硬编码了 MSVC 路径，需根据实际安装位置修改 `MSVC_BASE` 和 `SDK_BASE`
+- `build_tauri.py` 通过 `vswhere.exe` + `VsDevCmd.bat` 自动加载完整 MSVC/SDK 环境，不允许硬编码工具链路径
+- 正式构建流程、干净依赖目录和故障排查见 [`WINDOWS-BUILD.md`](WINDOWS-BUILD.md)
 - Rust 进程管理使用 `taskkill /F /T` 和 `CREATE_NO_WINDOW` 标志
 
 ### macOS

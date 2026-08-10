@@ -13,6 +13,8 @@ build/
 venv/
 env/
 .build-venv/
+.build-env/
+.toolchains/
 
 # IDE
 .vscode/
@@ -28,6 +30,7 @@ data/backups/
 data/exports/
 data/uploads/
 data/chroma/
+data/*.log
 
 # Original design documents (local reference only)
 original_design/
@@ -64,3 +67,8 @@ nexus-ui/src-tauri/binaries/
 dist/
 build/
 nexus-ui/src-tauri/gen/
+
+# Claude Code agents (local config)
+.agents/
+AGENTS.md
+.claude/settings.local.json

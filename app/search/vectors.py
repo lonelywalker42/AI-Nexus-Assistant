@@ -3,6 +3,7 @@
 import json
 import os
 import hashlib
+import threading
 from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -10,6 +11,32 @@ from sqlalchemy.orm import Session
 
 # 嵌入签名（用于检测模型变更）
 _EMBED_SIGNATURE_KEY = "embed_signature"
+_MODEL_CACHE: dict[str, object] = {}
+_INDEX_CACHE: dict[str, tuple[float, object]] = {}
+_CACHE_LOCK = threading.RLock()
+
+
+def _get_embedding_model(model_name: str):
+    with _CACHE_LOCK:
+        model = _MODEL_CACHE.get(model_name)
+        if model is None:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer(model_name)
+            _MODEL_CACHE[model_name] = model
+        return model
+
+
+def _load_faiss_index(index_path: str):
+    import faiss
+
+    mtime = os.path.getmtime(index_path)
+    with _CACHE_LOCK:
+        cached = _INDEX_CACHE.get(index_path)
+        if cached and cached[0] == mtime:
+            return cached[1]
+        index = faiss.read_index(index_path)
+        _INDEX_CACHE[index_path] = (mtime, index)
+        return index
 
 
 def _get_embed_signature(model_name: str = "all-MiniLM-L6-v2") -> str:
@@ -43,7 +70,6 @@ def build_vectors(db: Session, papers_dir: str, model_name: str = "all-MiniLM-L6
     if not _check_faiss_available():
         return {"status": "skipped", "reason": "faiss 未安装"}
 
-    from sentence_transformers import SentenceTransformer
     import numpy as np
     import faiss
 
@@ -55,7 +81,7 @@ def build_vectors(db: Session, papers_dir: str, model_name: str = "all-MiniLM-L6
             return {"status": "ok", "reason": "签名未变，跳过重建"}
 
     # 加载模型
-    model = SentenceTransformer(model_name)
+    model = _get_embedding_model(model_name)
 
     # 获取所有论文
     from app.models.paper import Paper
@@ -90,6 +116,8 @@ def build_vectors(db: Session, papers_dir: str, model_name: str = "all-MiniLM-L6
     # 保存 FAISS 索引到磁盘
     index_path = _get_index_path(db)
     faiss.write_index(index, index_path)
+    with _CACHE_LOCK:
+        _INDEX_CACHE[index_path] = (os.path.getmtime(index_path), index)
 
     return {"status": "ok", "count": len(papers), "dimension": dim}
 
@@ -100,21 +128,19 @@ def vsearch(db: Session, query: str, top_k: int = 10,
     if not _check_embedder_available() or not _check_faiss_available():
         return []
 
-    from sentence_transformers import SentenceTransformer
     import numpy as np
-    import faiss
 
     # 加载 FAISS 索引
     index_path = _get_index_path(db)
     if not os.path.exists(index_path):
         return []
 
-    index = faiss.read_index(index_path)
+    index = _load_faiss_index(index_path)
     if index.ntotal == 0:
         return []
 
     # 加载模型并编码查询
-    model = SentenceTransformer(model_name)
+    model = _get_embedding_model(model_name)
     query_vec = model.encode([query], normalize_embeddings=True)
     query_vec = np.array(query_vec, dtype=np.float32)
 
@@ -123,13 +149,18 @@ def vsearch(db: Session, query: str, top_k: int = 10,
 
     # 获取论文 ID
     paper_ids = _get_paper_ids(db)
+    from app.models.paper import Paper
+    ordered_ids = [paper_ids[idx] for idx in indices[0] if 0 <= idx < len(paper_ids)]
+    papers_by_id = {
+        paper.id: paper
+        for paper in db.query(Paper).filter(Paper.id.in_(ordered_ids)).all()
+    } if ordered_ids else {}
     results = []
     for score, idx in zip(scores[0], indices[0]):
         if idx < 0 or idx >= len(paper_ids):
             continue
         pid = paper_ids[idx]
-        from app.models.paper import Paper
-        paper = db.get(Paper, pid)
+        paper = papers_by_id.get(pid)
         if paper:
             results.append({
                 "id": paper.id,
@@ -221,14 +252,13 @@ def search_neighbors(db: Session, paper_id: str, top_k: int = 10,
         raise ImportError("faiss 未安装")
 
     import numpy as np
-    import faiss
 
     # 加载 FAISS 索引
     index_path = _get_index_path(db)
     if not os.path.exists(index_path):
         raise FileNotFoundError("向量索引未构建")
 
-    index = faiss.read_index(index_path)
+    index = _load_faiss_index(index_path)
     if index.ntotal == 0:
         return []
 
@@ -255,6 +285,15 @@ def search_neighbors(db: Session, paper_id: str, top_k: int = 10,
     scores, indices = index.search(target_vec, min(top_k + 1, index.ntotal))
 
     from app.models.paper import Paper
+    neighbor_ids = [
+        paper_ids[idx]
+        for idx in indices[0]
+        if 0 <= idx < len(paper_ids) and paper_ids[idx] != paper_id
+    ][:top_k]
+    papers_by_id = {
+        paper.id: paper
+        for paper in db.query(Paper).filter(Paper.id.in_(neighbor_ids)).all()
+    } if neighbor_ids else {}
     results = []
     for score, idx in zip(scores[0], indices[0]):
         if idx < 0 or idx >= len(paper_ids):
@@ -262,7 +301,7 @@ def search_neighbors(db: Session, paper_id: str, top_k: int = 10,
         pid = paper_ids[idx]
         if pid == paper_id:
             continue  # 跳过自身
-        paper = db.get(Paper, pid)
+        paper = papers_by_id.get(pid)
         if paper:
             authors = []
             try:
