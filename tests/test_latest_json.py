@@ -19,7 +19,7 @@ def test_generate_latest_json_uses_signed_nsis_installer(tmp_path):
 
     assert windows["signature"] == "signed-value"
     assert windows["url"].endswith(
-        "/AI%20Nexus%20Assistant_4.5.5_x64-setup.exe"
+        "/AI-Nexus-Assistant_4.5.5_x64-setup.exe"
     )
 
 

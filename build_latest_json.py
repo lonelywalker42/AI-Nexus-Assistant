@@ -14,6 +14,11 @@ DEFAULT_RELEASE_DIR = PROJECT_DIR / "release"
 GITHUB_REPO = "lonelywalker42/AI-Nexus-Assistant"
 
 
+def github_asset_name(filename: str) -> str:
+    """Return a stable GitHub Release asset name without server-side rewriting."""
+    return filename.replace(" ", "-")
+
+
 def get_version() -> str:
     return (PROJECT_DIR / "VERSION").read_text(encoding="utf-8").strip()
 
@@ -41,7 +46,7 @@ def generate_latest_json(
     version = version or get_version()
     installer, signature_path = find_signed_updater(release_dir, version)
     signature = signature_path.read_text(encoding="utf-8").strip()
-    asset_name = quote(installer.name)
+    asset_name = quote(github_asset_name(installer.name))
 
     manifest = {
         "version": version,

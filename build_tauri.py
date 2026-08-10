@@ -326,7 +326,7 @@ def step3_package(package_mode: str):
             for installer in bundle_dir.glob(pattern):
                 if f"_{version}_" not in installer.name:
                     continue
-                destination = release_dir / installer.name
+                destination = release_dir / installer.name.replace(" ", "-")
                 shutil.copy2(installer, destination)
                 copied_installers += 1
                 print(f"  -> {destination}")
@@ -342,9 +342,10 @@ def step3_package(package_mode: str):
             for signature in bundle_dir.glob(pattern):
                 if f"_{version}_" not in signature.name:
                     continue
-                shutil.copy2(signature, release_dir / signature.name)
+                destination = release_dir / signature.name.replace(" ", "-")
+                shutil.copy2(signature, destination)
                 copied_signatures += 1
-                print(f"  -> {release_dir / signature.name}")
+                print(f"  -> {destination}")
         if copied_signatures != 2:
             raise RuntimeError(
                 f"Expected MSI and NSIS updater signatures for {version}, "

@@ -73,9 +73,11 @@ def test_installer_package_only_copies_current_version(monkeypatch, tmp_path):
 
     build_tauri.step3_package("installers")
 
-    assert (package_output / current_msi.name).read_bytes() == b"msi"
-    assert (package_output / current_nsis.name).read_bytes() == b"nsis"
-    assert (package_output / f"{current_msi.name}.sig").read_text(encoding="utf-8") == "msi-signature"
-    assert (package_output / f"{current_nsis.name}.sig").read_text(encoding="utf-8") == "nsis-signature"
+    release_msi = package_output / current_msi.name.replace(" ", "-")
+    release_nsis = package_output / current_nsis.name.replace(" ", "-")
+    assert release_msi.read_bytes() == b"msi"
+    assert release_nsis.read_bytes() == b"nsis"
+    assert Path(f"{release_msi}.sig").read_text(encoding="utf-8") == "msi-signature"
+    assert Path(f"{release_nsis}.sig").read_text(encoding="utf-8") == "nsis-signature"
     assert not (package_output / "AI Nexus Assistant_4.5.4_x64_en-US.msi").exists()
     assert not (package_output / "AI Nexus Assistant_4.5.4_x64-setup.exe").exists()
