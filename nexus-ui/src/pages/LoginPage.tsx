@@ -36,7 +36,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             AI Nexus Assistant
           </h1>
           <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>
-            科研助手 · v4.5.5
+            科研助手 · v4.6.4
           </p>
         </div>
 

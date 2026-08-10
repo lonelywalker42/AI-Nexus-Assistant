@@ -3,7 +3,7 @@
 > AI增强个人科研助手 — 整合文献管理、试验管理、知识库、AI对话、音乐播放、电子书阅读的统一桌面平台
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![Tauri 2](https://img.shields.io/badge/Tauri_2-v4.6.3-orange.svg)](https://tauri.app/)
+[![Tauri 2](https://img.shields.io/badge/Tauri_2-v4.6.4-orange.svg)](https://tauri.app/)
 [![React 19](https://img.shields.io/badge/React_19-TypeScript-cyan.svg)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -16,7 +16,7 @@ AI Nexus Assistant 面向航空航天/控制领域研究者，提供从日常事
 
 | 版本 | 技术栈 | 包体积 | 状态 |
 |------|--------|--------|------|
-| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v4.6.3 |
+| **Tauri 2 版** | Rust + React 19 + TypeScript + Tailwind CSS v4 + FastAPI | **~83MB 单文件** | ✅ v4.6.4 |
 | **PySide6 版** | Python + PySide6 + SQLAlchemy | ~235MB | ✅ 功能完整 |
 
 ## 功能模块
